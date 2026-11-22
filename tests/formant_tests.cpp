@@ -112,6 +112,20 @@ int main() {
     CHECK(contains(names(phonemize("page")), "j"));
     CHECK(contains(names(phonemize("engine")), "j"));
 
+    // The k in a kn- cluster is silent. The generic letter rules used to emit
+    // a spurious /k/, making "knee" render byte-identically to [k n ee].
+    CHECK(names(phonemize("knee")) == std::vector<std::string>({"n", "ee"}));
+    CHECK(names(phonemize("knight")) ==
+          std::vector<std::string>({"n", "ay", "t"}));
+    CHECK(names(phonemize("know")).front() == "n");
+    CHECK(names(phonemize("knock")).front() == "n");
+    CHECK(names(phonemize("knew")).front() == "n");
+    CHECK(names(phonemize("knowledge")).front() == "n");
+    CHECK(names(phonemize("unknown")).front() == "uh");
+    CHECK(contains(names(phonemize("unknown")), "n"));
+    CHECK(names(phonemize("kite")).front() == "k");
+    CHECK(names(phonemize("skin")).front() == "s");
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));

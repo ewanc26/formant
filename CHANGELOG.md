@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.25] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats the `k` in a `kn-` cluster as silent, so `knee` renders as `[n ee]` instead of `[k n ee]` (and likewise `knight`, `know`, `knock`, `knew`, `knowledge` and medial `kn` in `unknown`). Words with a pronounced `k` such as `kite` and `skin` are unchanged.
+
 ## [0.4.24] - 2026-11-22
 
 ### Fixed
