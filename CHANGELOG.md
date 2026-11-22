@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.33] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats `tch` as a single /tʃ/ (`catch` -> `[k a ch]`, `kitchen` -> `[k i ch e n]`). It previously emitted a spurious /t/ stop, rendering `catch` byte-identically to `[k a t ch]`. Plain `ch` words such as `rich` and `teacher` are unchanged.
+
 ## [0.4.32] - 2026-11-22
 
 ### Fixed

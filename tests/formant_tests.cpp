@@ -235,6 +235,23 @@ int main() {
     CHECK(names(phonemize("discharge"))[2] == "s");
     CHECK(names(phonemize("discharge"))[3] == "ch");
 
+    // tch is a trigraph for a single /tʃ/ (catch, kitchen); the t is silent.
+    // Without a rule it was spelled t + ch with a spurious stop release.
+    CHECK(names(phonemize("catch")) ==
+          std::vector<std::string>({"k", "a", "ch"}));
+    CHECK(names(phonemize("kitchen")) ==
+          std::vector<std::string>({"k", "i", "ch", "e", "n"}));
+    CHECK(names(phonemize("match")).back() == "ch");
+    CHECK(names(phonemize("switch")).back() == "ch");
+    CHECK(names(phonemize("pitch")).back() == "ch");
+    // Plain ch words are unaffected by the new rule.
+    CHECK(names(phonemize("rich")) ==
+          std::vector<std::string>({"r", "i", "ch"}));
+    CHECK(contains(names(phonemize("teacher")), "ch"));
+    // sch stays correct too: tch must not disturb the preceding fixes.
+    CHECK(!contains(names(phonemize("school")), "t"));
+    CHECK(names(phonemize("mischief"))[3] == "ch");
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));
