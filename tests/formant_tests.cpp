@@ -201,6 +201,23 @@ int main() {
           std::vector<std::string>({"t", "uh", "f"}));
     CHECK(names(phonemize("enough")).back() == "f");
 
+    // ck is a digraph for a single /k/. Without a rule it was spelled as two
+    // stops, so "back" rendered byte-identically to [b a k k] with an extra
+    // burst and 40 ms of spurious audio.
+    CHECK(names(phonemize("back")) ==
+          std::vector<std::string>({"b", "a", "k"}));
+    CHECK(names(phonemize("quick")) ==
+          std::vector<std::string>({"k", "w", "i", "k"}));
+    CHECK(names(phonemize("black")) ==
+          std::vector<std::string>({"b", "l", "a", "k"}));
+    CHECK(names(phonemize("clock")).back() == "k");
+    CHECK(names(phonemize("clock")).size() == 4);
+    CHECK(names(phonemize("pocket")).size() == 5);
+    // A standalone k is unaffected.
+    CHECK(names(phonemize("book")) ==
+          std::vector<std::string>({"b", "oo", "k"}));
+    CHECK(names(phonemize("kite")).front() == "k");
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));

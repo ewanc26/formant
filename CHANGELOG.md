@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.31] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats `ck` as a single /k/ instead of spelling it as two stops. `back` and `quick` previously rendered byte-identically to `[b a k k]` and `[k w i k k]`, with a spurious second burst and 40 ms of extra audio; they now match `[b a k]` and `[k w i k]`. Standalone `k` is unchanged.
+
 ## [0.4.30] - 2026-11-22
 
 ### Fixed
