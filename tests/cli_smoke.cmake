@@ -128,4 +128,30 @@ foreach(bad_flag --gain --rate --formant-scale --attack --declination)
     endif()
 endforeach()
 
+# Out-of-range integers are rejected without an out-of-range double-to-int cast.
+foreach(out_of_range 3000000000 2147483648 -3000000000)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa "a" --harmonics "${out_of_range}" --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE integer_result
+        ERROR_VARIABLE integer_error
+    )
+    if(integer_result EQUAL 0)
+        message(FATAL_ERROR "formant accepted out-of-range harmonics '${out_of_range}'")
+    endif()
+    if(NOT integer_error MATCHES "expected an integer for --harmonics")
+        message(FATAL_ERROR "unexpected integer message: ${integer_error}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sample-rate 2147483648 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE integer_result
+    ERROR_VARIABLE integer_error
+)
+if(integer_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted out-of-range sample rate")
+endif()
+if(NOT integer_error MATCHES "expected an integer for --sample-rate")
+    message(FATAL_ERROR "unexpected sample-rate integer message: ${integer_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

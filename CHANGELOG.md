@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-11-22
+
+### Fixed
+
+- The CLI now range-checks integer options before converting, avoiding undefined behaviour on out-of-range values while still rejecting them with the existing error.
+
 ## [0.4.9] - 2026-11-22
 
 ### Fixed

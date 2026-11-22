@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -97,7 +98,11 @@ double number(const std::string &flag, const std::string &value) {
 
 int integer(const std::string &flag, const std::string &value) {
     const double parsed = number(flag, value);
-    if (parsed != static_cast<double>(static_cast<int>(parsed))) {
+    // Check the range before casting: converting an out-of-range double to int
+    // is undefined behaviour, even when the value is later rejected.
+    if (parsed < static_cast<double>(std::numeric_limits<int>::min()) ||
+        parsed > static_cast<double>(std::numeric_limits<int>::max()) ||
+        parsed != std::trunc(parsed)) {
         throw std::invalid_argument("expected an integer for " + flag + ": " +
                                     value);
     }
