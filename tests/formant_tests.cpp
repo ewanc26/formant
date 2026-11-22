@@ -95,6 +95,23 @@ int main() {
     CHECK(contains(singing, "ng"));
     CHECK(singing.size() >= 3);
 
+    // Hard /g/ before e/i/y must not become the affricate j. English gives no
+    // reliable orthographic signal, so these exceptions live in the lexicon;
+    // the generic soft-g rule remains correct for gem/gym/page/engine.
+    const std::vector<std::string> get = names(phonemize("get"));
+    CHECK(!get.empty());
+    CHECK(get.front() == "g");
+    CHECK(get != names(phonemize("jet")));
+    CHECK(names(phonemize("give")).front() == "g");
+    CHECK(names(phonemize("girl")).front() == "g");
+    CHECK(contains(names(phonemize("gift")), "g"));
+    CHECK(contains(names(phonemize("begin")), "g"));
+    CHECK(contains(names(phonemize("forget")), "g"));
+    CHECK(contains(names(phonemize("gem")), "j"));
+    CHECK(contains(names(phonemize("gym")), "j"));
+    CHECK(contains(names(phonemize("page")), "j"));
+    CHECK(contains(names(phonemize("engine")), "j"));
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));
