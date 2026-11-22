@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-11-22
+
+### Fixed
+
+- Segmental diacritics on affricate ligatures such as `ʧ̬` now qualify the whole consonant: voicing, place and ejective modifiers apply to both the stop and fricative components. The tie-bar spelling `t͡ʃ̬` still applies the diacritic only to the symbol it follows.
+
 ## [0.4.7] - 2026-11-22
 
 ### Fixed
