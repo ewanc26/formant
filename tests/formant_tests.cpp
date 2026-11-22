@@ -218,6 +218,23 @@ int main() {
           std::vector<std::string>({"b", "oo", "k"}));
     CHECK(names(phonemize("kite")).front() == "k");
 
+    // Word-initial sch is the Greek /sk/ (school, scheme, scholar). The old
+    // letter rules spelled it s + ch (/stʃ/), the wrong place of articulation.
+    // Medial sch (mischief, discharge) is genuinely s + ch and must stay that
+    // way, so the rule applies only at the start of the word.
+    CHECK(names(phonemize("school")) ==
+          std::vector<std::string>({"s", "k", "oo", "l"}));
+    CHECK(names(phonemize("scheme")) ==
+          std::vector<std::string>({"s", "k", "e", "m"}));
+    CHECK(names(phonemize("scholar")).front() == "s");
+    CHECK(names(phonemize("scholar"))[1] == "k");
+    CHECK(names(phonemize("schooner"))[1] == "k");
+    CHECK(names(phonemize("schedule"))[1] == "k");
+    CHECK(names(phonemize("mischief"))[2] == "s");
+    CHECK(names(phonemize("mischief"))[3] == "ch");
+    CHECK(names(phonemize("discharge"))[2] == "s");
+    CHECK(names(phonemize("discharge"))[3] == "ch");
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));
