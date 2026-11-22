@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.28] - 2026-11-22
+
+### Fixed
+
+- English G2P now drops the silent `b` in word-final `mb` clusters, so `bomb` renders as `[b o m]` instead of `[b o m b]` (and likewise `thumb`, `lamb` and plurals such as `bombs`). A medial `mb` as in `number` or `timber` keeps its /b/. `climb` and `comb`, whose vowels are also irregular, now render as `[k l ay m]` and `[k ow m]`.
+
 ## [0.4.27] - 2026-11-22
 
 ### Fixed

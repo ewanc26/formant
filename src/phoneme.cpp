@@ -132,6 +132,10 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"anywhere", {"e", "n", "ee", "w", "er"}},
             {"compile", {"k", "ah", "m", "p", "ay", "l"}},
             {"build", {"b", "i", "l", "d"}},
+            // Word-final mb has a silent b; these two also have irregular
+            // vowels, so the generic speller cannot produce them correctly.
+            {"climb", {"k", "l", "ay", "m"}},
+            {"comb", {"k", "ow", "m"}},
             {"waves", {"w", "ay", "v", "z"}},
             {"you", {"y", "oo"}},
         };
@@ -194,6 +198,17 @@ std::vector<std::string> spellWord(std::string_view word) {
         if (startsWith(clean, i, "igh")) {
             result.push_back("ay");
             i += 3;
+            continue;
+        }
+
+        // The b in a word-final mb cluster is silent (bomb, thumb, lamb, and
+        // their plurals). A medial mb as in number or timber keeps its /b/,
+        // so only the final cluster may collapse to /m/.
+        if (startsWith(clean, i, "mb") &&
+            (i + 2 == clean.size() ||
+             (i + 3 == clean.size() && clean[i + 2] == 's'))) {
+            result.push_back("m");
+            i += 2;
             continue;
         }
 

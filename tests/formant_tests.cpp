@@ -139,6 +139,24 @@ int main() {
     CHECK(names(phonemize("warm")).front() == "w");
     CHECK(names(phonemize("water")).front() == "w");
 
+    // The b in a word-final mb cluster is silent. The generic letter rules
+    // used to emit it, making "bomb" render byte-identically to [b o m b].
+    CHECK(names(phonemize("climb")) ==
+          std::vector<std::string>({"k", "l", "ay", "m"}));
+    CHECK(names(phonemize("comb")) ==
+          std::vector<std::string>({"k", "ow", "m"}));
+    CHECK(names(phonemize("bomb")) ==
+          std::vector<std::string>({"b", "o", "m"}));
+    CHECK(names(phonemize("thumb")) ==
+          std::vector<std::string>({"th", "uh", "m"}));
+    CHECK(names(phonemize("lamb")).back() == "m");
+    CHECK(names(phonemize("bombs")) ==
+          std::vector<std::string>({"b", "o", "m", "s"}));
+    // A medial mb cluster keeps its /b/ (number, timber, combat).
+    CHECK(contains(names(phonemize("number")), "b"));
+    CHECK(contains(names(phonemize("timber")), "b"));
+    CHECK(contains(names(phonemize("combat")), "b"));
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));
