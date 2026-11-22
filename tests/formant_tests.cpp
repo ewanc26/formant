@@ -125,6 +125,40 @@ int main() {
               Synthesizer(flat).render(questionWithoutCue, 22050));
     }
 
+    // An apostrophe inside a word belongs to that word. It used to split the
+    // token, so "don't" became [d o n | t] with a spurious word gap.
+    {
+        CHECK(names(phonemize("don't")) ==
+              std::vector<std::string>({"d", "o", "n", "t"}));
+        CHECK(names(phonemize("it's")) ==
+              std::vector<std::string>({"i", "t", "s"}));
+        CHECK(names(phonemize("I'm")) ==
+              std::vector<std::string>({"ay", "m"}));
+        CHECK(names(phonemize("we're")) ==
+              std::vector<std::string>({"w", "ee", "r"}));
+        CHECK(names(phonemize("can't")) ==
+              std::vector<std::string>({"k", "a", "n", "t"}));
+        CHECK(names(phonemize("couldn't")) ==
+              std::vector<std::string>({"k", "uh", "d", "uh", "n", "t"}));
+        CHECK(names(phonemize("they're")) ==
+              std::vector<std::string>({"dh", "er"}));
+        CHECK(names(phonemize("it'll")) ==
+              std::vector<std::string>({"i", "t", "uh", "l"}));
+        // U+2019 is the apostrophe most keyboards produce.
+        CHECK(names(phonemize("don\u2019t")) == names(phonemize("don't")));
+        // A possessive suffixes /s/ or /z/ by final voicing; a sibilant takes
+        // a syllabic /ɪz/.
+        CHECK(names(phonemize("cat's")).back() == "s");
+        CHECK(names(phonemize("dog's")).back() == "z");
+        const std::vector<std::string> bosses = names(phonemize("boss's"));
+        CHECK(bosses.size() >= 2);
+        CHECK(bosses[bosses.size() - 2] == "uh");
+        CHECK(bosses.back() == "z");
+        // A trailing apostrophe (plural possessive) still separates without
+        // adding a phoneme, so it matches the plural base word.
+        CHECK(names(phonemize("dogs'")) == names(phonemize("dogs")));
+    }
+
     // Suffix rules apply to words outside the small lexicon.
     const std::vector<std::string> nation = names(phonemize("nation"));
     CHECK(contains(nation, "sh"));
@@ -215,14 +249,15 @@ int main() {
           std::vector<std::string>({"h", "i", "m", "s"}));
     CHECK(names(phonemize("autumns")).back() == "s");
     CHECK(names(phonemize("columns")).back() == "s");
-    // A medial mn cluster keeps its /n/ when a vowel follows (hymnal,
-    // autumnal, damnation, hymnody), as does initial mn (mnemonic).
+    // A medial mn cluster keeps both /m/ and /n/ when a vowel follows (hymnal,
+    // autumnal, damnation, hymnody). Word-initially the m is silent instead
+    // (mnemonic), while the n at the end of hymn is silent.
     CHECK(names(phonemize("hymnal")) ==
           std::vector<std::string>({"h", "i", "m", "n", "a", "l"}));
     CHECK(contains(names(phonemize("autumnal")), "n"));
     CHECK(contains(names(phonemize("damnation")), "n"));
     CHECK(contains(names(phonemize("hymnody")), "n"));
-    CHECK(names(phonemize("mnemonic")).front() == "m");
+    CHECK(names(phonemize("mnemonic")).front() == "n");
 
     // The t in a word-final stle or sten cluster is silent (whistle, castle,
     // listen, fasten, and their plurals). The generic letter rules used to
@@ -479,6 +514,60 @@ int main() {
     CHECK(names(phonemize("rhyme")).front() == "r");
     CHECK(!contains(names(phonemize("rhyme")), "h"));
     CHECK(contains(names(phonemize("overheat")), "h"));
+
+    // A word-final l before k, f or m is silent (walk, talk, half, calm, folk,
+    // yolk). The closed could/would/should set also has a silent l and an
+    // irregular vowel, so it lives in the lexicon. A medial cluster such as
+    // alkaline or almanac keeps its /l/.
+    CHECK(names(phonemize("walk")) ==
+          std::vector<std::string>({"w", "o", "k"}));
+    CHECK(names(phonemize("walks")) ==
+          std::vector<std::string>({"w", "o", "k", "s"}));
+    CHECK(names(phonemize("talked")) ==
+          std::vector<std::string>({"t", "o", "k", "t"}));
+    CHECK(names(phonemize("talking")) ==
+          std::vector<std::string>({"t", "o", "k", "i", "ng"}));
+    CHECK(names(phonemize("chalk")) ==
+          std::vector<std::string>({"ch", "o", "k"}));
+    CHECK(names(phonemize("folk")) ==
+          std::vector<std::string>({"f", "ow", "k"}));
+    CHECK(names(phonemize("yolk")) ==
+          std::vector<std::string>({"y", "ow", "k"}));
+    CHECK(names(phonemize("half")) ==
+          std::vector<std::string>({"h", "a", "f"}));
+    CHECK(names(phonemize("calm")) ==
+          std::vector<std::string>({"k", "aa", "m"}));
+    CHECK(names(phonemize("could")) ==
+          std::vector<std::string>({"k", "uh", "d"}));
+    CHECK(names(phonemize("would")) ==
+          std::vector<std::string>({"w", "uh", "d"}));
+    CHECK(names(phonemize("should")) ==
+          std::vector<std::string>({"sh", "uh", "d"}));
+    CHECK(contains(names(phonemize("alkaline")), "l"));
+    CHECK(contains(names(phonemize("almanac")), "l"));
+
+    // A word-final b before t is silent (debt, doubt), including -btle
+    // (subtle); a medial bt before a vowel keeps it (obtuse). A word-initial
+    // mn drops the m (mnemonic).
+    CHECK(names(phonemize("debt")) ==
+          std::vector<std::string>({"d", "e", "t"}));
+    CHECK(names(phonemize("doubt")) ==
+          std::vector<std::string>({"d", "ow", "t"}));
+    CHECK(names(phonemize("subtle")) ==
+          std::vector<std::string>({"s", "uh", "t", "uh", "l"}));
+    CHECK(contains(names(phonemize("obtuse")), "b"));
+    CHECK(names(phonemize("mnemonic")).front() == "n");
+    CHECK(contains(names(phonemize("hymnal")), "n"));
+
+    // Silent h and w in a small closed set of common words.
+    CHECK(names(phonemize("hour")) ==
+          std::vector<std::string>({"ow", "er"}));
+    CHECK(names(phonemize("honest")) ==
+          std::vector<std::string>({"o", "n", "i", "s", "t"}));
+    CHECK(names(phonemize("sword")) ==
+          std::vector<std::string>({"s", "or", "d"}));
+    CHECK(names(phonemize("answer")) ==
+          std::vector<std::string>({"a", "n", "s", "er"}));
 
     // -ssion is always a single /ʃən/ (mission, session, discussion). The
     // longer rule must precede -sion so both s letters collapse, otherwise
@@ -1059,6 +1148,25 @@ int main() {
     CHECK(xsampaRaised.pitchStart == parseXsampa("a").front().pitchStart);
     CHECK(xsampaRaised.pitchEnd == parseXsampa("a").front().pitchEnd);
     CHECK(names(parseXsampa("a<R>")) != names(parseXsampa("a_r")));
+
+    // A global rise is position-independent. A prefix arrow used to be
+    // discarded because it was only applied to an existing base.
+    {
+        const std::vector<Phoneme> prefixed = parseIpa("\u2197a");
+        CHECK(prefixed.back().pitchRise);
+        const std::vector<Phoneme> prefixedXsampa = parseXsampa("<R>a");
+        CHECK(prefixedXsampa.back().pitchRise);
+        CHECK(!parseIpa("a").back().pitchRise);
+        Voice flat = voicePreset("robot");
+        flat.vibratoDepth = 0.0;
+        flat.breathiness = 0.0;
+        auto withoutCue = prefixed;
+        for (Phoneme &phoneme : withoutCue) {
+            phoneme.pitchRise = false;
+        }
+        CHECK(Synthesizer(flat).render(prefixed, 22050) !=
+              Synthesizer(flat).render(withoutCue, 22050));
+    }
 
     rejected = false;
     try {

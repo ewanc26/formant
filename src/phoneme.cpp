@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace formant {
 namespace {
@@ -33,11 +34,35 @@ bool startsWith(std::string_view text, size_t pos, std::string_view token) {
            text.substr(pos, token.size()) == token;
 }
 
+bool endsWith(std::string_view text, std::string_view token) {
+    return text.size() >= token.size() &&
+           text.substr(text.size() - token.size()) == token;
+}
+
 std::string lower(std::string_view text) {
     std::string result;
     result.reserve(text.size());
     for (unsigned char c : text) {
         result.push_back(static_cast<char>(std::tolower(c)));
+    }
+    return result;
+}
+
+// U+2019 is the apostrophe most keyboards and word processors produce. Treat
+// it exactly like the ASCII apostrophe so contractions work either way.
+std::string normalizeApostrophes(std::string_view text) {
+    std::string result;
+    result.reserve(text.size());
+    for (size_t i = 0; i < text.size();) {
+        if (i + 2 < text.size() &&
+            static_cast<unsigned char>(text[i]) == 0xE2 &&
+            static_cast<unsigned char>(text[i + 1]) == 0x80 &&
+            static_cast<unsigned char>(text[i + 2]) == 0x99) {
+            result.push_back('\'');
+            i += 3;
+        } else {
+            result.push_back(text[i++]);
+        }
     }
     return result;
 }
@@ -153,6 +178,43 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"anywhere", {"e", "n", "ee", "w", "er"}},
             {"compile", {"k", "ah", "m", "p", "ay", "l"}},
             {"build", {"b", "i", "l", "d"}},
+            // Contractions keep their apostrophe through tokenisation. The
+            // irregular n't forms and vowel changes need explicit entries;
+            // regular 's/'ll/'re/'ve/'d/'m endings are handled in spellWord.
+            {"aren't", {"aa", "r", "n", "t"}},
+            {"can't", {"k", "a", "n", "t"}},
+            {"could", {"k", "uh", "d"}},
+            {"couldn't", {"k", "uh", "d", "uh", "n", "t"}},
+            {"didn't", {"d", "i", "d", "uh", "n", "t"}},
+            {"doesn't", {"d", "uh", "z", "uh", "n", "t"}},
+            {"don't", {"d", "o", "n", "t"}},
+            {"hadn't", {"h", "a", "d", "uh", "n", "t"}},
+            {"hasn't", {"h", "a", "z", "uh", "n", "t"}},
+            {"haven't", {"h", "a", "v", "uh", "n", "t"}},
+            {"isn't", {"i", "z", "uh", "n", "t"}},
+            {"it'd", {"i", "t", "uh", "d"}},
+            {"it'll", {"i", "t", "uh", "l"}},
+            {"mustn't", {"m", "uh", "s", "uh", "n", "t"}},
+            {"needn't", {"n", "ee", "d", "uh", "n", "t"}},
+            {"should", {"sh", "uh", "d"}},
+            {"shouldn't", {"sh", "uh", "d", "uh", "n", "t"}},
+            {"they're", {"dh", "er"}},
+            {"wasn't", {"w", "uh", "z", "uh", "n", "t"}},
+            {"weren't", {"w", "er", "n", "t"}},
+            {"won't", {"w", "o", "n", "t"}},
+            {"would", {"w", "uh", "d"}},
+            {"wouldn't", {"w", "uh", "d", "uh", "n", "t"}},
+            {"o'clock", {"ah", "k", "l", "o", "k"}},
+            // Silent letters that are lexical rather than positional.
+            {"almond", {"aa", "m", "ah", "n", "d"}},
+            {"answer", {"a", "n", "s", "er"}},
+            {"heir", {"e", "r"}},
+            {"honest", {"o", "n", "i", "s", "t"}},
+            {"honor", {"o", "n", "er"}},
+            {"honour", {"o", "n", "er"}},
+            {"hour", {"ow", "er"}},
+            {"salmon", {"s", "a", "m", "ah", "n"}},
+            {"sword", {"s", "or", "d"}},
             // Word-final mb has a silent b; these two also have irregular
             // vowels, so the generic speller cannot produce them correctly.
             {"climb", {"k", "l", "ay", "m"}},
@@ -213,16 +275,67 @@ std::vector<std::string> spellWord(std::string_view word) {
     };
 
     std::string clean;
-    for (char c : word) {
-        if (std::isalnum(static_cast<unsigned char>(c))) {
-            clean.push_back(static_cast<char>(std::tolower(c)));
+    std::string key;
+    for (size_t i = 0; i < word.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(word[i]);
+        if (std::isalnum(c)) {
+            const char lowerC = static_cast<char>(std::tolower(c));
+            clean.push_back(lowerC);
+            key.push_back(lowerC);
+        } else if (word[i] == '\'' && !key.empty() && i + 1 < word.size() &&
+                   std::isalnum(static_cast<unsigned char>(word[i + 1]))) {
+            // Keep an apostrophe only when it sits between letters, so a
+            // contraction stays one word while quotation marks still separate.
+            key.push_back('\'');
         }
     }
     if (clean.empty()) {
         return {};
     }
 
-    auto found = lexicon().find(clean);
+    auto found = lexicon().find(key);
+    if (found != lexicon().end()) {
+        return found->second;
+    }
+
+    // A regular contraction is its base word plus a suffix. The irregular n't
+    // forms are explicit lexicon entries above.
+    if (key.find('\'') != std::string::npos) {
+        static const std::pair<std::string_view, std::string_view> suffixes[] = {
+            {"'s", "s"}, {"'ll", "l"}, {"'re", "r"},
+            {"'ve", "v"}, {"'d", "d"},  {"'m", "m"},
+        };
+        for (const auto &[suffix, ending] : suffixes) {
+            if (key.size() <= suffix.size() || !endsWith(key, suffix)) {
+                continue;
+            }
+            std::vector<std::string> base = spellWord(
+                std::string_view(key).substr(0, key.size() - suffix.size()));
+            if (base.empty()) {
+                continue;
+            }
+            if (suffix == "'s") {
+                const Phoneme *last = findPhoneme(base.back());
+                const bool sibilant =
+                    base.back() == "s" || base.back() == "z" ||
+                    base.back() == "sh" || base.back() == "zh" ||
+                    base.back() == "ch" || base.back() == "j";
+                if (sibilant) {
+                    base.emplace_back("uh");
+                    base.emplace_back("z");
+                } else {
+                    base.emplace_back(last && last->voiced ? "z" : "s");
+                }
+            } else {
+                base.emplace_back(ending);
+            }
+            return base;
+        }
+    }
+
+    // Only strip the apostrophe after contraction handling: "we're" must not
+    // resolve to the unrelated lexicon word "were".
+    found = lexicon().find(clean);
     if (found != lexicon().end()) {
         return found->second;
     }
@@ -302,6 +415,101 @@ std::vector<std::string> spellWord(std::string_view word) {
             continue;
         }
 
+        // The l in word-final alk/olk is silent (walk, talk, chalk, folk,
+        // yolk). Common inflections keep the silent l: walks, walked, walking,
+        // talker. A medial cluster such as alkaline keeps its /l/, so only the
+        // listed endings match.
+        if (startsWith(clean, i, "alk")) {
+            const std::string_view rest(clean.data() + i + 3,
+                                        clean.size() - (i + 3));
+            if (rest.empty() || rest == "s") {
+                result.push_back("o");
+                result.push_back("k");
+                i += 3;
+                continue;
+            }
+            if (rest == "ed") {
+                result.push_back("o");
+                result.push_back("k");
+                result.push_back("t");
+                i += 5;
+                continue;
+            }
+            if (rest == "ing") {
+                result.push_back("o");
+                result.push_back("k");
+                result.push_back("i");
+                result.push_back("ng");
+                i += 6;
+                continue;
+            }
+            if (rest == "er") {
+                result.push_back("o");
+                result.push_back("k");
+                result.push_back("er");
+                i += 5;
+                continue;
+            }
+        }
+
+        // The l in word-final olk is silent and the vowel is long (folk, yolk).
+        if (startsWith(clean, i, "olk") &&
+            (i + 3 == clean.size() ||
+             (i + 4 == clean.size() && clean[i + 3] == 's'))) {
+            result.push_back("ow");
+            result.push_back("k");
+            i += 3;
+            continue;
+        }
+
+        // The l in word-final alf is silent (half, calf).
+        if (startsWith(clean, i, "alf") &&
+            (i + 3 == clean.size() ||
+             (i + 4 == clean.size() && clean[i + 3] == 's'))) {
+            result.push_back("a");
+            result.push_back("f");
+            i += 3;
+            continue;
+        }
+
+        // The l in word-final alm is silent and the vowel is broad (calm,
+        // palm, psalm), including calm+ly. A medial alm keeps its /l/ as in
+        // almanac.
+        if (startsWith(clean, i, "alm")) {
+            const std::string_view rest(clean.data() + i + 3,
+                                        clean.size() - (i + 3));
+            if (rest.empty() || rest == "s") {
+                result.push_back("aa");
+                result.push_back("m");
+                i += 3;
+                continue;
+            }
+            if (rest == "ly") {
+                result.push_back("aa");
+                result.push_back("m");
+                result.push_back("l");
+                result.push_back("ee");
+                i += 5;
+                continue;
+            }
+        }
+
+        // The b in a word-final bt cluster is silent (debt, doubt), including
+        // the -btle ending of subtle. A medial bt before a vowel keeps its /b/
+        // (obtuse, subtitle), so only these endings collapse.
+        if (startsWith(clean, i, "btle") && i + 4 == clean.size()) {
+            result.push_back("t");
+            result.push_back("uh");
+            result.push_back("l");
+            i += 4;
+            continue;
+        }
+        if (startsWith(clean, i, "bt") && i + 2 == clean.size()) {
+            result.push_back("t");
+            i += 2;
+            continue;
+        }
+
         // The b in a word-final mb cluster is silent (bomb, thumb, lamb, and
         // their plurals). A medial mb as in number or timber keeps its /b/,
         // so only the final cluster may collapse to /m/.
@@ -314,13 +522,14 @@ std::vector<std::string> spellWord(std::string_view word) {
         }
 
         // The n in a word-final mn cluster is silent (hymn, autumn, column,
-        // damn, solemn, condemn, and their plurals). A medial mn as in hymnal
-        // or damnation keeps its /n/ because a vowel follows the cluster, so
-        // only the final cluster (optionally followed by plural -s) collapses.
+        // damn, solemn, condemn, and their plurals), while the m is silent in
+        // a word-initial mn (mnemonic). A medial mn as in hymnal or damnation
+        // keeps both, so only the edges (plus plural -s) collapse.
         if (startsWith(clean, i, "mn") &&
-            (i + 2 == clean.size() ||
+            (i == 0 || i + 2 == clean.size() ||
              (i + 3 == clean.size() && clean[i + 2] == 's'))) {
-            result.push_back("m");
+            // Word-initially the m is silent; word-finally the n is silent.
+            result.push_back(i == 0 ? "n" : "m");
             i += 2;
             continue;
         }
@@ -723,10 +932,19 @@ std::vector<Phoneme> phonemize(std::string_view text) {
         word.clear();
     };
 
-    for (char c : text) {
+    const std::string normalized = normalizeApostrophes(text);
+    for (size_t i = 0; i < normalized.size(); ++i) {
+        const char c = normalized[i];
         const unsigned char u = static_cast<unsigned char>(c);
         if (std::isalpha(u) || std::isdigit(u)) {
             word.push_back(static_cast<char>(std::tolower(u)));
+            continue;
+        }
+        // An apostrophe between letters belongs to the word (don't, it's);
+        // otherwise it is a quotation mark and only separates words.
+        if (c == '\'' && !word.empty() && i + 1 < normalized.size() &&
+            std::isalnum(static_cast<unsigned char>(normalized[i + 1]))) {
+            word.push_back('\'');
             continue;
         }
         flush();

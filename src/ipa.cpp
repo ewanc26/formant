@@ -831,6 +831,7 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
     std::vector<Phoneme> result;
     Prosody pending;
     bool havePending = false;
+    bool globalRise = false;
     std::vector<uint32_t> pendingModifiers;
 
     // The base most recently emitted into result. Suprasegmentals and late
@@ -909,6 +910,10 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
                 result.push_back(pause);
                 last.valid = false;
             } else if (cp == 0x2197) {
+                // A global rise marks the utterance, so it applies to segments
+                // on either side of the symbol. It used to be discarded when
+                // written before the first base.
+                globalRise = true;
                 for (Phoneme &phoneme : result) {
                     phoneme.pitchRise = true;
                 }
@@ -980,6 +985,7 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
 
         Prosody prosody = havePending ? pending : Prosody{};
         havePending = false;
+        prosody.pitchRise = prosody.pitchRise || globalRise;
         std::string name = symbol;
         bool tieNext = false;
         std::vector<Sound> sounds = found->second;

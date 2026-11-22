@@ -29,7 +29,7 @@ The harmonic phase is a single accumulator across the whole utterance, so pitch 
 
 Pitch drifts down slightly across a phrase, as it does in natural speech. A `?` that closes the utterance raises the final half-second of pitch; a question mark earlier in the phrase does not affect a later statement. Vibrato is applied in cents, so it scales with the chosen fundamental.
 
-IPA input adds per-segment `amplitude`, `pitchStart` and `pitchEnd`. Primary and secondary stress change amplitude, duration and F0 slightly; vowel length scales duration; tone letters and tone diacritics set a linear F0 contour across the segment. The global rise symbol applies the same final-half rise as `?`.
+IPA input adds per-segment `amplitude`, `pitchStart` and `pitchEnd`. Primary and secondary stress change amplitude, duration and F0 slightly; vowel length scales duration; tone letters and tone diacritics set a linear F0 contour across the segment. The global rise symbol (`↗`, X-SAMPA `<R>`) applies the same final-half rise as `?` whether it precedes or follows the segment.
 
 ## Data model
 
