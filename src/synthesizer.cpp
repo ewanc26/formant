@@ -149,7 +149,9 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
         segments.push_back(segment);
 
         cursor = segment.end;
-        previousBands = phoneme.bands;
+        // A diphthong finishes at endBands, so the next segment must crossfade
+        // from that final target, not from its initial bands.
+        previousBands = phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
         previousVoiced = phoneme.voiced;
         previousNoise = phoneme.kind == PhonemeKind::Silence
                             ? 0.0
