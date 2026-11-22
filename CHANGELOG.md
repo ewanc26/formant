@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.24] - 2026-11-22
+
+### Fixed
+
+- English G2P now uses the hard velar `/g/` for common `g`-before-`e`/`i` exceptions such as `get`, `give`, `girl`, `gift`, `begin` and `forget`. Previously the generic soft-g rule produced the affricate `/dʒ/`, making `get` render identically to `jet`. Soft-g words such as `gem`, `gym` and `page` are unchanged.
+
 ## [0.4.23] - 2026-11-22
 
 ### Fixed
