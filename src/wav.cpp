@@ -64,8 +64,8 @@ void writeWav(std::string_view path, const std::vector<float> &samples,
     for (float sample : samples) {
         const double clamped =
             std::clamp(static_cast<double>(sample), -1.0, 1.0);
-        const auto value =
-            static_cast<int16_t>(std::llround(clamped * 32767.0));
+        const double scale = clamped < 0.0 ? 32768.0 : 32767.0;
+        const auto value = static_cast<int16_t>(std::llround(clamped * scale));
         file.write(reinterpret_cast<const char *>(&value), sizeof(value));
     }
     if (!file) {
