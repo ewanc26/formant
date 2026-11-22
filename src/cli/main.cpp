@@ -250,8 +250,9 @@ int main(int argc, char **argv) {
                                static_cast<int>(options.useIpa) +
                                static_cast<int>(options.useXsampa);
         if (inputModes > 1) {
-            throw std::invalid_argument("use only one of --text/--stdin, "
-                                        "--phonemes, --ipa or --xsampa");
+            throw std::invalid_argument("use only one of --phonemes, --ipa or "
+                                        "--xsampa (each overrides --text and "
+                                        "--stdin)");
         }
         const std::vector<formant::Phoneme> phonemes =
             options.usePhonemes ? formant::parsePhonemes(options.phonemes)
