@@ -105,6 +105,10 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"speech", {"s", "p", "ee", "ch"}},
             {"synthesis", {"s", "i", "n", "th", "e", "s", "i", "s"}},
             {"test", {"t", "e", "s", "t"}},
+            // tungsten ends in -sten but keeps its /t/ (/ˈtʌŋstən/), unlike
+            // the silent-t cluster words. Keep its existing pronunciation
+            // exactly so the new word-final stle/sten rule does not drop it.
+            {"tungsten", {"t", "uh", "ng", "s", "t", "e", "n"}},
             {"that", {"dh", "ah", "t"}},
             {"the", {"dh", "ah"}},
             {"their", {"dh", "er"}},
@@ -299,6 +303,22 @@ std::vector<std::string> spellWord(std::string_view word) {
              (i + 3 == clean.size() && clean[i + 2] == 's'))) {
             result.push_back("m");
             i += 2;
+            continue;
+        }
+
+        // The t in a word-final stle or sten cluster is silent (whistle,
+        // castle, listen, fasten, and their plurals). Emit the /s/, a reduced
+        // vowel, and the final /l/ or /n/ so the cluster has a syllable. A
+        // medial cluster followed by a vowel (lastly, wristband) keeps its /t/
+        // and is left to the generic letter rules. tungsten is a lexicon
+        // exception because its /t/ is pronounced.
+        if ((startsWith(clean, i, "stle") || startsWith(clean, i, "sten")) &&
+            (i + 4 == clean.size() ||
+             (i + 5 == clean.size() && clean[i + 4] == 's'))) {
+            result.push_back("s");
+            result.push_back("uh");
+            result.push_back(startsWith(clean, i, "stle") ? "l" : "n");
+            i += 4;
             continue;
         }
 

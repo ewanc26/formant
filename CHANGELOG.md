@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.40] - 2026-11-22
+
+### Fixed
+
+- English G2P no longer pronounces the silent `t` in word-final `stle`/`sten` clusters (`listen` -> `[l i s uh n]`, `whistle` -> `[w i s uh l]`, `castle`, `fasten`, `hasten`, `moisten`, and their plurals). The generic letter rules previously emitted a spurious /t/ plosive. A word-final-only rule emits /s/ + reduced vowel + /l/ or /n/, while `tungsten` keeps its pronounced /t/ via a lexicon entry and medial/suffixed clusters (`stencil`, `listened`, `whistled`) are unchanged.
+
 ## [0.4.39] - 2026-11-22
 
 ### Fixed

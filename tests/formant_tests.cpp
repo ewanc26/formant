@@ -198,6 +198,37 @@ int main() {
     CHECK(contains(names(phonemize("hymnody")), "n"));
     CHECK(names(phonemize("mnemonic")).front() == "m");
 
+    // The t in a word-final stle or sten cluster is silent (whistle, castle,
+    // listen, fasten, and their plurals). The generic letter rules used to
+    // emit it, making "listen" byte-identically [l i s t e n]. Emit /s/, a
+    // reduced vowel, and /l/ or /n/. tungsten is a lexicon exception whose t
+    // is pronounced; medial/suffixed clusters keep their /t/.
+    CHECK(names(phonemize("listen")) ==
+          std::vector<std::string>({"l", "i", "s", "uh", "n"}));
+    CHECK(names(phonemize("fasten")) ==
+          std::vector<std::string>({"f", "a", "s", "uh", "n"}));
+    CHECK(names(phonemize("whistle")) ==
+          std::vector<std::string>({"w", "i", "s", "uh", "l"}));
+    CHECK(names(phonemize("castle")) ==
+          std::vector<std::string>({"k", "a", "s", "uh", "l"}));
+    CHECK(names(phonemize("hasten")) ==
+          std::vector<std::string>({"h", "a", "s", "uh", "n"}));
+    CHECK(names(phonemize("moisten")) ==
+          std::vector<std::string>({"m", "oi", "s", "uh", "n"}));
+    CHECK(names(phonemize("glisten")).back() == "n");
+    CHECK(!contains(names(phonemize("glisten")), "t"));
+    CHECK(names(phonemize("listens")) ==
+          std::vector<std::string>({"l", "i", "s", "uh", "n", "s"}));
+    CHECK(names(phonemize("whistles")) ==
+          std::vector<std::string>({"w", "i", "s", "uh", "l", "s"}));
+    CHECK(names(phonemize("tungsten")) ==
+          std::vector<std::string>({"t", "uh", "ng", "s", "t", "e", "n"}));
+    // Medial clusters followed by a vowel keep their /t/.
+    CHECK(contains(names(phonemize("listened")), "t"));
+    CHECK(contains(names(phonemize("whistled")), "t"));
+    CHECK(names(phonemize("stencil")).front() == "s");
+    CHECK(contains(names(phonemize("stencil")), "t"));
+
     // The gh digraph used to be spelled as /g/ + /h/. Word-initial gh is /g/;
     // eigh/aigh mark a long vowel; non-initial gh is silent except in the
     // irregular ough/augh words, which the lexicon covers.
