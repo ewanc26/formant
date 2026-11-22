@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-11-22
+
+### Fixed
+
+- Precomposed rhotic vowels ɚ (U+025A) and ɝ (U+025D) now lower F3 and strengthen its band like the hooked `ə˞`/`ɜ˞` forms, instead of rendering identically to plain `ə`/`ɜ`. The X-SAMPA `@\`` alias now renders as a rhotic schwa too.
+
 ## [0.4.5] - 2026-11-22
 
 ### Fixed

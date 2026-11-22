@@ -262,6 +262,22 @@ int main() {
     CHECK(parseIpa("e\u031E").front().bands[0].frequency >
           parseIpa("e").front().bands[0].frequency);
 
+    // Precomposed rhotic vowels are the compiled equivalents of ə˞ and ɜ˞:
+    // they lower F3 and strengthen its band rather than rendering as plain ə
+    // and ɜ. The X-SAMPA @` alias inherits the same articulation.
+    const Phoneme rhoticSchwa = parseIpa("\u025A").front();
+    CHECK(rhoticSchwa.bands[2].frequency ==
+          parseIpa("\u0259\u02DE").front().bands[2].frequency);
+    CHECK(rhoticSchwa.bands[2].amplitude >
+          parseIpa("\u0259").front().bands[2].amplitude);
+    const Phoneme rhoticOpenMid = parseIpa("\u025D").front();
+    CHECK(rhoticOpenMid.bands[2].frequency ==
+          parseIpa("\u025C\u02DE").front().bands[2].frequency);
+    CHECK(rhoticOpenMid.bands[2].amplitude >
+          parseIpa("\u025C").front().bands[2].amplitude);
+    CHECK(parseXsampa("@`").front().bands[2].frequency ==
+          rhoticSchwa.bands[2].frequency);
+
     // Suprasegmentals add pauses and do not swallow surrounding symbols.
     const std::vector<Phoneme> phrase = parseIpa("/\u02C8h\u0259lo\u028A/");
     CHECK(phrase.size() >= 4);
