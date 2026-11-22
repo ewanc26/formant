@@ -56,6 +56,14 @@ std::vector<uint8_t> wavHeader(size_t sampleCount, int sampleRate) {
 
 void writeWav(std::string_view path, const std::vector<float> &samples,
               int sampleRate) {
+    // Validate before opening the file. std::llround on a non-finite value is
+    // undefined behaviour, and failing after the header is written would leave
+    // a corrupt WAV behind.
+    for (float sample : samples) {
+        if (!std::isfinite(sample)) {
+            throw std::invalid_argument("WAV samples must be finite");
+        }
+    }
     const std::vector<uint8_t> header = wavHeader(samples.size(), sampleRate);
     std::ofstream file(std::string(path), std::ios::binary | std::ios::trunc);
     if (!file) {

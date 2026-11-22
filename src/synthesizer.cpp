@@ -48,6 +48,22 @@ double smooth(double t) {
     return t * t * (3.0 - 2.0 * t);
 }
 
+// A final rise belongs to the end of the utterance, not to any question mark
+// inside it. Scan back past trailing pauses (a bare '?' is itself a silence
+// phoneme) and stop at the first non-silence segment: "Hello?" rises, while
+// "Hello? I am here." ends on a statement and must not.
+bool endsWithRise(const std::vector<Phoneme> &phonemes) {
+    for (auto it = phonemes.rbegin(); it != phonemes.rend(); ++it) {
+        if (it->pitchRise) {
+            return true;
+        }
+        if (it->kind != PhonemeKind::Silence) {
+            return false;
+        }
+    }
+    return false;
+}
+
 // Four sine-shaped resonances, each with a Lorentzian response. This is the
 // only "filter" in the engine: no IIR filters, noise buffers or samples.
 double resonance(double frequency, const std::array<FormantBand, 4> &bands,
@@ -118,9 +134,7 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     const double rate = voice_.rate;
     constexpr double kMaxInt =
         static_cast<double>(std::numeric_limits<int>::max());
-    const bool rising =
-        std::any_of(phonemes.begin(), phonemes.end(),
-                    [](const Phoneme &p) { return p.pitchRise; });
+    const bool rising = endsWithRise(phonemes);
 
     std::vector<Segment> segments;
     segments.reserve(phonemes.size());

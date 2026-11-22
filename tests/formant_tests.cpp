@@ -99,6 +99,32 @@ int main() {
     CHECK(question.back().kind == PhonemeKind::Silence);
     CHECK(exclamation.back().kind == PhonemeKind::Silence);
 
+    // A final rise belongs to the end of the utterance. A question mark in the
+    // middle of a phrase used to enable the global rise for whatever followed,
+    // so "Hello? I am here." ended on a rising statement.
+    {
+        Voice flat = voicePreset("robot");
+        flat.vibratoDepth = 0.0;
+        flat.breathiness = 0.0;
+        const auto mixed = phonemize("Hello? I am here.");
+        CHECK(mixed.back().name == ".");
+        CHECK(contains(names(mixed), "?"));
+        auto withoutCue = mixed;
+        for (Phoneme &phoneme : withoutCue) {
+            phoneme.pitchRise = false;
+        }
+        CHECK(Synthesizer(flat).render(mixed, 22050) ==
+              Synthesizer(flat).render(withoutCue, 22050));
+
+        const auto question = phonemize("Hello?");
+        auto questionWithoutCue = question;
+        for (Phoneme &phoneme : questionWithoutCue) {
+            phoneme.pitchRise = false;
+        }
+        CHECK(Synthesizer(flat).render(question, 22050) !=
+              Synthesizer(flat).render(questionWithoutCue, 22050));
+    }
+
     // Suffix rules apply to words outside the small lexicon.
     const std::vector<std::string> nation = names(phonemize("nation"));
     CHECK(contains(nation, "sh"));
@@ -431,6 +457,28 @@ int main() {
           std::vector<std::string>({"k", "o", "w", "h", "i", "d"}));
     CHECK(names(phonemize("snowhill")) ==
           std::vector<std::string>({"s", "n", "o", "w", "h", "i", "l", "l"}));
+
+    // Word-initial pn, ps and pt clusters have a silent p (pneumonia,
+    // psychology, pterodactyl). A medial cluster keeps its /p/ across the
+    // syllable boundary (apnea, chapter), so only position zero may drop it.
+    CHECK(names(phonemize("pneumonia")).front() == "n");
+    CHECK(!contains(names(phonemize("pneumonia")), "p"));
+    CHECK(names(phonemize("pseudo")).front() == "s");
+    CHECK(!contains(names(phonemize("pseudo")), "p"));
+    CHECK(names(phonemize("pterodactyl")).front() == "t");
+    CHECK(!contains(names(phonemize("pterodactyl")), "p"));
+    CHECK(contains(names(phonemize("apnea")), "p"));
+    CHECK(contains(names(phonemize("chapter")), "p"));
+
+    // A word-initial rh cluster has a silent h (rhythm, rhetoric, rhyme);
+    // medial r + h spans a syllable boundary and keeps both (overheat).
+    CHECK(names(phonemize("rhythm")).front() == "r");
+    CHECK(!contains(names(phonemize("rhythm")), "h"));
+    CHECK(names(phonemize("rhetoric")).front() == "r");
+    CHECK(!contains(names(phonemize("rhetoric")), "h"));
+    CHECK(names(phonemize("rhyme")).front() == "r");
+    CHECK(!contains(names(phonemize("rhyme")), "h"));
+    CHECK(contains(names(phonemize("overheat")), "h"));
 
     // -ssion is always a single /ʃən/ (mission, session, discussion). The
     // longer rule must precede -sion so both s letters collapse, otherwise
@@ -789,6 +837,25 @@ int main() {
         std::fclose(clampFile);
     }
     std::remove(clampPath.c_str());
+
+    // Non-finite samples would reach std::llround, which is undefined
+    // behaviour for NaN and infinity, and leave a corrupt WAV behind. They are
+    // rejected before the file is opened.
+    const std::string invalidPath = "formant_invalid_samples.wav";
+    std::remove(invalidPath.c_str());
+    for (float badSample : {std::numeric_limits<float>::quiet_NaN(),
+                            std::numeric_limits<float>::infinity(),
+                            -std::numeric_limits<float>::infinity()}) {
+        bool nonFiniteRejected = false;
+        try {
+            writeWav(invalidPath, {0.0f, badSample}, 8000);
+        } catch (const std::invalid_argument &) {
+            nonFiniteRejected = true;
+        }
+        CHECK(nonFiniteRejected);
+        CHECK(std::fopen(invalidPath.c_str(), "rb") == nullptr);
+    }
+    std::remove(invalidPath.c_str());
 
     // The IPA front end is independent of English: every advertised symbol
     // parses, including extensions and the full vowel chart.
