@@ -9,6 +9,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - Diphthong phonemes interpolate from a start to an end formant target.
 - Grapheme-to-phoneme rules for `-tion`, `-sion` and `-ing`.
 
+### Fixed
+
+- WAV samples at full negative scale now map to `-32768` instead of `-32767`.
+
 ## [0.1.0] - 2026-11-22
 
 ### Added

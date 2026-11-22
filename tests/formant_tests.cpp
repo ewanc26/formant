@@ -182,6 +182,33 @@ int main() {
     }
     std::remove(path.c_str());
 
+    // Empty input, the minimum sample rate, case-insensitive phonemes.
+    CHECK(phonemize("").empty());
+    CHECK(Synthesizer(voice).render({}, 22050).empty());
+    CHECK(!Synthesizer(voice).render(vowels, 8000).empty());
+    const std::vector<Phoneme> upper = parsePhonemes("[H EE]");
+    CHECK(upper.size() == 2);
+    if (upper.size() == 2) {
+        CHECK(upper[0].name == "h");
+        CHECK(upper[1].name == "ee");
+    }
+
+    // Samples outside [-1, 1] clamp at the 16-bit WAV limits.
+    const std::string clampPath = "formant_clamp_test.wav";
+    writeWav(clampPath, {2.0f, -2.0f, 0.0f}, 8000);
+    FILE *clampFile = std::fopen(clampPath.c_str(), "rb");
+    CHECK(clampFile != nullptr);
+    if (clampFile) {
+        std::fseek(clampFile, 44, SEEK_SET);
+        int16_t written[3] = {0, 0, 0};
+        CHECK(std::fread(written, sizeof(int16_t), 3, clampFile) == 3);
+        CHECK(written[0] == 32767);
+        CHECK(written[1] == -32768);
+        CHECK(written[2] == 0);
+        std::fclose(clampFile);
+    }
+    std::remove(clampPath.c_str());
+
     if (failures == 0) {
         std::cout << "All formant tests passed\n";
     }
