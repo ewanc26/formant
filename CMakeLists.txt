@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.4.30
+  VERSION 0.4.31
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )

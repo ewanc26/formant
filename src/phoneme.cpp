@@ -268,6 +268,9 @@ std::vector<std::string> spellWord(std::string_view word) {
             {"th", "th"},
             {"sh", "sh"},
             {"ch", "ch"},
+            // ck is a single /k/ (back, quick); without this rule the generic
+            // c and k letter rules emit two separate stops.
+            {"ck", "k"},
             {"ph", "f"},
             {"ee", "ee"},
             {"oo", "oo"},
