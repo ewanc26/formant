@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.42] - 2026-11-22
+
+### Fixed
+
+- English text now keeps an apostrophe inside a word and expands common contractions instead of inserting a word gap. `don't` renders as `[d o n t]` rather than `[d o n | t]`; regular `'s`/`'ll`/`'re`/`'ve`/`'d`/`'m` endings are composed from the base word (so `it's`, `I'm` and `we're` work), while irregular forms such as `can't`, `couldn't`, `they're`, `it'll`, `it'd` and `o'clock` are explicit entries. The typographic apostrophe `’` is accepted, and a possessive `'s` takes /s/, /z/ or a syllabic /ɪz/ from the final sound.
+- Silent `l` is now dropped in word-final `alk`/`olk` (`walk` -> `[w o k]`, `talk`, `chalk`, `folk`, `yolk`), `alf` (`half`, `calf`) and `alm` (`calm`, `palm`, `psalm`), including common inflections such as `walks`, `walked`, `talking` and `calmly`. `could`, `would` and `should` are lexicon entries because their vowel is irregular too; `alkaline` and `almanac` keep their /l/.
+- Silent `b` is dropped in word-final `bt` and `btle` (`debt`, `doubt`, `subtle`), and silent `m` in word-initial `mn` (`mnemonic`). Medial clusters such as `obtuse` keep the /b/, and `hymnal` keeps both /m/ and /n/.
+- Lexicon entries for `hour`, `honest`, `honor`, `honour`, `heir`, `sword`, `answer`, `salmon` and `almond` remove spurious /h/, /w/ and /l/ phonemes.
+- A global rise (`↗` or X-SAMPA `<R>`) now takes effect when written before a segment as well as after it. `↗a` previously rendered as plain `a` because the marker had no base to attach to yet.
+
 ## [0.4.41] - 2026-11-22
 
 ### Fixed

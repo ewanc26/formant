@@ -144,7 +144,7 @@ The suite covers voice presets, text-to-phoneme conversion, bracket parsing, the
 
 ## Limitations
 
-- The English text layer is a small lexicon plus letter rules (including `-tion`, `-sion` and `-ing`), not a full G2P model. IPA and X-SAMPA input avoid that layer entirely.
+- The English text layer is a small lexicon plus letter rules (including `-tion`, `-sion`, `-ing` and common contractions), not a full G2P model. IPA and X-SAMPA input avoid that layer entirely.
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
