@@ -157,6 +157,37 @@ int main() {
     CHECK(contains(names(phonemize("timber")), "b"));
     CHECK(contains(names(phonemize("combat")), "b"));
 
+    // The gh digraph used to be spelled as /g/ + /h/. Word-initial gh is /g/;
+    // eigh/aigh mark a long vowel; non-initial gh is silent except in the
+    // irregular ough/augh words, which the lexicon covers.
+    CHECK(names(phonemize("ghost")) ==
+          std::vector<std::string>({"g", "o", "s", "t"}));
+    CHECK(names(phonemize("ghetto")).front() == "g");
+    CHECK(names(phonemize("ghoul")).front() == "g");
+    CHECK(!contains(names(phonemize("ghost")), "h"));
+    CHECK(names(phonemize("weigh")) == std::vector<std::string>({"w", "ay"}));
+    CHECK(names(phonemize("straight")).back() == "t");
+    CHECK(contains(names(phonemize("straight")), "ay"));
+    CHECK(names(phonemize("high")) == std::vector<std::string>({"h", "ay"}));
+    CHECK(names(phonemize("night")) ==
+          std::vector<std::string>({"n", "ay", "t"}));
+    CHECK(!contains(names(phonemize("though")), "g"));
+    CHECK(!contains(names(phonemize("though")), "h"));
+    CHECK(names(phonemize("though")) == std::vector<std::string>({"dh", "ow"}));
+    CHECK(names(phonemize("through")) ==
+          std::vector<std::string>({"th", "r", "oo"}));
+    CHECK(names(phonemize("thought")) ==
+          std::vector<std::string>({"th", "or", "t"}));
+    CHECK(names(phonemize("laugh")) ==
+          std::vector<std::string>({"l", "aa", "f"}));
+    CHECK(names(phonemize("cough")) ==
+          std::vector<std::string>({"k", "o", "f"}));
+    CHECK(names(phonemize("rough")) ==
+          std::vector<std::string>({"r", "uh", "f"}));
+    CHECK(names(phonemize("tough")) ==
+          std::vector<std::string>({"t", "uh", "f"}));
+    CHECK(names(phonemize("enough")).back() == "f");
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));
