@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.18] - 2026-11-22
+
+### Fixed
+
+- `Synthesizer::render()` no longer silently clamps slow rates to 0.1. Rates below 0.1 now produce the documented `round(total duration * sampleRate / rate)` sample count, and non-finite, non-positive or out-of-range rates are rejected explicitly instead of overflowing.
+
 ## [0.4.17] - 2026-11-22
 
 ### Fixed

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <stdexcept>
 
 namespace formant {
@@ -104,11 +105,19 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     if (sampleRate < 8000) {
         throw std::invalid_argument("sample rate must be at least 8000 Hz");
     }
+    if (!std::isfinite(voice_.rate) || voice_.rate <= 0.0) {
+        throw std::invalid_argument("rate must be positive and finite");
+    }
     if (phonemes.empty()) {
         return {};
     }
 
-    const double rate = std::max(0.1, voice_.rate);
+    // The documented contract is round(total duration * sampleRate / rate)
+    // samples. Never clamp the caller's rate: a slow rate must really produce
+    // slower audio. Extremes are rejected below rather than overflowing int.
+    const double rate = voice_.rate;
+    constexpr double kMaxInt =
+        static_cast<double>(std::numeric_limits<int>::max());
     const bool rising =
         std::any_of(phonemes.begin(), phonemes.end(),
                     [](const Phoneme &p) { return p.pitchRise; });
@@ -121,9 +130,15 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     double previousNoise = 0.0;
 
     for (const Phoneme &phoneme : phonemes) {
-        const int length = std::max(
-            1, static_cast<int>(std::llround(phoneme.duration / rate *
-                                             static_cast<double>(sampleRate))));
+        const double wanted =
+            phoneme.duration / rate * static_cast<double>(sampleRate);
+        if (!std::isfinite(wanted) || wanted < -kMaxInt || wanted > kMaxInt) {
+            throw std::invalid_argument("phoneme duration / rate out of range");
+        }
+        const int length = std::max(1, static_cast<int>(std::llround(wanted)));
+        if (cursor > std::numeric_limits<int>::max() - length) {
+            throw std::invalid_argument("rendered audio is too long");
+        }
         Segment segment;
         segment.phoneme = &phoneme;
         segment.start = cursor;

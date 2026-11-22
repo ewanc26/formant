@@ -238,6 +238,58 @@ int main() {
     }
     CHECK(rejected);
 
+    // A slow rate must really lengthen the audio. render() used to clamp the
+    // rate to 0.1, silently capping the length and breaking the documented
+    // round(total duration * sampleRate / rate) contract.
+    const Phoneme *slowPhoneme = findPhoneme("a");
+    CHECK(slowPhoneme != nullptr);
+    if (slowPhoneme) {
+        Voice slow = voice;
+        slow.rate = 0.05;
+        const std::vector<float> slowSamples =
+            Synthesizer(slow).render({*slowPhoneme}, 8000);
+        const size_t expected = static_cast<size_t>(
+            std::llround(slowPhoneme->duration * 8000.0 / slow.rate));
+        CHECK(slowSamples.size() == expected);
+        CHECK(slowSamples.size() == 22400);
+
+        Voice normal = voice;
+        normal.rate = 1.0;
+        const std::vector<float> normalSamples =
+            Synthesizer(normal).render({*slowPhoneme}, 8000);
+        CHECK(slowSamples.size() == normalSamples.size() * 20);
+    }
+
+    // Removing the clamp would divide by zero unless rate is validated.
+    const double badRates[] = {0.0, -1.0,
+                               std::numeric_limits<double>::infinity(),
+                               std::numeric_limits<double>::quiet_NaN()};
+    for (double badRate : badRates) {
+        Voice bad = voice;
+        bad.rate = badRate;
+        rejected = false;
+        try {
+            (void)Synthesizer(bad).render(vowels, 22050);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+    }
+
+    // An extreme rate whose segment length exceeds int range is rejected
+    // rather than overflowing llround or attempting a huge allocation.
+    if (slowPhoneme) {
+        Voice extreme = voice;
+        extreme.rate = 1e-300;
+        rejected = false;
+        try {
+            (void)Synthesizer(extreme).render({*slowPhoneme}, 8000);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+    }
+
     // The WAV header is 44 bytes of little-endian PCM metadata.
     const std::vector<uint8_t> header = wavHeader(1000, 44100);
     CHECK(header.size() == 44);
