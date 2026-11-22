@@ -95,6 +95,23 @@ int main() {
     CHECK(contains(singing, "ng"));
     CHECK(singing.size() >= 3);
 
+    // Digits embedded in alphanumeric tokens are spelled rather than dropped;
+    // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
+    const std::vector<std::string> b2 = names(phonemize("B2"));
+    CHECK(contains(b2, "b"));
+    CHECK(contains(b2, "t"));
+    CHECK(contains(b2, "oo"));
+    const std::vector<std::string> h2o = names(phonemize("H2O"));
+    CHECK(contains(h2o, "h"));
+    CHECK(contains(h2o, "t"));
+    CHECK(contains(h2o, "oo"));
+    CHECK(contains(h2o, "o"));
+    const std::vector<std::string> room101b = names(phonemize("Room 101B"));
+    CHECK(contains(room101b, "w"));
+    CHECK(contains(room101b, "uh"));
+    CHECK(contains(room101b, "n"));
+    CHECK(contains(room101b, "b"));
+
     // Diphthongs carry a moving target; monophthongs do not.
     const Phoneme *ay = findPhoneme("ay");
     CHECK(ay != nullptr);

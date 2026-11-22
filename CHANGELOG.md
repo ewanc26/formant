@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.16] - 2026-11-22
+
+### Fixed
+
+- Digits embedded in alphanumeric words (e.g. `B2`, `H2O`, `Room 101B`) are now spelled out instead of being silently dropped by the English text front end.
+
 ## [0.4.15] - 2026-11-22
 
 ### Fixed
