@@ -132,6 +132,23 @@ int main() {
         CHECK(std::isfinite(sample));
     }
 
+    // A near-zero fundamental never reaches the Nyquist break, so the harmonic
+    // count must be capped or rendering becomes effectively unbounded. A huge
+    // count renders identically to the cap, and stays finite.
+    Voice subsonic = voice;
+    subsonic.pitch = 0.000001;
+    subsonic.harmonics = 500000;
+    subsonic.vibratoDepth = 0.0;
+    Voice subsonicCapped = subsonic;
+    subsonicCapped.harmonics = 4096;
+    const std::vector<float> subsonicSamples =
+        Synthesizer(subsonic).render(vowels, 22050);
+    CHECK(subsonicSamples == Synthesizer(subsonicCapped).render(vowels, 22050));
+    CHECK(peak(subsonicSamples) > 0.0);
+    for (float sample : subsonicSamples) {
+        CHECK(std::isfinite(sample));
+    }
+
     const Phoneme *moving = findPhoneme("ay");
     CHECK(moving != nullptr);
     if (moving) {
