@@ -8,13 +8,16 @@ It is a library first and a command-line tool second. Embed it in a game, a robo
 
 ## How it works
 
-Text goes through a small pronunciation stage, then an additive sine-wave synthesiser. There are no recorded samples, no noise buffers and no external audio libraries.
+Text, IPA or X-SAMPA goes through a pronunciation stage, then an additive sine-wave synthesiser. There are no recorded samples, no noise buffers and no external audio libraries. IPA is the primary input: the English lexicon is only an optional convenience layer.
 
 ```
-text or [phonemes]
+text | [phonemes] | IPA | X-SAMPA
         │
         ▼
-lexicon + English letter rules  ──►  phoneme sequence
+English lexicon/rules or articulatory IPA mapping
+                                       │
+                                       ▼
+                              phoneme sequence
                                        │
                                        ▼
                             formant targets (F1–F4)
@@ -65,12 +68,17 @@ build/formant --text "Formant is a voice engine." \
 # Speak phonemes directly
 build/formant --phonemes "[h ee l o , w er l d .]" --output raw.wav
 
+# Speak IPA or X-SAMPA directly (language independent)
+build/formant --ipa "ˈhəˈloʊ" --output ipa.wav
+build/formant --xsampa "h@loU" --output xsampa.wav
+
 # Read text from stdin
 echo "Are you there?" | build/formant --stdin --output question.wav
 
 # Inspect what is available
 build/formant --list-voices
 build/formant --list-phonemes
+build/formant --list-ipa
 ```
 
 Run `build/formant --help` for the full option list. Every value flag also accepts `--flag=value`.
@@ -103,7 +111,7 @@ const auto samples = formant::synthesizeText("Hello, world.", voice, 44100);
 formant::writeWav("hello.wav", samples, 44100);
 ```
 
-You can also bypass the English text layer entirely: edit `src/phoneme.cpp` to change formant frequencies, amplitudes and bandwidths, or call `parsePhonemes()` / `render()` with your own sequence. The phoneme table is data, not hardcoded logic.
+You can bypass the English text layer entirely: call `parseIpa()`, `parseXsampa()` or `parsePhonemes()` and pass the result to `render()`. IPA is mapped from articulatory features (height, backness, rounding, place and manner) to four formant bands, so no language-specific dictionary is needed. The English table in `src/phoneme.cpp` and the IPA data in `src/ipa.cpp` are plain data, not hardcoded synthesis logic.
 
 ---
 
@@ -111,8 +119,8 @@ You can also bypass the English text layer entirely: edit `src/phoneme.cpp` to c
 
 ```
 CMakeLists.txt          – C++20 library, CLI and CTest targets
-include/formant/        – public headers (voice, phoneme, synthesizer, wav)
-src/                    – synthesis engine implementation
+include/formant/        – public headers (voice, phoneme, IPA, synthesizer, wav)
+src/                    – synthesis engine and IPA front-end implementation
 src/cli/                – command-line driver
 tests/                  – unit tests and the CLI smoke check
 examples/               – small text and phoneme inputs
@@ -130,13 +138,14 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-The suite covers voice presets, text-to-phoneme conversion, bracket parsing, deterministic rendering, WAV headers and a CLI end-to-end render. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
+The suite covers voice presets, text-to-phoneme conversion, bracket parsing, the full IPA symbol inventory, X-SAMPA translation, stress/length/tone diacritics, deterministic rendering, WAV headers and a CLI end-to-end render. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
 
 ---
 
 ## Limitations
 
-- The text layer is a small English lexicon plus letter rules (including `-tion`, `-sion` and `-ing`), not a full G2P model. Unusual words will be mispronounced.
+- The English text layer is a small lexicon plus letter rules (including `-tion`, `-sion` and `-ing`), not a full G2P model. IPA and X-SAMPA input avoid that layer entirely.
+- IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 

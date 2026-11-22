@@ -209,6 +209,94 @@ int main() {
     }
     std::remove(clampPath.c_str());
 
+    // The IPA front end is independent of English: every advertised symbol
+    // parses, including extensions and the full vowel chart.
+    const std::vector<std::string> symbols = ipaSymbols();
+    CHECK(symbols.size() >= 120);
+    for (const std::string &symbol : symbols) {
+        CHECK(!parseIpa(symbol).empty());
+    }
+    CHECK(contains(symbols, "\u0259"));
+    CHECK(contains(symbols, "\u0283"));
+    CHECK(contains(symbols, "\u0288"));
+    CHECK(contains(symbols, "\u2C71"));
+    CHECK(contains(symbols, "\u01C3"));
+
+    // Articulatory features drive formants: front vowels have a higher F2
+    // than back vowels, and open vowels have a higher F1 than close vowels.
+    const Phoneme closeFront = parseIpa("i").front();
+    const Phoneme openBack = parseIpa("\u0251").front();
+    CHECK(closeFront.bands[0].frequency < openBack.bands[0].frequency);
+    CHECK(closeFront.bands[1].frequency > openBack.bands[1].frequency);
+    CHECK(parseIpa("\u00F8").front().bands[1].frequency <
+          parseIpa("e").front().bands[1].frequency);
+
+    // Diacritics, length, stress, ties and tones all survive parsing.
+    CHECK(!parseIpa("z\u0325").front().voiced);
+    CHECK(parseIpa("s\u032C").front().voiced);
+    CHECK(parseIpa("\u014B\u030A").front().voiced == false);
+    CHECK(parseIpa("a\u02D0").front().duration >
+          parseIpa("a").front().duration);
+    CHECK(parseIpa("\u02C8a").front().amplitude > 1.0);
+    CHECK(parseIpa("t\u0361\u0283").size() == 2);
+    CHECK(parseIpa("\u02A7").size() == 2);
+    CHECK(parseIpa("a\u02E5\u02E9").front().pitchStart >
+          parseIpa("a\u02E5\u02E9").front().pitchEnd);
+    CHECK(parseIpa("a\u030C").front().pitchEnd >
+          parseIpa("a\u030C").front().pitchStart);
+    CHECK(parseIpa("p\u02BC").front().kind == PhonemeKind::Plosive);
+    CHECK(parseIpa("n\u0303").front().bands[1].amplitude <
+          parseIpa("n").front().bands[1].amplitude);
+    CHECK(parseIpa("e\u031E").front().bands[0].frequency >
+          parseIpa("e").front().bands[0].frequency);
+
+    // Suprasegmentals add pauses and do not swallow surrounding symbols.
+    const std::vector<Phoneme> phrase = parseIpa("/\u02C8h\u0259lo\u028A/");
+    CHECK(phrase.size() >= 4);
+    CHECK(phrase.front().amplitude > 1.0);
+    CHECK(parseIpa("a|b").size() == 3);
+    CHECK(parseIpa("a.b").size() == 3);
+    CHECK(parseIpa("a\u203Fb").size() == 2);
+
+    rejected = false;
+    try {
+        (void)parseIpa("a\uFFFF");
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    CHECK(rejected);
+
+    // X-SAMPA translates to the same articulatory representation.
+    CHECK(names(parseXsampa("h@")) == names(parseIpa("h\u0259")));
+    CHECK(parseXsampa("tS").size() == 2);
+    CHECK(parseXsampa("b_<").front().kind == PhonemeKind::Plosive);
+    CHECK(parseXsampa("k_>").front().duration > 0.0);
+    CHECK(parseXsampa("\"a").front().amplitude > 1.0);
+    CHECK(parseXsampa("e_o").front().bands[0].frequency >
+          parseXsampa("e").front().bands[0].frequency);
+    CHECK(parseXsampa("d_}").front().duration <
+          parseXsampa("d").front().duration);
+    CHECK(parseXsampa("a_R").front().pitchEnd >
+          parseXsampa("a_R").front().pitchStart);
+    rejected = false;
+    try {
+        (void)parseXsampa("a|b");
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    CHECK(!rejected);
+
+    const Voice ipaVoice = voicePreset("neutral");
+    CHECK(
+        synthesizeIpa("\u02C8h\u0259lo\u028A", ipaVoice, 22050) ==
+        Synthesizer(ipaVoice).render(parseIpa("\u02C8h\u0259lo\u028A"), 22050));
+    CHECK(synthesizeXsampa("h@", ipaVoice, 22050) ==
+          Synthesizer(ipaVoice).render(parseXsampa("h@"), 22050));
+    CHECK(peak(synthesizeIpa("a\u02E5\u02E9", ipaVoice, 22050)) > 0.2);
+
+    // The English paths remain byte-for-byte unchanged.
+    CHECK(names(phonemize("Hello, world.")) == hello);
+
     if (failures == 0) {
         std::cout << "All formant tests passed\n";
     }

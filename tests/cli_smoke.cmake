@@ -41,4 +41,40 @@ if(NOT wave STREQUAL "57415645")
     message(FATAL_ERROR "missing WAVE magic: ${wave}")
 endif()
 
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE ipa_result
+    ERROR_VARIABLE ipa_error
+)
+if(NOT ipa_result EQUAL 0)
+    message(FATAL_ERROR "formant CLI IPA render failed (${ipa_result}): ${ipa_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" ipa_size)
+if(ipa_size LESS 44)
+    message(FATAL_ERROR "IPA WAV output is too short: ${ipa_size} bytes")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --xsampa "h@" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE xsampa_result
+    ERROR_VARIABLE xsampa_error
+)
+if(NOT xsampa_result EQUAL 0)
+    message(FATAL_ERROR "formant CLI X-SAMPA render failed (${xsampa_result}): ${xsampa_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" xsampa_size)
+if(xsampa_size LESS 44)
+    message(FATAL_ERROR "X-SAMPA WAV output is too short: ${xsampa_size} bytes")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-ipa
+    RESULT_VARIABLE list_result
+    OUTPUT_VARIABLE ipa_symbols
+    ERROR_VARIABLE list_error
+)
+if(NOT list_result EQUAL 0 OR ipa_symbols STREQUAL "")
+    message(FATAL_ERROR "formant --list-ipa failed: ${list_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")
