@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-22
+
+### Changed
+
+- CI and Release workflows now use `actions/checkout@v7`, which targets the Node 24 runtime. This removes the Node 20 deprecation annotations and keeps the workflows compatible with current GitHub-hosted runners.
+
 ## [0.4.3] - 2026-11-22
 
 ### Fixed
