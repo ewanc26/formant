@@ -100,4 +100,32 @@ if(NOT precedence_result EQUAL 0)
     message(FATAL_ERROR "formant rejected --text with --ipa (${precedence_result}): ${precedence_error}")
 endif()
 
+# Non-finite numeric values are rejected instead of silently corrupting audio.
+foreach(bad_value nan inf infinity -inf)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa "a" --pitch "${bad_value}" --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE nonfinite_result
+        ERROR_VARIABLE nonfinite_error
+    )
+    if(nonfinite_result EQUAL 0)
+        message(FATAL_ERROR "formant accepted non-finite pitch '${bad_value}'")
+    endif()
+    if(NOT nonfinite_error MATCHES "invalid number for --pitch")
+        message(FATAL_ERROR "unexpected non-finite pitch message: ${nonfinite_error}")
+    endif()
+endforeach()
+foreach(bad_flag --gain --rate --formant-scale --attack --declination)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa "a" "${bad_flag}=nan" --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE nonfinite_result
+        ERROR_VARIABLE nonfinite_error
+    )
+    if(nonfinite_result EQUAL 0)
+        message(FATAL_ERROR "formant accepted non-finite value for ${bad_flag}")
+    endif()
+    if(NOT nonfinite_error MATCHES "invalid number for ${bad_flag}")
+        message(FATAL_ERROR "unexpected non-finite message for ${bad_flag}: ${nonfinite_error}")
+    endif()
+endforeach()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")
