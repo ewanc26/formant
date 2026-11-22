@@ -96,6 +96,9 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"or", {"or"}},
             {"our", {"aa", "r"}},
             {"say", {"s", "ay"}},
+            // sc is normally /s/ before e/i/y, but sceptic (unlike sceptre)
+            // keeps /sk/, so it needs an explicit entry.
+            {"sceptic", {"s", "k", "e", "p", "t", "i", "k"}},
             {"she", {"sh", "ee"}},
             {"sine", {"s", "ay", "n"}},
             {"sound", {"s", "ow", "n", "d"}},
@@ -269,6 +272,19 @@ std::vector<std::string> spellWord(std::string_view word) {
             (i == 0 || i + 2 == clean.size() ||
              (i + 3 == clean.size() && clean[i + 2] == 's'))) {
             result.push_back("n");
+            i += 2;
+            continue;
+        }
+
+        // sc before e, i or y is a single /s/ (scent, scene, science); the c
+        // is silent. Consume only the two letters so the following vowel is
+        // still handled normally. A third letter other than e/i/y is left to
+        // the generic rules, so sch-, scr-, sco- etc. stay /sk/ (school,
+        // screen, score). sceptic is handled by a lexicon entry above.
+        if (startsWith(clean, i, "sc") && i + 2 < clean.size() &&
+            (clean[i + 2] == 'e' || clean[i + 2] == 'i' ||
+             clean[i + 2] == 'y')) {
+            result.push_back("s");
             i += 2;
             continue;
         }
