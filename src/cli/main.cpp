@@ -242,8 +242,19 @@ int main(int argc, char **argv) {
     try {
         const Options options = parseOptions(argc, argv);
 
+        const int inputModes = static_cast<int>(options.usePhonemes) +
+                               static_cast<int>(options.useIpa) +
+                               static_cast<int>(options.useXsampa);
+        if (inputModes > 1) {
+            throw std::invalid_argument("use only one of --phonemes, --ipa or "
+                                        "--xsampa (each overrides --text and "
+                                        "--stdin)");
+        }
+
+        // A transcription mode replaces the text source, so never wait on
+        // stdin in that case even if --stdin was also supplied.
         std::string text = options.text;
-        if (options.useStdin) {
+        if (options.useStdin && inputModes == 0) {
             std::ostringstream buffer;
             buffer << std::cin.rdbuf();
             text = buffer.str();
@@ -255,14 +266,6 @@ int main(int argc, char **argv) {
                                         "and harmonics must not be negative");
         }
 
-        const int inputModes = static_cast<int>(options.usePhonemes) +
-                               static_cast<int>(options.useIpa) +
-                               static_cast<int>(options.useXsampa);
-        if (inputModes > 1) {
-            throw std::invalid_argument("use only one of --phonemes, --ipa or "
-                                        "--xsampa (each overrides --text and "
-                                        "--stdin)");
-        }
         const std::vector<formant::Phoneme> phonemes =
             options.usePhonemes ? formant::parsePhonemes(options.phonemes)
             : options.useIpa    ? formant::parseIpa(options.ipa)

@@ -100,6 +100,19 @@ if(NOT precedence_result EQUAL 0)
     message(FATAL_ERROR "formant rejected --text with --ipa (${precedence_result}): ${precedence_error}")
 endif()
 
+# --stdin must be ignored when a transcription mode supplies the phonemes.
+# An endless stdin source terminates via SIGPIPE only if the CLI never drains
+# it; the buggy version blocks reading it until the CMake timeout kills it.
+execute_process(
+    COMMAND sh -c "yes | \"${FORMANT_CLI}\" --ipa a --stdin --output \"${FORMANT_OUTPUT}\""
+    RESULT_VARIABLE stdin_result
+    ERROR_VARIABLE stdin_error
+    TIMEOUT 10
+)
+if(NOT stdin_result EQUAL 0)
+    message(FATAL_ERROR "formant waited on stdin despite --ipa override (${stdin_result}): ${stdin_error}")
+endif()
+
 # Non-finite numeric values are rejected instead of silently corrupting audio.
 foreach(bad_value nan inf infinity -inf)
     execute_process(
