@@ -278,6 +278,11 @@ std::vector<std::string> spellWord(std::string_view word) {
             {"ing", "i", "ng"},
             {"th", "th"},
             {"sh", "sh"},
+            // tch is a trigraph for a single /tʃ/ (catch, kitchen); the t is
+            // silent. It must precede ch so the longer sequence matches first.
+            // Plain ch words (rich, which) do not contain tch and are
+            // unaffected.
+            {"tch", "ch"},
             {"ch", "ch"},
             // ck is a single /k/ (back, quick); without this rule the generic
             // c and k letter rules emit two separate stops.
