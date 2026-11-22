@@ -275,6 +275,30 @@ int main() {
     CHECK(names(phonemize("rich")) ==
           std::vector<std::string>({"r", "i", "ch"}));
 
+    // The g in gn is silent word-initially and word-finally (including
+    // plural -s), so gnome renders as [n o m] rather than [g n o m].
+    // Medial gn is a real /g/ + /n/ cluster (signal, magnet, signature).
+    CHECK(names(phonemize("gnome")) ==
+          std::vector<std::string>({"n", "o", "m"}));
+    CHECK(names(phonemize("gnat")) ==
+          std::vector<std::string>({"n", "a", "t"}));
+    CHECK(names(phonemize("gnaw")) ==
+          std::vector<std::string>({"n", "a", "w"}));
+    CHECK(names(phonemize("sign")) ==
+          std::vector<std::string>({"s", "i", "n"}));
+    CHECK(names(phonemize("signs")) ==
+          std::vector<std::string>({"s", "i", "n", "s"}));
+    CHECK(names(phonemize("design")).back() == "n");
+    CHECK(names(phonemize("campaign")).back() == "n");
+    CHECK(names(phonemize("campaigns")).back() == "s");
+    CHECK(names(phonemize("signal")) ==
+          std::vector<std::string>({"s", "i", "g", "n", "a", "l"}));
+    CHECK(names(phonemize("magnet"))[2] == "g");
+    CHECK(names(phonemize("signature"))[2] == "g");
+    // Previous silent-letter and trigraph fixes stay correct.
+    CHECK(names(phonemize("knee")).front() == "n");
+    CHECK(names(phonemize("bomb")).back() == "m");
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));
