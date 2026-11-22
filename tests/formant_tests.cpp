@@ -171,6 +171,16 @@ int main() {
     CHECK(littleEndian32(header, 40) == 2000);
     CHECK(littleEndian32(header, 4) == 36 + 2000);
 
+    // The RIFF chunk size stores 36 + dataBytes, so data sizes that would
+    // overflow that field must be rejected rather than wrapping the header.
+    bool riffOverflowRejected = false;
+    try {
+        (void)wavHeader(0x7fffffffull, 44100);
+    } catch (const std::invalid_argument &) {
+        riffOverflowRejected = true;
+    }
+    CHECK(riffOverflowRejected);
+
     const std::string path = "formant_test_output.wav";
     writeWav(path, first, 22050);
     FILE *file = std::fopen(path.c_str(), "rb");

@@ -25,7 +25,10 @@ std::vector<uint8_t> wavHeader(size_t sampleCount, int sampleRate) {
         throw std::invalid_argument("sample rate must be positive");
     }
     const uint64_t bytes64 = static_cast<uint64_t>(sampleCount) * 2u;
-    if (bytes64 > 0xffffffffull) {
+    // The RIFF chunk size stores 36 + dataBytes, so the data itself must
+    // leave room for the 36 bytes of header fields that follow the size.
+    constexpr uint64_t maxDataBytes = 0xffffffffull - 36ull;
+    if (bytes64 > maxDataBytes) {
         throw std::invalid_argument(
             "audio data is too large for a 32-bit WAV header");
     }
