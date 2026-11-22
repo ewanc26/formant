@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.19] - 2026-11-22
+
+### Fixed
+
+- IPA and X-SAMPA diacritics written after a suprasegmental (for example `aː̃`) now modify their own base rather than being applied to the following segment or dropped at end of input. Modifier order no longer changes audio duration (e.g. `a_X:` and `a:_X` now match).
+
 ## [0.4.18] - 2026-11-22
 
 ### Fixed

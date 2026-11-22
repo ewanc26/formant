@@ -403,6 +403,31 @@ int main() {
     CHECK(parseIpa("e\u031E").front().bands[0].frequency >
           parseIpa("e").front().bands[0].frequency);
 
+    // A diacritic written after a suprasegmental still qualifies its own base.
+    // Previously it became a prefix for the next segment, or was dropped at
+    // end of input, so order relative to the length mark changed the audio.
+    const Phoneme lateNasal = parseIpa("a\u02D0\u0303").front();
+    CHECK(lateNasal.duration == parseIpa("a\u02D0").front().duration);
+    CHECK(lateNasal.bands[1].amplitude <
+          parseIpa("a\u02D0").front().bands[1].amplitude);
+    CHECK(lateNasal.bands[1].amplitude ==
+          parseIpa("a\u0303\u02D0").front().bands[1].amplitude);
+    const auto nasalFirst = parseIpa("a\u02D0\u0303b");
+    CHECK(nasalFirst.size() == 2);
+    CHECK(nasalFirst[0].bands[1].amplitude <
+          parseIpa("a\u02D0").front().bands[1].amplitude);
+    CHECK(nasalFirst[1].bands[1].amplitude ==
+          parseIpa("b").front().bands[1].amplitude);
+    const auto nasalSecond = parseIpa("a\u02D0b\u0303");
+    CHECK(nasalSecond.size() == 2);
+    CHECK(nasalSecond[0].bands[1].amplitude ==
+          parseIpa("a\u02D0").front().bands[1].amplitude);
+    CHECK(nasalSecond[1].bands[1].amplitude <
+          parseIpa("b").front().bands[1].amplitude);
+    CHECK(!parseIpa("a\u02D0\u0325").front().voiced);
+    CHECK(parseXsampa("a_X:").front().duration ==
+          parseXsampa("a:_X").front().duration);
+
     // An affricate ligature is one consonant with two articulatory components,
     // so a diacritic qualifies the whole symbol rather than only its release.
     // The tie-bar spelling of the same affricate keeps applying the diacritic
