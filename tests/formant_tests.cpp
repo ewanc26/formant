@@ -322,6 +322,18 @@ int main() {
     CHECK(names(parseXsampa("t_s\\")) == names(parseXsampa("ts\\")));
     CHECK(names(parseXsampa("d_K\\")) == names(parseXsampa("dK\\")));
 
+    // _r is the raised diacritic (U+031D), not the global-rise arrow: it
+    // raises vowel height (lowering F1) in the opposite direction to _o.
+    const Phoneme xsampaRaised = parseXsampa("a_r").front();
+    CHECK(xsampaRaised.name == parseIpa("a\u031D").front().name);
+    CHECK(xsampaRaised.bands[0].frequency <
+          parseXsampa("a").front().bands[0].frequency);
+    CHECK(xsampaRaised.bands[0].frequency <
+          parseXsampa("a_o").front().bands[0].frequency);
+    CHECK(xsampaRaised.pitchStart == parseXsampa("a").front().pitchStart);
+    CHECK(xsampaRaised.pitchEnd == parseXsampa("a").front().pitchEnd);
+    CHECK(names(parseXsampa("a<R>")) != names(parseXsampa("a_r")));
+
     rejected = false;
     try {
         (void)parseXsampa("a|b");
