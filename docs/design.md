@@ -20,7 +20,8 @@ Three things are interpolated or enveloped to remove discontinuities:
 
 1. **Formant targets** — a 35 ms crossfade from the previous phoneme's bands to the current one.
 2. **Voicing** — the voiced/unvoiced mix crossfades over the same window.
-3. **Amplitude** — per-phoneme attack and release, with shorter values for plosives.
+3. **Diphthongs** — `ay`, `oy`, `ow`, `oi` and `eye` store a second band set and glide from it across the phoneme, rather than holding one static vowel.
+4. **Amplitude** — per-phoneme attack and release, with shorter values for plosives.
 
 The harmonic phase is a single accumulator across the whole utterance, so pitch changes do not reset the waveform.
 
@@ -30,12 +31,11 @@ Pitch drifts down slightly across a phrase, as it does in natural speech. A trai
 
 ## Data model
 
-`Voice` holds synthesis parameters only. Presets are functions that return a filled struct; there is no inheritance and no global state. `Phoneme` holds a name, a kind, four bands, a duration and a voicing flag. Both are plain data, so a caller can build their own.
+`Voice` holds synthesis parameters only. Presets are functions that return a filled struct; there is no inheritance and no global state. `Phoneme` holds a name, a kind, four bands, a duration and a voicing flag. Diphthongs additionally carry a second band set and a `hasEndBands` flag. Both are plain data, so a caller can build their own.
 
 ## Possible extensions
 
 - A larger lexicon or an external pronunciation file.
-- Diphthongs as two formant targets inside one phoneme.
 - Stereo and streaming output.
 - Real-time playback adapters (Core Audio, PipeWire, SDL).
 - Per-phoneme overrides in a voice file.

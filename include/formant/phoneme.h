@@ -31,6 +31,11 @@ struct Phoneme {
     double duration = 0.1; // seconds at rate 1.0
     bool voiced = false;
     bool pitchRise = false; // marks a question-like final contour
+
+    // Diphthongs move from bands to endBands across the phoneme. For other
+    // sounds endBands is unused and hasEndBands stays false.
+    std::array<FormantBand, 4> endBands{};
+    bool hasEndBands = false;
 };
 
 // The built-in phoneme inventory, in a stable order.

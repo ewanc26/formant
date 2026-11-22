@@ -136,7 +136,7 @@ The suite covers voice presets, text-to-phoneme conversion, bracket parsing, det
 
 ## Limitations
 
-- The text layer is a small English lexicon plus letter rules, not a full G2P model. Unusual words will be mispronounced.
+- The text layer is a small English lexicon plus letter rules (including `-tion`, `-sion` and `-ing`), not a full G2P model. Unusual words will be mispronounced.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
