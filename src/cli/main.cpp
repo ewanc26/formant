@@ -27,9 +27,12 @@ Options:
   --text "words"          Text to speak (default: "Hello, world.")
   --stdin                 Read the text to speak from standard input
   --phonemes "[h ee l o]" Speak a bracketed phoneme sequence instead of text
+  --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
+  --xsampa "h@"           Speak an X-SAMPA transcription instead of text
   --voice NAME            Built-in voice: neutral, alto, bass, child, robot, whisper
   --list-voices           List available voices and exit
   --list-phonemes         List available phonemes and exit
+  --list-ipa              List recognised IPA symbols and exit
   --output FILE           WAV output path (default: output.wav)
   --sample-rate HZ        PCM sample rate (default: 44100, minimum: 8000)
   --pitch HZ              Fundamental frequency; 0 disables voicing
@@ -68,6 +71,12 @@ void listPhonemes() {
     }
 }
 
+void listIpa() {
+    for (const std::string &symbol : formant::ipaSymbols()) {
+        std::cout << symbol << "\n";
+    }
+}
+
 double number(const std::string &flag, const std::string &value) {
     try {
         size_t used = 0;
@@ -95,9 +104,13 @@ struct Options {
     Voice voice = voicePreset("neutral");
     std::string text = "Hello, world.";
     std::string phonemes;
+    std::string ipa;
+    std::string xsampa;
     std::string output = "output.wav";
     int sampleRate = 44100;
     bool usePhonemes = false;
+    bool useIpa = false;
+    bool useXsampa = false;
     bool useStdin = false;
 };
 
@@ -140,6 +153,10 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-phonemes") {
             listPhonemes();
+            std::exit(0);
+        }
+        if (arg == "--list-ipa") {
+            listIpa();
             std::exit(0);
         }
         if (arg == "--stdin") {
@@ -186,6 +203,12 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--phonemes" || arg.rfind("--phonemes=", 0) == 0) {
             options.phonemes = takeValue(i, argc, argv, "--phonemes");
             options.usePhonemes = true;
+        } else if (arg == "--ipa" || arg.rfind("--ipa=", 0) == 0) {
+            options.ipa = takeValue(i, argc, argv, "--ipa");
+            options.useIpa = true;
+        } else if (arg == "--xsampa" || arg.rfind("--xsampa=", 0) == 0) {
+            options.xsampa = takeValue(i, argc, argv, "--xsampa");
+            options.useXsampa = true;
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             options.voice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
@@ -223,8 +246,17 @@ int main(int argc, char **argv) {
                                         "and harmonics must not be negative");
         }
 
+        const int inputModes = static_cast<int>(options.usePhonemes) +
+                               static_cast<int>(options.useIpa) +
+                               static_cast<int>(options.useXsampa);
+        if (inputModes > 1) {
+            throw std::invalid_argument("use only one of --text/--stdin, "
+                                        "--phonemes, --ipa or --xsampa");
+        }
         const std::vector<formant::Phoneme> phonemes =
             options.usePhonemes ? formant::parsePhonemes(options.phonemes)
+            : options.useIpa    ? formant::parseIpa(options.ipa)
+            : options.useXsampa ? formant::parseXsampa(options.xsampa)
                                 : formant::phonemize(text);
         const std::vector<float> samples =
             formant::Synthesizer(options.voice)

@@ -36,6 +36,12 @@ struct Phoneme {
     // sounds endBands is unused and hasEndBands stays false.
     std::array<FormantBand, 4> endBands{};
     bool hasEndBands = false;
+
+    // Prosody, primarily set by the IPA front end. 1.0 is neutral.
+    // pitchStart/pitchEnd describe a linear F0 contour across the segment.
+    double amplitude = 1.0;
+    double pitchStart = 1.0;
+    double pitchEnd = 1.0;
 };
 
 // The built-in phoneme inventory, in a stable order.

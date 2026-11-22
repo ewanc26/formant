@@ -192,7 +192,10 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
             const double progress =
                 static_cast<double>(s) / static_cast<double>(totalSamples);
             double fundamental =
-                voice_.pitch * (1.0 - voice_.declination * progress);
+                voice_.pitch * (1.0 - voice_.declination * progress) *
+                (phoneme.pitchStart + (phoneme.pitchEnd - phoneme.pitchStart) *
+                                          (static_cast<double>(elapsed) /
+                                           static_cast<double>(length)));
             if (rising && s >= riseStart) {
                 const double riseProgress =
                     static_cast<double>(s - riseStart) /
@@ -242,7 +245,7 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
             }
 
             output[static_cast<size_t>(s)] =
-                static_cast<float>(voice_.gain * envelope *
+                static_cast<float>(voice_.gain * envelope * phoneme.amplitude *
                                    (voicedMix * voiced + noiseMix * noise));
         }
     }

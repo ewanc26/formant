@@ -29,13 +29,17 @@ The harmonic phase is a single accumulator across the whole utterance, so pitch 
 
 Pitch drifts down slightly across a phrase, as it does in natural speech. A trailing `?` raises the final half-second of pitch. Vibrato is applied in cents, so it scales with the chosen fundamental.
 
+IPA input adds per-segment `amplitude`, `pitchStart` and `pitchEnd`. Primary and secondary stress change amplitude, duration and F0 slightly; vowel length scales duration; tone letters and tone diacritics set a linear F0 contour across the segment. The global rise symbol applies the same final-half rise as `?`.
+
 ## Data model
 
-`Voice` holds synthesis parameters only. Presets are functions that return a filled struct; there is no inheritance and no global state. `Phoneme` holds a name, a kind, four bands, a duration and a voicing flag. Diphthongs additionally carry a second band set and a `hasEndBands` flag. Both are plain data, so a caller can build their own.
+`Voice` holds synthesis parameters only. Presets are functions that return a filled struct; there is no inheritance and no global state. `Phoneme` holds a name, a kind, four bands, a duration, a voicing flag and optional prosody (`amplitude`, `pitchStart`, `pitchEnd`). Diphthongs additionally carry a second band set and a `hasEndBands` flag. Both are plain data, so a caller can build their own.
+
+IPA and X-SAMPA are parallel *front ends*, not a second synthesis path. `src/ipa.cpp` decodes UTF-8, maps each base letter to articulatory features (manner, place, height, backness, rounding), applies diacritics and suprasegmentals, then emits the same `Phoneme` struct used by the English lexicon. Vowel height maps inversely to F1; frontness maps to F2; rounding lowers F2. Consonants take four place-specific resonance centres and a manner-specific amplitude profile. This keeps the "formant data in the phoneme table" rule: the synthesiser still only sees four bands.
 
 ## Possible extensions
 
-- A larger lexicon or an external pronunciation file.
+- A larger English lexicon or an external pronunciation file.
 - Stereo and streaming output.
 - Real-time playback adapters (Core Audio, PipeWire, SDL).
 - Per-phoneme overrides in a voice file.
