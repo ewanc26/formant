@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-11-22
+
+### Fixed
+
+- The CLI now rejects non-finite numeric values such as `nan`, `inf`, `infinity` and `-inf` for every numeric option instead of silently rendering corrupted or silent audio.
+
 ## [0.4.6] - 2026-11-22
 
 ### Fixed

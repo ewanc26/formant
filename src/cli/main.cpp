@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -83,6 +84,9 @@ double number(const std::string &flag, const std::string &value) {
         const double result = std::stod(value, &used);
         if (used != value.size()) {
             throw std::invalid_argument("trailing characters");
+        }
+        if (!std::isfinite(result)) {
+            throw std::invalid_argument("non-finite value");
         }
         return result;
     } catch (const std::exception &) {
