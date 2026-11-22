@@ -239,6 +239,17 @@ std::vector<std::string> spellWord(std::string_view word) {
             continue;
         }
 
+        // A word-initial sch is the Greek /sk/ (school, scheme, scholar).
+        // The same letters medially are s + ch (/stʃ/ as in mischief,
+        // discharge) and are left to the generic ch rule, so only the initial
+        // cluster is collapsed here.
+        if (i == 0 && startsWith(clean, i, "sch")) {
+            result.push_back("s");
+            result.push_back("k");
+            i += 3;
+            continue;
+        }
+
         // The b in a word-final mb cluster is silent (bomb, thumb, lamb, and
         // their plurals). A medial mb as in number or timber keeps its /b/,
         // so only the final cluster may collapse to /m/.

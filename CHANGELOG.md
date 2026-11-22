@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.32] - 2026-11-22
+
+### Fixed
+
+- English G2P now maps word-initial `sch` to /s/ + /k/ for Greek-derived words (`school` -> `[s k oo l]`, `scheme` -> `[s k ee m]`). It previously produced the affricate /tʃ/, rendering `school` byte-identically to `[s ch oo l]`. Medial `sch` in words like `mischief` and `discharge` remains /stʃ/, which is correct.
+
 ## [0.4.31] - 2026-11-22
 
 ### Fixed
