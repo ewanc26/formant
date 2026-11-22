@@ -832,25 +832,50 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
     Prosody pending;
     bool havePending = false;
     std::vector<uint32_t> pendingModifiers;
-    size_t i = 0;
+
+    // The base most recently emitted into result. Suprasegmentals and late
+    // diacritics update this state so a modifier written after a length mark
+    // still qualifies its own base instead of becoming a prefix for the next.
+    struct LastBase {
+        bool valid = false;
+        std::vector<Sound> sounds;
+        Prosody prosody;
+        std::string name;
+        size_t begin = 0;
+        bool tieNext = false;
+    } last;
+
+    auto regenerateLast = [&]() {
+        if (!last.valid) {
+            return;
+        }
+        for (size_t index = 0; index < last.sounds.size(); ++index) {
+            Sound sound = last.sounds[index];
+            if (last.tieNext && index + 1 == last.sounds.size()) {
+                sound.duration *= 0.55;
+            }
+            result[last.begin + index] =
+                makePhoneme(sound, last.name, last.prosody);
+        }
+    };
 
     // Strip transcription delimiters when the whole string is wrapped.
-    size_t first = 0;
-    size_t last = points.size();
-    while (first < last && isSpace(points[first])) {
-        ++first;
+    size_t start = 0;
+    size_t stop = points.size();
+    while (start < stop && isSpace(points[start])) {
+        ++start;
     }
-    while (last > first && isSpace(points[last - 1])) {
-        --last;
+    while (stop > start && isSpace(points[stop - 1])) {
+        --stop;
     }
-    if (last - first >= 2 &&
-        ((points[first] == '/' && points[last - 1] == '/') ||
-         (points[first] == '[' && points[last - 1] == ']'))) {
-        ++first;
-        --last;
+    if (stop - start >= 2 &&
+        ((points[start] == '/' && points[stop - 1] == '/') ||
+         (points[start] == '[' && points[stop - 1] == ']'))) {
+        ++start;
+        --stop;
     }
 
-    for (i = first; i < last;) {
+    for (size_t i = start; i < stop;) {
         const uint32_t cp = points[i];
         if (isSpace(cp)) {
             ++i;
@@ -864,46 +889,44 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
             pending.pitchStart = cp == 0x02C8 ? 1.06 : 1.02;
             pending.pitchEnd = cp == 0x02C8 ? 1.06 : 1.02;
             havePending = true;
+            last.valid = false;
             ++i;
             continue;
         }
 
         if (isSuprasegmental(cp)) {
             if (cp == 0x02D0 || cp == 0x02D1) { // length follows its segment
-                if (!result.empty()) {
-                    result.back().duration *= cp == 0x02D0 ? 1.80 : 1.40;
+                if (last.valid) {
+                    last.prosody.duration *= cp == 0x02D0 ? 1.80 : 1.40;
+                    regenerateLast();
                 }
-            } else if (cp == '|') {
+            } else if (cp == '|' || cp == 0x2016 || cp == '.') {
                 Phoneme pause;
-                pause.name = "|";
+                pause.name = cp == '|' ? "|" : (cp == 0x2016 ? "‖" : ".");
                 pause.kind = PhonemeKind::Silence;
-                pause.duration = 0.12;
+                pause.duration =
+                    cp == '|' ? 0.12 : (cp == 0x2016 ? 0.28 : 0.06);
                 result.push_back(pause);
-            } else if (cp == 0x2016) {
-                Phoneme pause;
-                pause.name = "‖";
-                pause.kind = PhonemeKind::Silence;
-                pause.duration = 0.28;
-                result.push_back(pause);
-            } else if (cp == '.') {
-                Phoneme pause;
-                pause.name = ".";
-                pause.kind = PhonemeKind::Silence;
-                pause.duration = 0.06;
-                result.push_back(pause);
+                last.valid = false;
             } else if (cp == 0x2197) {
                 for (Phoneme &phoneme : result) {
                     phoneme.pitchRise = true;
                 }
+                if (last.valid) {
+                    last.prosody.pitchRise = true;
+                    regenerateLast();
+                }
             } else if (cp == 0x2198) {
-                if (!result.empty()) {
-                    result.back().pitchEnd *= 0.80;
+                if (last.valid) {
+                    last.prosody.pitchEnd *= 0.80;
+                    regenerateLast();
                 }
             } else if (cp == 0xA71B || cp == 0xA71C) {
-                const double shift = cp == 0xA71B ? 1.12 : 0.88;
-                if (!result.empty()) {
-                    result.back().pitchStart *= shift;
-                    result.back().pitchEnd *= shift;
+                if (last.valid) {
+                    const double shift = cp == 0xA71B ? 1.12 : 0.88;
+                    last.prosody.pitchStart *= shift;
+                    last.prosody.pitchEnd *= shift;
+                    regenerateLast();
                 }
             }
             // 0x203F (linking) deliberately adds no pause.
@@ -911,12 +934,39 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
             continue;
         }
 
-        // Modifiers without a preceding base attach to the next segment.
-        // X-SAMPA allows prefix forms such as 'a (palatalized a).
         if (isModifier(cp)) {
-            while (i < last && isModifier(points[i])) {
-                pendingModifiers.push_back(points[i]);
-                ++i;
+            while (i < stop && isModifier(points[i])) {
+                if (last.valid) {
+                    const uint32_t mod = points[i];
+                    if (mod == 0x0361 || mod == 0x035C) {
+                        last.tieNext = true;
+                        regenerateLast();
+                        ++i;
+                        continue;
+                    }
+                    if (isToneBar(mod)) {
+                        const double firstLevel = toneLevel(mod);
+                        double lastLevel = firstLevel;
+                        std::string suffix;
+                        while (i < stop && isToneBar(points[i])) {
+                            suffix += encodeUtf8(points[i]);
+                            lastLevel = toneLevel(points[i]);
+                            ++i;
+                        }
+                        setContour(last.prosody, firstLevel, lastLevel);
+                        last.name += suffix;
+                        regenerateLast();
+                        continue;
+                    }
+                    applyDiacritic(mod, last.sounds, last.prosody);
+                    last.name += encodeUtf8(mod);
+                    ++i;
+                    regenerateLast();
+                } else {
+                    // Only a genuine prefix (before any base) is deferred.
+                    pendingModifiers.push_back(points[i]);
+                    ++i;
+                }
             }
             continue;
         }
@@ -946,27 +996,12 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
         }
         pendingModifiers.clear();
 
-        while (i < last && isModifier(points[i])) {
-            const uint32_t mod = points[i];
-            if (mod == 0x0361 || mod == 0x035C) {
-                tieNext = true;
-                ++i;
-                continue;
-            }
-            if (isToneBar(mod)) {
-                const size_t runStart = i;
-                while (i < last && isToneBar(points[i])) {
-                    name += encodeUtf8(points[i]);
-                    ++i;
-                }
-                setContour(prosody, toneLevel(points[runStart]),
-                           toneLevel(points[i - 1]));
-                continue;
-            }
-            applyDiacritic(mod, sounds, prosody);
-            name += encodeUtf8(mod);
-            ++i;
-        }
+        last.valid = true;
+        last.begin = result.size();
+        last.sounds = sounds;
+        last.prosody = prosody;
+        last.name = name;
+        last.tieNext = tieNext;
 
         for (size_t index = 0; index < sounds.size(); ++index) {
             Sound sound = sounds[index];
@@ -976,19 +1011,22 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
             result.push_back(makePhoneme(sound, name, prosody));
         }
     }
-    if (!pendingModifiers.empty() && !result.empty()) {
-        Phoneme &last = result.back();
-        Prosody trailing;
-        trailing.pitchStart = last.pitchStart;
-        trailing.pitchEnd = last.pitchEnd;
-        trailing.pitchRise = last.pitchRise;
-        Sound ignored;
+
+    if (last.valid) {
+        // A prefix modifier with no following base still belongs to the last
+        // base; apply all of its fields rather than only pitch as before.
         for (const uint32_t mod : pendingModifiers) {
-            applyModifier(ignored, trailing, mod);
+            if (mod == 0x0361 || mod == 0x035C) {
+                last.tieNext = true;
+            } else if (isToneBar(mod)) {
+                setContour(last.prosody, toneLevel(mod), toneLevel(mod));
+            } else {
+                applyDiacritic(mod, last.sounds, last.prosody);
+            }
+            last.name = encodeUtf8(mod) + last.name;
         }
-        last.pitchStart = trailing.pitchStart;
-        last.pitchEnd = trailing.pitchEnd;
-        last.pitchRise = trailing.pitchRise;
+        pendingModifiers.clear();
+        regenerateLast();
     }
     return result;
 }
