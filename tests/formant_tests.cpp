@@ -215,12 +215,24 @@ int main() {
     CHECK(symbols.size() >= 120);
     for (const std::string &symbol : symbols) {
         CHECK(!parseIpa(symbol).empty());
+        // The parser consumes one code point at a time, so a multi-codepoint
+        // base entry could never match and would only be a dead list entry.
+        size_t leadingBytes = 0;
+        for (unsigned char byte : symbol) {
+            if ((byte & 0xC0u) != 0x80u) {
+                ++leadingBytes;
+            }
+        }
+        CHECK(leadingBytes == 1);
     }
     CHECK(contains(symbols, "\u0259"));
     CHECK(contains(symbols, "\u0283"));
     CHECK(contains(symbols, "\u0288"));
     CHECK(contains(symbols, "\u2C71"));
     CHECK(contains(symbols, "\u01C3"));
+    CHECK(contains(symbols, "\u1D7B"));
+    CHECK(contains(symbols, "\u1D7F"));
+    CHECK(!contains(symbols, "\u1D57"));
 
     // Articulatory features drive formants: front vowels have a higher F2
     // than back vowels, and open vowels have a higher F1 than close vowels.
@@ -278,6 +290,17 @@ int main() {
           parseXsampa("d").front().duration);
     CHECK(parseXsampa("a_R").front().pitchEnd >
           parseXsampa("a_R").front().pitchStart);
+
+    // Non-IPA near-close central vowels use the standard X-SAMPA aliases.
+    CHECK(names(parseXsampa("I\\")) == names(parseIpa("\u1D7B")));
+    CHECK(names(parseXsampa("U\\")) == names(parseIpa("\u1D7F")));
+    CHECK(parseXsampa("I\\").front().bands[1].frequency <
+          parseXsampa("I").front().bands[1].frequency);
+    CHECK(parseXsampa("U\\").front().bands[1].frequency >
+          parseXsampa("U").front().bands[1].frequency);
+    CHECK(parseXsampa("U\\").front().bands[1].frequency <
+          parseXsampa("I\\").front().bands[1].frequency);
+
     rejected = false;
     try {
         (void)parseXsampa("a|b");
