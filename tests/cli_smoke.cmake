@@ -194,4 +194,33 @@ if(NOT subsonic_result EQUAL 0)
     message(FATAL_ERROR "formant hung or failed on a near-zero fundamental (${subsonic_result}): ${subsonic_error}")
 endif()
 
+# A standalone comma is the documented pause phoneme, not a separator to be
+# discarded. It must add 0.12 s of silence, while an attached comma still acts
+# only as a separator. Compare sample counts read from the WAV data header.
+function(formant_sample_count spec out_var)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "${spec}" --voice robot
+            --sample-rate 8000 --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE comma_result
+        ERROR_VARIABLE comma_error
+    )
+    if(NOT comma_result EQUAL 0)
+        message(FATAL_ERROR "formant failed for '${spec}': ${comma_error}")
+    endif()
+    file(SIZE "${FORMANT_OUTPUT}" wav_bytes)
+    math(EXPR samples "${wav_bytes} / 2 - 22")
+    set(${out_var} ${samples} PARENT_SCOPE)
+endfunction()
+formant_sample_count("[a b]" plain_samples)
+formant_sample_count("[a , b]" comma_samples)
+formant_sample_count("[a, b]" separator_samples)
+# 0.12 s at 8000 Hz is 960 samples; allow small envelope rounding.
+math(EXPR comma_delta "${comma_samples} - ${plain_samples}")
+if(comma_delta LESS 900)
+    message(FATAL_ERROR "standalone comma did not add a pause: ${plain_samples} vs ${comma_samples}")
+endif()
+if(NOT separator_samples EQUAL plain_samples)
+    message(FATAL_ERROR "attached comma changed the phoneme sequence: ${plain_samples} vs ${separator_samples}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

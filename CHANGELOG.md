@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.20] - 2026-11-22
+
+### Fixed
+
+- A standalone `,` token in a bracketed phoneme sequence (for example `[h ee l o , w er l d .]`) is no longer discarded, so the documented comma pause is rendered. A comma attached to a phoneme name (for example `[a, b]`) still acts only as a separator.
+
 ## [0.4.19] - 2026-11-22
 
 ### Fixed
