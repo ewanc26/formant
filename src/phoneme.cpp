@@ -414,6 +414,10 @@ const std::vector<Phoneme> &phonemeTable() {
         phone("?", PhonemeKind::Silence, false, 0.30,
               {band(0, 0, 1), band(0, 0, 1), band(0, 0, 1), band(0, 0, 1)},
               true),
+        // An exclamation keeps the same punctuation pause but has no final
+        // pitch rise: that contour belongs to questions only.
+        phone("!", PhonemeKind::Silence, false, 0.30,
+              {band(0, 0, 1), band(0, 0, 1), band(0, 0, 1), band(0, 0, 1)}),
 
         phone("a", PhonemeKind::Voiced, true, 0.14,
               {band(660, 1.0, 110), band(1720, 0.55, 120),
@@ -588,8 +592,10 @@ std::vector<Phoneme> phonemize(std::string_view text) {
         flush();
         if (c == ',') {
             result.push_back(*findPhoneme(","));
-        } else if (c == '?' || c == '!') {
+        } else if (c == '?') {
             result.push_back(*findPhoneme("?"));
+        } else if (c == '!') {
+            result.push_back(*findPhoneme("!"));
         } else if (c == '.' || c == ';' || c == ':') {
             result.push_back(*findPhoneme("."));
         }

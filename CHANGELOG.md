@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.30] - 2026-11-22
+
+### Fixed
+
+- An exclamation mark no longer receives the question-style final pitch rise. `!` now maps to a distinct silence phoneme with the same 0.30 s pause as `?` but without `pitchRise`, so `hello!` renders differently from `hello?` while questions keep their rising contour.
+
 ## [0.4.29] - 2026-11-22
 
 ### Fixed

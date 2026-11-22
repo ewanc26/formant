@@ -86,6 +86,19 @@ int main() {
     CHECK(contains(hello, "d"));
     CHECK(contains(names(phonemize("Formant is a voice engine?")), "?"));
 
+    // A question mark carries the final pitch rise, but an exclamation mark
+    // does not. The two used to share the '?' phoneme, so hello! rendered
+    // byte-identically to hello? including the rising contour.
+    const auto question = phonemize("hello?");
+    const auto exclamation = phonemize("hello!");
+    CHECK(question.back().name == "?");
+    CHECK(question.back().pitchRise);
+    CHECK(exclamation.back().name == "!");
+    CHECK(!exclamation.back().pitchRise);
+    CHECK(exclamation.back().duration == question.back().duration);
+    CHECK(question.back().kind == PhonemeKind::Silence);
+    CHECK(exclamation.back().kind == PhonemeKind::Silence);
+
     // Suffix rules apply to words outside the small lexicon.
     const std::vector<std::string> nation = names(phonemize("nation"));
     CHECK(contains(nation, "sh"));
