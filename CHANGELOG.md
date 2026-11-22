@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.26] - 2026-11-22
+
+### Fixed
+
+- `render()` now returns exactly `round(total phoneme duration * sampleRate / rate)` samples for multi-phoneme sequences. Previously each phoneme's length was rounded independently, so the total drifted by up to one sample per segment (e.g. `[t e s t]` at 44.1 kHz returned 12790 instead of 12789). Cumulative boundaries now match the documented contract at all supported sample rates and speaking rates.
+
 ## [0.4.25] - 2026-11-22
 
 ### Fixed

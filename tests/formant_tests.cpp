@@ -337,6 +337,39 @@ int main() {
         CHECK(slowSamples.size() == normalSamples.size() * 20);
     }
 
+    // The contract covers the WHOLE sequence. Rounding each phoneme in
+    // isolation made the total drift by up to one sample per segment, so
+    // [t e s t] at 44.1 kHz returned 12790 instead of the promised 12789.
+    {
+        const std::vector<Phoneme> phrase = parsePhonemes("[t e s t]");
+        CHECK(phrase.size() == 4);
+        double total = 0.0;
+        for (const Phoneme &p : phrase) {
+            total += p.duration;
+        }
+        for (int sr : {8000, 22050, 44100}) {
+            for (double speakingRate : {1.0, 0.7, 1.3}) {
+                Voice v = voice;
+                v.rate = speakingRate;
+                const size_t expected = static_cast<size_t>(
+                    std::llround(total * sr / speakingRate));
+                CHECK(Synthesizer(v).render(phrase, sr).size() == expected);
+            }
+        }
+    }
+    {
+        // Accumulated drift is largest for long sequences of short segments.
+        const Phoneme *t = findPhoneme("t");
+        CHECK(t != nullptr);
+        if (t) {
+            const std::vector<Phoneme> many(20, *t);
+            const size_t expected =
+                static_cast<size_t>(std::llround(20.0 * t->duration * 44100.0));
+            CHECK(Synthesizer(voice).render(many, 44100).size() == expected);
+            CHECK(expected == 30870);
+        }
+    }
+
     // Removing the clamp would divide by zero unless rate is validated.
     const double badRates[] = {0.0, -1.0,
                                std::numeric_limits<double>::infinity(),
