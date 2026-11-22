@@ -163,6 +163,14 @@ Sound vowel(int height, int back, bool rounded = false) {
     return result;
 }
 
+// Precomposed rhotic vowels such as ɚ and ɝ are the compiled equivalents of
+// ə˞ and ɜ˞, so they need the same lowered third formant as the hook modifier.
+Sound rhoticVowel(int height, int back, bool rounded = false) {
+    Sound result = vowel(height, back, rounded);
+    result.rhotic = true;
+    return result;
+}
+
 Sound consonant(Manner manner, Place place, bool voiced) {
     Sound result;
     result.manner = manner;
@@ -499,8 +507,8 @@ const std::vector<BaseSymbol> &baseSymbols() {
         symbol("\u0276", vowel(6, -1, true)),                            // ɶ
         symbol("\u0251", vowel(6, 1)),                                   // ɑ
         symbol("\u0252", vowel(6, 1, true)),                             // ɒ
-        symbol("\u025A", vowel(3, 0)),                                   // ɚ
-        symbol("\u025D", vowel(4, 0)),                                   // ɝ
+        symbol("\u025A", rhoticVowel(3, 0)),                             // ɚ
+        symbol("\u025D", rhoticVowel(4, 0)),                             // ɝ
 
         // Extension laterals and rare sounds: parsed and rendered from
         // articulatory components rather than needing bespoke synthesis.
