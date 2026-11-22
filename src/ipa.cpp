@@ -579,6 +579,8 @@ bool isModifier(uint32_t cp) {
     case 0x0330: // creaky
     case 0x0334: // velarized / pharyngealized
     case 0x0339: // more rounded
+    case 0x033A: // apical
+    case 0x033B: // laminal
     case 0x033C: // linguolabial
     case 0x033D: // mid-centralized
     case 0x0346: // dental above
@@ -1098,6 +1100,19 @@ const std::vector<Translation> &xsampaTable() {
         {"kp", "k\u0361p"},
         {"gb", "\u0261\u0361b"},
         {"Nm", "\u014B\u0361m"},
+        // Underscore tie-bar variants, matched before the bare segment plus a
+        // diacritic (for example N_m is the labial-velar nasal, not laminal N).
+        {"k_p", "k\u0361p"},
+        {"g_b", "\u0261\u0361b"},
+        {"N_m", "\u014B\u0361m"},
+        {"t_s", "t\u0361s"},
+        {"d_z", "d\u0361z"},
+        {"t_S", "t\u0361\u0283"},
+        {"d_Z", "d\u0361\u0292"},
+        {"t_s\\", "t\u0361\u0255"},
+        {"d_z\\", "d\u0361\u0291"},
+        {"t_K", "t\u0361\u026C"},
+        {"d_K\\", "d\u0361\u026E"},
         // Stress, length, tone and grouping.
         {"\"", "\u02C8"},
         {"%", "\u02CC"},
