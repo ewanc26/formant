@@ -283,6 +283,25 @@ std::vector<std::string> spellWord(std::string_view word) {
             continue;
         }
 
+        // The p in a word-initial pn, ps or pt cluster is silent (pneumonia,
+        // psychology, pterodactyl). A medial cluster keeps its /p/ across the
+        // syllable boundary (apnea, chapter), so only position zero drops it.
+        if (i == 0 &&
+            (startsWith(clean, i, "pn") || startsWith(clean, i, "ps") ||
+             startsWith(clean, i, "pt"))) {
+            i += 1;
+            continue;
+        }
+
+        // The h in a word-initial rh cluster is silent (rhythm, rhetoric,
+        // rhyme). Medial r + h spans a syllable boundary (overheat), so only
+        // the initial cluster collapses.
+        if (i == 0 && startsWith(clean, i, "rh")) {
+            result.push_back("r");
+            i += 2;
+            continue;
+        }
+
         // The b in a word-final mb cluster is silent (bomb, thumb, lamb, and
         // their plurals). A medial mb as in number or timber keeps its /b/,
         // so only the final cluster may collapse to /m/.

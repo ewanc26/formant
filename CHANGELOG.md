@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.41] - 2026-11-22
+
+### Fixed
+
+- A final pitch rise now belongs to the end of the utterance only. A `?` in the middle of a phrase (`Hello? I am here.`) no longer raises the last half-second of a later statement; a question mark that closes the utterance still rises.
+- `writeWav()` rejects non-finite samples with `std::invalid_argument` before opening the output file, instead of invoking undefined behaviour in `std::llround` and writing a corrupt WAV.
+- English G2P now drops the silent `p` in word-initial `pn`, `ps` and `pt` clusters (`pneumonia` -> `[n ...]`, `pseudo`, `pterodactyl`) and the silent `h` in word-initial `rh` (`rhythm`, `rhetoric`, `rhyme`). Medial clusters keep the consonant (`apnea`, `chapter`, `overheat`).
+
 ## [0.4.40] - 2026-11-22
 
 ### Fixed
