@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <sstream>
@@ -141,6 +142,11 @@ std::string takeValue(int &index, int argc, char **argv,
 
 Options parseOptions(int argc, char **argv) {
     Options options;
+    // --voice replaces the whole Voice struct, so collect preset selection and
+    // numeric overrides separately. Overrides are replayed onto the final
+    // preset after parsing, making their effect independent of flag order.
+    Voice baseVoice = options.voice;
+    std::vector<std::function<void(Voice &)>> overrides;
     const std::string doubleFlags[] = {
         "--pitch",         "--rate",        "--formant-scale", "--vibrato-rate",
         "--vibrato-depth", "--breathiness", "--gain",          "--attack",
@@ -183,25 +189,30 @@ Options parseOptions(int argc, char **argv) {
             const std::string value = takeValue(i, argc, argv, flag);
             const double parsed = number(flag, value);
             if (flag == "--pitch")
-                options.voice.pitch = parsed;
+                overrides.push_back([parsed](Voice &v) { v.pitch = parsed; });
             else if (flag == "--rate")
-                options.voice.rate = parsed;
+                overrides.push_back([parsed](Voice &v) { v.rate = parsed; });
             else if (flag == "--formant-scale")
-                options.voice.formantScale = parsed;
+                overrides.push_back(
+                    [parsed](Voice &v) { v.formantScale = parsed; });
             else if (flag == "--vibrato-rate")
-                options.voice.vibratoRate = parsed;
+                overrides.push_back(
+                    [parsed](Voice &v) { v.vibratoRate = parsed; });
             else if (flag == "--vibrato-depth")
-                options.voice.vibratoDepth = parsed;
+                overrides.push_back(
+                    [parsed](Voice &v) { v.vibratoDepth = parsed; });
             else if (flag == "--breathiness")
-                options.voice.breathiness = parsed;
+                overrides.push_back(
+                    [parsed](Voice &v) { v.breathiness = parsed; });
             else if (flag == "--gain")
-                options.voice.gain = parsed;
+                overrides.push_back([parsed](Voice &v) { v.gain = parsed; });
             else if (flag == "--attack")
-                options.voice.attack = parsed;
+                overrides.push_back([parsed](Voice &v) { v.attack = parsed; });
             else if (flag == "--release")
-                options.voice.release = parsed;
+                overrides.push_back([parsed](Voice &v) { v.release = parsed; });
             else if (flag == "--declination")
-                options.voice.declination = parsed;
+                overrides.push_back(
+                    [parsed](Voice &v) { v.declination = parsed; });
             handled = true;
             break;
         }
@@ -221,7 +232,7 @@ Options parseOptions(int argc, char **argv) {
             options.xsampa = takeValue(i, argc, argv, "--xsampa");
             options.useXsampa = true;
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
-            options.voice = voicePreset(takeValue(i, argc, argv, "--voice"));
+            baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
             options.output = takeValue(i, argc, argv, "--output");
         } else if (arg == "--sample-rate" ||
@@ -229,11 +240,19 @@ Options parseOptions(int argc, char **argv) {
             options.sampleRate = integer(
                 "--sample-rate", takeValue(i, argc, argv, "--sample-rate"));
         } else if (arg == "--harmonics" || arg.rfind("--harmonics=", 0) == 0) {
-            options.voice.harmonics =
+            const int parsed =
                 integer("--harmonics", takeValue(i, argc, argv, "--harmonics"));
+            overrides.push_back([parsed](Voice &v) { v.harmonics = parsed; });
         } else {
             throw std::invalid_argument("unknown option: " + arg);
         }
+    }
+
+    // Replay every override onto the final preset in argument order, so a
+    // value set before --voice is not erased by the preset assignment.
+    options.voice = baseVoice;
+    for (const auto &apply : overrides) {
+        apply(options.voice);
     }
     return options;
 }

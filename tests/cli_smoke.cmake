@@ -223,4 +223,29 @@ if(NOT separator_samples EQUAL plain_samples)
     message(FATAL_ERROR "attached comma changed the phoneme sequence: ${plain_samples} vs ${separator_samples}")
 endif()
 
+# Numeric overrides must apply regardless of whether they appear before or
+# after --voice. An override seen before --voice used to be erased when the
+# preset replaced the whole Voice struct.
+function(formant_override_hash out_var)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa "a" ${ARGN} --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE override_result
+        ERROR_VARIABLE override_error
+    )
+    if(NOT override_result EQUAL 0)
+        message(FATAL_ERROR "formant failed for override test: ${override_error}")
+    endif()
+    file(SHA256 "${FORMANT_OUTPUT}" rendered_hash)
+    set(${out_var} ${rendered_hash} PARENT_SCOPE)
+endfunction()
+formant_override_hash(override_before_hash --pitch 190 --rate 0.5 --harmonics 12 --voice alto)
+formant_override_hash(override_after_hash --voice alto --pitch 190 --rate 0.5 --harmonics 12)
+formant_override_hash(preset_only_hash --voice alto)
+if(NOT override_before_hash STREQUAL override_after_hash)
+    message(FATAL_ERROR "voice overrides depend on flag order: ${override_before_hash} vs ${override_after_hash}")
+endif()
+if(override_before_hash STREQUAL preset_only_hash)
+    message(FATAL_ERROR "overrides before --voice were discarded")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")
