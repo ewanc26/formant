@@ -1,0 +1,39 @@
+# Build output (covers build/, build-store/, build-*/)
+build*/
+Testing/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Generated scratch output
+generated/
+tmp/
+*.tmp
+
+# Rendered audio
+*.wav
+
+# Local agent/worktree state
+.letta/
+.agents/
+.codex/
+.claude/worktrees/
+
+# IDE configurations
+.idea/
+.vscode/
+*.iml
+
+# Sensitive/local files
+.env
+.env.*
+.credentials
+*.pem
+*.key
+
+# OS files
+.DS_Store

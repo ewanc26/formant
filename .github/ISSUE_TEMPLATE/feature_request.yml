@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest a voice, phoneme or engine capability.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What should change?
+      description: Describe the capability and why it belongs in the engine.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

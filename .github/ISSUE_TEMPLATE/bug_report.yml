@@ -1,0 +1,26 @@
+name: Bug report
+description: Report incorrect synthesis, a crash or a build failure.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Include the command, voice settings and input text or phonemes.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, compiler, CMake version and formant version.
+    validations:
+      required: false
