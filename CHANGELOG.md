@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.15] - 2026-11-22
+
+### Fixed
+
+- Peak normalisation no longer overflows when the raw audio peak is subnormal (e.g. a tiny finite `--gain` with weak harmonics). Samples are now divided by the peak before scaling, so output stays finite and respects the 0.9 ceiling instead of becoming inf/NaN and clipping to full scale.
+
 ## [0.4.14] - 2026-11-22
 
 ### Changed

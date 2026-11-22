@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -169,6 +170,27 @@ int main() {
         Synthesizer(huge).render(vowels, 22050);
     CHECK(peak(hugeSamples) > 0.2);
     for (float sample : hugeSamples) {
+        CHECK(std::isfinite(sample));
+    }
+
+    // A tiny finite gain makes the raw peak subnormal. Computing 0.9 / peak
+    // first overflowed to infinity, producing inf/NaN samples that writeWav()
+    // clamped to full scale. Dividing each sample by the peak first keeps every
+    // ratio in [-1, 1] and the normalised output finite at the usual 0.9
+    // ceiling.
+    Voice tiny = voice;
+    tiny.gain = std::numeric_limits<double>::min();
+    tiny.vibratoDepth = 0.0;
+    tiny.breathiness = 0.0;
+    tiny.harmonics = 1;
+    tiny.pitch = 50.0;
+    const std::vector<float> tinySamples =
+        Synthesizer(tiny).render(vowels, 22050);
+    CHECK(tinySamples.size() == first.size());
+    CHECK(tinySamples == Synthesizer(tiny).render(vowels, 22050));
+    CHECK(peak(tinySamples) > 0.2);
+    CHECK(peak(tinySamples) <= 0.9001);
+    for (float sample : tinySamples) {
         CHECK(std::isfinite(sample));
     }
 
