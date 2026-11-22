@@ -1,0 +1,3 @@
+#pragma once
+
+#define FORMANT_VERSION "@PROJECT_VERSION@"

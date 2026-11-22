@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create:
+    name: Create release and source archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches project version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          source_version="$(sed -n 's/^  VERSION \([0-9][0-9.]*\)$/\1/p' CMakeLists.txt | head -n 1)"
+          if [ "$tag_version" != "$source_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match CMake version $source_version" >&2
+            exit 1
+          fi
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+      - name: Attach source archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          git archive --format=tar.gz --prefix="formant-$version/" -o "formant-$version-source.tar.gz" HEAD
+          gh release upload "$GITHUB_REF_NAME" "formant-$version-source.tar.gz" --clobber
+
+  binaries:
+    name: Build CLI for ${{ matrix.os }}
+    needs: create
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 300
+      - name: Package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          system="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m)"
+          prefix="formant-$version-$system-$arch"
+          mkdir -p "$prefix/bin" "$prefix/lib" "$prefix/include"
+          cp build/formant "$prefix/bin/"
+          cp build/libformant_core.a "$prefix/lib/"
+          cp -R include/formant "$prefix/include/"
+          cp LICENSE README.md CHANGELOG.md "$prefix/"
+          tar czf "$prefix.tar.gz" "$prefix"
+      - name: Upload asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          system="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m)"
+          gh release upload "$GITHUB_REF_NAME" "formant-$version-$system-$arch.tar.gz" --clobber

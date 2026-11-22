@@ -4,10 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-22
+
 ### Added
 
 - Diphthong phonemes interpolate from a start to an end formant target.
 - Grapheme-to-phoneme rules for `-tion`, `-sion` and `-ing`.
+- Generated version header, so `formant --version` matches the CMake project version.
+- Tagged releases build and attach source and platform CLI archives.
 
 ### Fixed
 

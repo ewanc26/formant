@@ -7,10 +7,11 @@
 #include <vector>
 
 #include "formant/formant.h"
+#include "formant/version.h"
 
 namespace {
 
-constexpr const char *kVersion = "0.1.0";
+constexpr const char *kVersion = FORMANT_VERSION;
 
 using formant::Voice;
 using formant::voicePreset;

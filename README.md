@@ -140,7 +140,7 @@ The suite covers voice presets, text-to-phoneme conversion, bracket parsing, det
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
-See [docs/design.md](docs/design.md) for the reasoning and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 
