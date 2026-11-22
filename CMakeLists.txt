@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.2.0
+  VERSION 0.3.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -64,6 +64,7 @@ if(FORMANT_BUILD_TESTS)
             ${CMAKE_COMMAND}
             -DFORMANT_CLI=$<TARGET_FILE:formant>
             -DFORMANT_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/smoke.wav
+            -DFORMANT_EXPECTED_VERSION=${PROJECT_VERSION}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_smoke.cmake)
     endif()
 endif()

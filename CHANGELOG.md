@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-22
+
+### Added
+
+- Releases publish `SHA256SUMS` and a `.sha256` file for every archive.
+- CTest checks that `formant --version` matches the CMake project version.
+
+### Changed
+
+- Release notes are taken from the matching changelog section instead of generated commit subjects.
+
 ## [0.2.0] - 2026-11-22
 
 ### Added

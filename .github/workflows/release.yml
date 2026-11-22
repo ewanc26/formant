@@ -26,7 +26,19 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No changelog section for $version" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
       - name: Attach source archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -74,3 +86,33 @@ jobs:
           system="$(uname -s | tr '[:upper:]' '[:lower:]')"
           arch="$(uname -m)"
           gh release upload "$GITHUB_REF_NAME" "formant-$version-$system-$arch.tar.gz" --clobber
+
+  checksums:
+    name: Publish checksums
+    needs: [create, binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download release archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          gh release download "$GITHUB_REF_NAME" --dir artifacts --pattern 'formant-*.tar.gz'
+      - name: Generate and verify checksums
+        shell: bash
+        run: |
+          cd artifacts
+          sha256sum formant-*.tar.gz > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          while read -r sum file; do
+            printf '%s  %s\n' "$sum" "$file" > "$file.sha256"
+          done < SHA256SUMS
+          cat SHA256SUMS
+      - name: Upload checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          cd artifacts
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS formant-*.tar.gz.sha256 --clobber
