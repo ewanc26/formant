@@ -301,6 +301,27 @@ int main() {
     CHECK(parseXsampa("U\\").front().bands[1].frequency <
           parseXsampa("I\\").front().bands[1].frequency);
 
+    // Apical and laminal diacritics are recognised no-op modifiers, and the
+    // underscore tie-bar convention produces the same double articulations.
+    const Phoneme apical = parseIpa("t\u033A").front();
+    const Phoneme laminal = parseIpa("t\u033B").front();
+    CHECK(apical.kind == parseIpa("t").front().kind);
+    CHECK(laminal.kind == parseIpa("t").front().kind);
+    CHECK(apical.bands[1].frequency ==
+          parseIpa("t").front().bands[1].frequency);
+    CHECK(laminal.bands[1].frequency ==
+          parseIpa("t").front().bands[1].frequency);
+    CHECK(parseXsampa("t_a").front().name == apical.name);
+    CHECK(parseXsampa("t_m").front().name == laminal.name);
+    CHECK(names(parseXsampa("k_p")) == names(parseXsampa("kp")));
+    CHECK(names(parseXsampa("g_b")) == names(parseXsampa("gb")));
+    CHECK(names(parseXsampa("N_m")) == names(parseXsampa("Nm")));
+    CHECK(parseXsampa("k_p").size() == 2);
+    CHECK(names(parseXsampa("t_s")) == names(parseXsampa("ts")));
+    CHECK(names(parseXsampa("d_Z")) == names(parseXsampa("dZ")));
+    CHECK(names(parseXsampa("t_s\\")) == names(parseXsampa("ts\\")));
+    CHECK(names(parseXsampa("d_K\\")) == names(parseXsampa("dK\\")));
+
     rejected = false;
     try {
         (void)parseXsampa("a|b");

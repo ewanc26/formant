@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-22
+
+### Fixed
+
+- Apical and laminal diacritics (U+033A/U+033B), used by X-SAMPA `_a` and `_m`, are now recognised instead of being rejected as unknown IPA symbols.
+- X-SAMPA tie-bar underscore forms such as `k_p`, `N_m` and `t_s` now parse as double articulations and affricates, matching their no-underscore equivalents.
+
 ## [0.4.1] - 2026-11-22
 
 ### Fixed
