@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-11-22
+
+### Fixed
+
+- The CLI no longer drains standard input when a transcription mode (`--phonemes`, `--ipa`, `--xsampa`) supplies the phonemes, so combining a transcription with `--stdin` returns immediately instead of blocking.
+
 ## [0.4.12] - 2026-11-22
 
 ### Fixed
