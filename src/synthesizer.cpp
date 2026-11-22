@@ -171,9 +171,14 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
         for (int s = segment.start; s < segment.end; ++s) {
             const double elapsed = static_cast<double>(s - segment.start);
             const double mix = smooth(elapsed / transition);
+            const double vowelProgress =
+                smooth(elapsed / static_cast<double>(length));
+            const std::array<FormantBand, 4> &targetBands =
+                phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
             std::array<FormantBand, 4> bands{};
             for (size_t b = 0; b < bands.size(); ++b) {
                 bands[b] = blendBand(segment.from[b], phoneme.bands[b], mix);
+                bands[b] = blendBand(bands[b], targetBands[b], vowelProgress);
             }
 
             const double voicedMix =

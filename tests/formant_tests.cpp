@@ -85,6 +85,25 @@ int main() {
     CHECK(contains(hello, "d"));
     CHECK(contains(names(phonemize("Formant is a voice engine?")), "?"));
 
+    // Suffix rules apply to words outside the small lexicon.
+    const std::vector<std::string> nation = names(phonemize("nation"));
+    CHECK(contains(nation, "sh"));
+    CHECK(contains(nation, "ah"));
+    CHECK(contains(nation, "n"));
+    const std::vector<std::string> singing = names(phonemize("singing"));
+    CHECK(contains(singing, "ng"));
+    CHECK(singing.size() >= 3);
+
+    // Diphthongs carry a moving target; monophthongs do not.
+    const Phoneme *ay = findPhoneme("ay");
+    CHECK(ay != nullptr);
+    if (ay) {
+        CHECK(ay->hasEndBands);
+        CHECK(ay->endBands[1].frequency > ay->bands[1].frequency);
+    }
+    const Phoneme *ee = findPhoneme("ee");
+    CHECK(ee != nullptr && !ee->hasEndBands);
+
     const std::vector<Phoneme> vowels = parsePhonemes("[h ee l o]");
     CHECK(vowels.size() == 4);
     CHECK(vowels[0].name == "h");
@@ -111,6 +130,15 @@ int main() {
     CHECK(peak(first) <= 0.9001);
     for (float sample : first) {
         CHECK(std::isfinite(sample));
+    }
+
+    const Phoneme *moving = findPhoneme("ay");
+    CHECK(moving != nullptr);
+    if (moving) {
+        Phoneme staticVersion = *moving;
+        staticVersion.hasEndBands = false;
+        CHECK(Synthesizer(voice).render({*moving}, 22050) !=
+              Synthesizer(voice).render({staticVersion}, 22050));
     }
 
     Voice higher = voice;

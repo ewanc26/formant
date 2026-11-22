@@ -18,6 +18,16 @@ Phoneme phone(std::string name, PhonemeKind kind, bool voiced, double duration,
     return {std::move(name), kind, bands, duration, voiced, pitchRise};
 }
 
+Phoneme diphthong(std::string name, double duration,
+                  std::array<FormantBand, 4> from,
+                  std::array<FormantBand, 4> to) {
+    Phoneme result =
+        phone(std::move(name), PhonemeKind::Voiced, true, duration, from);
+    result.endBands = to;
+    result.hasEndBands = true;
+    return result;
+}
+
 bool startsWith(std::string_view text, size_t pos, std::string_view token) {
     return pos + token.size() <= text.size() &&
            text.substr(pos, token.size()) == token;
@@ -44,6 +54,7 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
     static const std::unordered_map<std::string, std::vector<std::string>>
         words = {
             {"a", {"ah"}},
+            {"anything", {"ah", "n", "i", "th", "i", "ng"}},
             {"an", {"ah", "n"}},
             {"and", {"ah", "n", "d"}},
             {"are", {"aa", "r"}},
@@ -106,6 +117,16 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"with", {"w", "i", "th"}},
             {"world", {"w", "er", "l", "d"}},
             {"yes", {"y", "e", "s"}},
+            {"made", {"m", "ay", "d"}},
+            {"machine", {"m", "ah", "sh", "ee", "n"}},
+            {"needs", {"n", "ee", "d", "z"}},
+            {"small", {"s", "m", "ah", "l"}},
+            {"whole", {"h", "o", "l"}},
+            {"runs", {"r", "uh", "n", "z"}},
+            {"anywhere", {"e", "n", "ee", "w", "er"}},
+            {"compile", {"k", "ah", "m", "p", "ay", "l"}},
+            {"build", {"b", "i", "l", "d"}},
+            {"waves", {"w", "ay", "v", "z"}},
             {"you", {"y", "oo"}},
         };
     return words;
@@ -172,14 +193,34 @@ std::vector<std::string> spellWord(std::string_view word) {
 
         struct Rule {
             const char *text;
-            const char *phoneme;
+            const char *first;
+            const char *second = nullptr;
+            const char *third = nullptr;
         };
         static const Rule rules[] = {
-            {"th", "th"}, {"sh", "sh"}, {"ch", "ch"}, {"ph", "f"},
-            {"ee", "ee"}, {"oo", "oo"}, {"ai", "ay"}, {"ay", "ay"},
-            {"ou", "ow"}, {"oi", "oi"}, {"ng", "ng"}, {"qu", "k"},
-            {"ea", "ee"}, {"oa", "o"},  {"ie", "ee"}, {"ue", "oo"},
-            {"er", "er"}, {"ar", "aa"}, {"or", "ah"}, {"ur", "er"},
+            {"tion", "sh", "ah", "n"},
+            {"sion", "zh", "ah", "n"},
+            {"ing", "i", "ng"},
+            {"th", "th"},
+            {"sh", "sh"},
+            {"ch", "ch"},
+            {"ph", "f"},
+            {"ee", "ee"},
+            {"oo", "oo"},
+            {"ai", "ay"},
+            {"ay", "ay"},
+            {"ou", "ow"},
+            {"oi", "oi"},
+            {"ng", "ng"},
+            {"qu", "k"},
+            {"ea", "ee"},
+            {"oa", "o"},
+            {"ie", "ee"},
+            {"ue", "oo"},
+            {"er", "er"},
+            {"ar", "aa"},
+            {"or", "ah"},
+            {"ur", "er"},
         };
 
         bool matched = false;
@@ -187,11 +228,17 @@ std::vector<std::string> spellWord(std::string_view word) {
             if (!startsWith(clean, i, rule.text)) {
                 continue;
             }
-            std::string phoneme = rule.phoneme;
+            std::string phoneme = rule.first;
             if (phoneme == "th" && softTh) {
                 phoneme = "dh";
             }
             result.push_back(phoneme);
+            if (rule.second) {
+                result.push_back(rule.second);
+            }
+            if (rule.third) {
+                result.push_back(rule.third);
+            }
             if (std::string(rule.text) == "qu") {
                 result.push_back("w");
             }
@@ -325,21 +372,31 @@ const std::vector<Phoneme> &phonemeTable() {
         phone("or", PhonemeKind::Voiced, true, 0.15,
               {band(500, 1.0, 110), band(800, 0.60, 120), band(2500, 0.25, 180),
                band(3500, 0.08, 250)}),
-        phone("ay", PhonemeKind::Voiced, true, 0.17,
-              {band(530, 1.0, 100), band(1900, 0.60, 120),
-               band(2500, 0.30, 180), band(3500, 0.08, 250)}),
-        phone("oy", PhonemeKind::Voiced, true, 0.17,
-              {band(520, 1.0, 110), band(1500, 0.60, 130),
-               band(2500, 0.25, 180), band(3500, 0.08, 250)}),
-        phone("ow", PhonemeKind::Voiced, true, 0.18,
-              {band(600, 1.0, 110), band(1100, 0.60, 130),
-               band(2500, 0.25, 180), band(3500, 0.08, 250)}),
-        phone("oi", PhonemeKind::Voiced, true, 0.17,
-              {band(500, 1.0, 110), band(1500, 0.60, 130),
-               band(2500, 0.25, 180), band(3500, 0.08, 250)}),
-        phone("eye", PhonemeKind::Voiced, true, 0.17,
-              {band(700, 1.0, 110), band(1400, 0.50, 140),
-               band(2500, 0.25, 180), band(3500, 0.08, 250)}),
+        diphthong("ay", 0.17,
+                  {band(530, 1.0, 100), band(1840, 0.60, 120),
+                   band(2480, 0.30, 180), band(3500, 0.08, 250)},
+                  {band(270, 1.0, 90), band(2290, 0.70, 110),
+                   band(3010, 0.35, 170), band(3600, 0.08, 250)}),
+        diphthong("oy", 0.17,
+                  {band(500, 1.0, 110), band(800, 0.60, 120),
+                   band(2500, 0.25, 180), band(3500, 0.08, 250)},
+                  {band(390, 1.0, 90), band(1990, 0.60, 110),
+                   band(2550, 0.30, 170), band(3500, 0.08, 250)}),
+        diphthong("ow", 0.18,
+                  {band(660, 1.0, 110), band(1720, 0.55, 120),
+                   band(2410, 0.25, 180), band(3500, 0.08, 250)},
+                  {band(440, 1.0, 100), band(1020, 0.60, 120),
+                   band(2240, 0.25, 170), band(3500, 0.08, 250)}),
+        diphthong("oi", 0.17,
+                  {band(500, 1.0, 110), band(800, 0.60, 120),
+                   band(2500, 0.25, 180), band(3500, 0.08, 250)},
+                  {band(390, 1.0, 90), band(1990, 0.60, 110),
+                   band(2550, 0.30, 170), band(3500, 0.08, 250)}),
+        diphthong("eye", 0.17,
+                  {band(730, 1.0, 110), band(1090, 0.60, 120),
+                   band(2440, 0.22, 180), band(3500, 0.08, 250)},
+                  {band(390, 1.0, 90), band(1990, 0.60, 110),
+                   band(2550, 0.30, 170), band(3500, 0.08, 250)}),
 
         phone("h", PhonemeKind::Fricative, false, 0.06,
               {band(500, 0.5, 200), band(1500, 0.4, 300), band(2500, 0.2, 400),
