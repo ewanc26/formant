@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.34] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats `dg` before `e`, `i` or `y` as a single /dʒ/ (`bridge` -> `[b r i j]`, `budget` -> `[b uh j e t]`, `budgie` -> `[b uh j ee]`). It previously emitted a spurious /d/ stop, rendering `bridge` byte-identically to `[b r i d j]`. Only the two letters are consumed, so following vowels and the silent final `e` rule are preserved; `dg` before other letters (`handgun`) is unchanged.
+
 ## [0.4.33] - 2026-11-22
 
 ### Fixed

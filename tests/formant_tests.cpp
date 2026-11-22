@@ -252,6 +252,29 @@ int main() {
     CHECK(!contains(names(phonemize("school")), "t"));
     CHECK(names(phonemize("mischief"))[3] == "ch");
 
+    // dg before e, i or y is the single affricate /dʒ/ (bridge, budget,
+    // budgie); the d is silent. Only dg is consumed, so the following vowel
+    // survives: budget keeps its pronounced e and budgie keeps ie -> /iː/.
+    // dg before any other letter is still /d/ + /g/ (handgun).
+    CHECK(names(phonemize("bridge")) ==
+          std::vector<std::string>({"b", "r", "i", "j"}));
+    CHECK(names(phonemize("edge")) == std::vector<std::string>({"e", "j"}));
+    CHECK(names(phonemize("badge")) ==
+          std::vector<std::string>({"b", "a", "j"}));
+    CHECK(names(phonemize("budget")) ==
+          std::vector<std::string>({"b", "uh", "j", "e", "t"}));
+    CHECK(names(phonemize("budgie")) ==
+          std::vector<std::string>({"b", "uh", "j", "ee"}));
+    CHECK(names(phonemize("podgy")) ==
+          std::vector<std::string>({"p", "o", "j", "ee"}));
+    CHECK(names(phonemize("handgun")) ==
+          std::vector<std::string>({"h", "a", "n", "d", "g", "uh", "n"}));
+    // Earlier trigraph fixes stay correct.
+    CHECK(names(phonemize("catch")) ==
+          std::vector<std::string>({"k", "a", "ch"}));
+    CHECK(names(phonemize("rich")) ==
+          std::vector<std::string>({"r", "i", "ch"}));
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));

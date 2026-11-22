@@ -261,6 +261,18 @@ std::vector<std::string> spellWord(std::string_view word) {
             continue;
         }
 
+        // dg before e, i or y is the single affricate /dʒ/ (bridge, budget,
+        // budgie); the d is silent. Consume only the two letters so a
+        // following vowel is still handled by the normal rules: budget keeps
+        // its pronounced e, budgie keeps ie -> /iː/, and a final silent e
+        // still drops. dg before any other letter stays /d/ + /g/ (handgun).
+        if (startsWith(clean, i, "dge") || startsWith(clean, i, "dgi") ||
+            startsWith(clean, i, "dgy")) {
+            result.push_back("j");
+            i += 2;
+            continue;
+        }
+
         struct Rule {
             const char *text;
             const char *first;
