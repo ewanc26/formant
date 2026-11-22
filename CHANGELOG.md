@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-11-22
+
+### Fixed
+
+- X-SAMPA `_r` now maps to the raised diacritic (U+031D) instead of the global-rise arrow, so `a_r` raises vowel height like its IPA equivalent `a\u031D`. Global rise remains available via `<R>`.
+
 ## [0.4.4] - 2026-11-22
 
 ### Changed
