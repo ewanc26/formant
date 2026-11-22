@@ -330,6 +330,49 @@ int main() {
     CHECK(names(phonemize("sceptic")) ==
           std::vector<std::string>({"s", "k", "e", "p", "t", "i", "k"}));
 
+    // Word-initial wh is a single /w/ (the wine-whine merger), not /w/ + /h/.
+    // The closed /h/ family is in the lexicon with an /uː/ or /o/ vowel. Medial
+    // wh in compounds such as cowhide is a real /w/ + /h/ cluster and stays.
+    CHECK(names(phonemize("who")) == std::vector<std::string>({"h", "oo"}));
+    CHECK(names(phonemize("whom")) ==
+          std::vector<std::string>({"h", "oo", "m"}));
+    CHECK(names(phonemize("whose")) ==
+          std::vector<std::string>({"h", "oo", "z"}));
+    CHECK(names(phonemize("whoever")) ==
+          std::vector<std::string>({"h", "oo", "e", "v", "er"}));
+    CHECK(names(phonemize("whomever")) ==
+          std::vector<std::string>({"h", "oo", "m", "e", "v", "er"}));
+    CHECK(names(phonemize("whosever")) ==
+          std::vector<std::string>({"h", "oo", "z", "e", "v", "er"}));
+    CHECK(names(phonemize("wholly")) ==
+          std::vector<std::string>({"h", "o", "l", "ee"}));
+    CHECK(names(phonemize("wholeness")) ==
+          std::vector<std::string>({"h", "o", "l", "n", "e", "s"}));
+    CHECK(names(phonemize("whore")) == std::vector<std::string>({"h", "or"}));
+    CHECK(names(phonemize("when")) ==
+          std::vector<std::string>({"w", "e", "n"}));
+    CHECK(names(phonemize("where")) == std::vector<std::string>({"w", "er"}));
+    CHECK(names(phonemize("which")) ==
+          std::vector<std::string>({"w", "i", "ch"}));
+    CHECK(names(phonemize("wheel")) ==
+          std::vector<std::string>({"w", "ee", "l"}));
+    CHECK(names(phonemize("wheat")) ==
+          std::vector<std::string>({"w", "ee", "t"}));
+    CHECK(names(phonemize("whisper")) ==
+          std::vector<std::string>({"w", "i", "s", "p", "er"}));
+    CHECK(names(phonemize("whale")) ==
+          std::vector<std::string>({"w", "a", "l"}));
+    // wh + o does not imply /h/: these keep /w/.
+    CHECK(names(phonemize("whorl")).front() == "w");
+    CHECK(names(phonemize("whoa")) == std::vector<std::string>({"w", "o"}));
+    CHECK(names(phonemize("whopper")).front() == "w");
+    CHECK(names(phonemize("whop")).front() == "w");
+    // Medial wh in compounds is a genuine /w/ + /h/ cluster.
+    CHECK(names(phonemize("cowhide")) ==
+          std::vector<std::string>({"k", "o", "w", "h", "i", "d"}));
+    CHECK(names(phonemize("snowhill")) ==
+          std::vector<std::string>({"s", "n", "o", "w", "h", "i", "l", "l"}));
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));

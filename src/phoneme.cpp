@@ -123,6 +123,20 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"we", {"w", "ee"}},
             {"were", {"w", "er"}},
             {"what", {"w", "ah", "t"}},
+            // Word-initial wh is normally /w/ (the wine-whine merger), but a
+            // closed set keeps /h/ before a rounded vowel. These must precede
+            // the generic wh -> /w/ rule in spellWord(); a third-letter check
+            // cannot express the exception because whorl, whoa and whopper
+            // also begin wh + o yet keep /w/.
+            {"who", {"h", "oo"}},
+            {"whom", {"h", "oo", "m"}},
+            {"whose", {"h", "oo", "z"}},
+            {"whoever", {"h", "oo", "e", "v", "er"}},
+            {"whomever", {"h", "oo", "m", "e", "v", "er"}},
+            {"whosever", {"h", "oo", "z", "e", "v", "er"}},
+            {"wholly", {"h", "o", "l", "ee"}},
+            {"wholeness", {"h", "o", "l", "n", "e", "s"}},
+            {"whore", {"h", "or"}},
             {"with", {"w", "i", "th"}},
             {"world", {"w", "er", "l", "d"}},
             {"yes", {"y", "e", "s"}},
@@ -250,6 +264,18 @@ std::vector<std::string> spellWord(std::string_view word) {
             result.push_back("s");
             result.push_back("k");
             i += 3;
+            continue;
+        }
+
+        // Word-initial wh is a single /w/ in modern English (the wine-whine
+        // merger): when, where, which, wheel, whale. The generic letter loop
+        // would emit a spurious /w/ + /h/. The closed /h/ family (who, whom,
+        // whose, wholly, whore) is handled by lexicon entries above, so it
+        // never reaches here. Medial wh in compounds such as cowhide and
+        // snowhill is a real /w/ + /h/ cluster and is left to the letter rules.
+        if (i == 0 && startsWith(clean, i, "wh")) {
+            result.push_back("w");
+            i += 2;
             continue;
         }
 

@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.37] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats word-initial `wh` as a single /w/ (`when` -> `[w e n]`, `which` -> `[w i ch]`, `wheel` -> `[w ee l]`). It previously emitted a spurious /h/ because no `wh` digraph rule existed. A closed /h/ family (`who`, `whom`, `whose`, `whoever`, `whomever`, `whosever`, `wholly`, `wholeness`, `whore`) now has explicit lexicon entries with the correct /uː/ or /o/ vowel; `whorl`, `whoa` and `whopper` keep /w/, and medial `wh` in compounds such as `cowhide` is unchanged.
+
 ## [0.4.36] - 2026-11-22
 
 ### Fixed
