@@ -77,4 +77,27 @@ if(NOT list_result EQUAL 0 OR ipa_symbols STREQUAL "")
     message(FATAL_ERROR "formant --list-ipa failed: ${list_error}")
 endif()
 
+# Conflicting transcription modes are rejected with an accurate message.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "hə" --xsampa "h@" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE conflict_result
+    ERROR_VARIABLE conflict_error
+)
+if(conflict_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted conflicting transcription modes")
+endif()
+if(NOT conflict_error MATCHES "use only one of --phonemes, --ipa or --xsampa")
+    message(FATAL_ERROR "unexpected conflict message: ${conflict_error}")
+endif()
+
+# A transcription mode takes precedence over --text rather than conflict.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "ignored" --ipa "hə" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE precedence_result
+    ERROR_VARIABLE precedence_error
+)
+if(NOT precedence_result EQUAL 0)
+    message(FATAL_ERROR "formant rejected --text with --ipa (${precedence_result}): ${precedence_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

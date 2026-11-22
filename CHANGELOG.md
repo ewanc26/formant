@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-22
+
+### Fixed
+
+- The CLI error for conflicting transcription modes now describes the rule that is actually enforced; `--text` and `--stdin` are documented as being overridden rather than reported as conflicts.
+- CLI smoke tests now cover conflicting transcription modes and `--text` / `--ipa` precedence.
+
 ## [0.4.2] - 2026-11-22
 
 ### Fixed
