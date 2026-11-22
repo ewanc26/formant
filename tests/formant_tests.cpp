@@ -262,6 +262,28 @@ int main() {
     CHECK(parseIpa("e\u031E").front().bands[0].frequency >
           parseIpa("e").front().bands[0].frequency);
 
+    // An affricate ligature is one consonant with two articulatory components,
+    // so a diacritic qualifies the whole symbol rather than only its release.
+    // The tie-bar spelling of the same affricate keeps applying the diacritic
+    // to just the symbol it follows.
+    const std::vector<Phoneme> voicedTesh = parseIpa("\u02A7\u032C");
+    CHECK(voicedTesh.size() == 2);
+    CHECK(voicedTesh[0].voiced);
+    CHECK(voicedTesh[1].voiced);
+    const std::vector<Phoneme> voicedLigature = parseIpa("\u02A4");
+    CHECK(voicedTesh[0].voiced == voicedLigature[0].voiced);
+    CHECK(voicedTesh[1].voiced == voicedLigature[1].voiced);
+    const std::vector<Phoneme> dentalTesh = parseIpa("\u02A7\u032A");
+    CHECK(dentalTesh[0].bands[1].frequency ==
+          parseIpa("t\u032A").front().bands[1].frequency);
+    CHECK(dentalTesh[1].bands[1].frequency ==
+          parseIpa("\u0283\u032A").front().bands[1].frequency);
+    CHECK(!parseIpa("t").front().voiced);
+    const std::vector<Phoneme> tiedVoiced = parseIpa("t\u0361\u0283\u032C");
+    CHECK(tiedVoiced.size() == 2);
+    CHECK(!tiedVoiced[0].voiced);
+    CHECK(tiedVoiced[1].voiced);
+
     // Precomposed rhotic vowels are the compiled equivalents of ə˞ and ɜ˞:
     // they lower F3 and strengthen its band rather than rendering as plain ə
     // and ɜ. The X-SAMPA @` alias inherits the same articulation.

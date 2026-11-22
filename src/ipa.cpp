@@ -785,6 +785,23 @@ void applyModifier(Sound &sound, Prosody &prosody, uint32_t cp) {
     }
 }
 
+// A compound base symbol (an affricate ligature such as ʧ) is one consonant
+// represented by two articulatory components. A segmental diacritic belongs to
+// the whole symbol, so it must qualify every component. Prosody is shared by
+// the emitted phonemes, so its changes are applied only once via the final
+// component and discarded for the others.
+void applyDiacritic(uint32_t mod, std::vector<Sound> &sounds,
+                    Prosody &prosody) {
+    for (size_t i = 0; i < sounds.size(); ++i) {
+        if (i + 1 == sounds.size()) {
+            applyModifier(sounds[i], prosody, mod);
+        } else {
+            Prosody ignored;
+            applyModifier(sounds[i], ignored, mod);
+        }
+    }
+}
+
 bool isSuprasegmental(uint32_t cp) {
     switch (cp) {
     case 0x02C8: // primary stress
@@ -923,7 +940,7 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
             } else if (isToneBar(mod)) {
                 setContour(prosody, toneLevel(mod), toneLevel(mod));
             } else {
-                applyModifier(sounds.back(), prosody, mod);
+                applyDiacritic(mod, sounds, prosody);
             }
             name = encodeUtf8(mod) + name;
         }
@@ -946,7 +963,7 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
                            toneLevel(points[i - 1]));
                 continue;
             }
-            applyModifier(sounds.back(), prosody, mod);
+            applyDiacritic(mod, sounds, prosody);
             name += encodeUtf8(mod);
             ++i;
         }
