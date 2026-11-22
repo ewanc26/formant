@@ -138,6 +138,26 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"comb", {"k", "ow", "m"}},
             {"waves", {"w", "ay", "v", "z"}},
             {"you", {"y", "oo"}},
+            // The ough/augh spellings are irregular: the gh is silent in most
+            // words but /f/ in a small closed set, and the vowel varies widely.
+            {"although", {"or", "l", "dh", "ow"}},
+            {"bought", {"b", "or", "t"}},
+            {"bough", {"b", "ow"}},
+            {"brought", {"b", "r", "or", "t"}},
+            {"caught", {"k", "or", "t"}},
+            {"cough", {"k", "o", "f"}},
+            {"daughter", {"d", "or", "t", "er"}},
+            {"dough", {"d", "ow"}},
+            {"enough", {"e", "n", "uh", "f"}},
+            {"laugh", {"l", "aa", "f"}},
+            {"plough", {"p", "l", "ow"}},
+            {"rough", {"r", "uh", "f"}},
+            {"tough", {"t", "uh", "f"}},
+            {"though", {"dh", "ow"}},
+            {"thought", {"th", "or", "t"}},
+            {"through", {"th", "r", "oo"}},
+            {"trough", {"t", "r", "o", "f"}},
+            {"taught", {"t", "or", "t"}},
         };
     return words;
 }
@@ -195,6 +215,24 @@ std::vector<std::string> spellWord(std::string_view word) {
     const bool softTh = voicedTh.count(clean) != 0;
 
     for (size_t i = 0; i < clean.size();) {
+        // The gh digraph has three behaviours in English: a hard /g/ at the
+        // start of a word (ghost, ghetto), a silent vowel marker in eigh/aigh
+        // (weigh, straight), and silent or /f/ elsewhere (though, laugh). The
+        // letter-by-letter fallback used to emit a spurious [g h] for all of
+        // them. The /f/ words and those with irregular vowels are in the
+        // lexicon; the default here is a silent gh.
+        if (startsWith(clean, i, "eigh") || startsWith(clean, i, "aigh")) {
+            result.push_back("ay");
+            i += 4;
+            continue;
+        }
+        if (startsWith(clean, i, "gh")) {
+            if (i == 0) {
+                result.push_back("g");
+            }
+            i += 2;
+            continue;
+        }
         if (startsWith(clean, i, "igh")) {
             result.push_back("ay");
             i += 3;

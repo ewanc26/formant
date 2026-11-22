@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.29] - 2026-11-22
+
+### Fixed
+
+- English G2P now handles the `gh` digraph instead of spelling it as /g/ + /h/. Word-initial `gh` is /g/ (`ghost` -> `[g o s t]`), `eigh`/`aigh` mark a long vowel (`weigh` -> `[w ay]`), and other `gh` is silent unless the word is in the irregular `ough`/`augh` set. Common words such as `though`, `through`, `thought`, `laugh`, `cough`, `rough`, `tough` and `enough` now have correct lexicon entries.
+
 ## [0.4.28] - 2026-11-22
 
 ### Fixed
