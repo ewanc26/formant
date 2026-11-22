@@ -80,20 +80,22 @@ void listIpa() {
 }
 
 double number(const std::string &flag, const std::string &value) {
-    try {
-        size_t used = 0;
-        const double result = std::stod(value, &used);
-        if (used != value.size()) {
-            throw std::invalid_argument("trailing characters");
-        }
-        if (!std::isfinite(result)) {
-            throw std::invalid_argument("non-finite value");
-        }
-        return result;
-    } catch (const std::exception &) {
+    // Use strtod rather than stod: stod throws out_of_range whenever errno is
+    // ERANGE, which strtod also sets for underflow. Finite subnormal doubles
+    // such as 1e-310 are valid options, so only the parsed value and full
+    // consumption decide acceptance. Overflow yields infinity and is rejected
+    // by the isfinite check below.
+    if (value.empty()) {
         throw std::invalid_argument("invalid number for " + flag + ": " +
                                     value);
     }
+    char *end = nullptr;
+    const double result = std::strtod(value.c_str(), &end);
+    if (end != value.c_str() + value.size() || !std::isfinite(result)) {
+        throw std::invalid_argument("invalid number for " + flag + ": " +
+                                    value);
+    }
+    return result;
 }
 
 int integer(const std::string &flag, const std::string &value) {
