@@ -272,9 +272,12 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     }
     std::vector<float> output(raw.size(), 0.0f);
     if (peak > 0.0) {
-        const double normalise = 0.9 / peak;
+        // Divide each sample by the peak before scaling. Forming a reciprocal
+        // first would overflow to infinity when the peak is subnormal, turning
+        // finite samples into inf and zero samples into NaN. Since |raw| <=
+        // peak, each ratio is within [-1, 1] and cannot overflow.
         for (size_t i = 0; i < raw.size(); ++i) {
-            output[i] = static_cast<float>(raw[i] * normalise);
+            output[i] = static_cast<float>((raw[i] / peak) * 0.9);
         }
     }
     return output;
