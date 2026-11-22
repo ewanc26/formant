@@ -128,6 +128,17 @@ int main() {
     CHECK(vowels[3].name == "o");
     CHECK(parsePhonemes("[a, b]").size() == 2);
 
+    // A comma in its own token is the documented pause phoneme; a comma
+    // attached to a name is still just a separator.
+    const std::vector<Phoneme> withPause = parsePhonemes("[a , b]");
+    CHECK(withPause.size() == 3);
+    CHECK(withPause[1].name == ",");
+    CHECK(withPause[1].kind == PhonemeKind::Silence);
+    CHECK(withPause[1].duration > 0.0);
+    CHECK(parsePhonemes("[a,,, b]").size() == 2);
+    CHECK(parsePhonemes("[a , b .]").size() == 4);
+    CHECK(parsePhonemes("[a ? b]").size() == 3);
+
     rejected = false;
     try {
         (void)parsePhonemes("[h notaphoneme]");

@@ -565,8 +565,12 @@ std::vector<Phoneme> parsePhonemes(std::string_view spec) {
             ++stop;
         }
         std::string token(body.substr(pos, stop - pos));
-        while (!token.empty() && token.back() == ',') {
-            token.pop_back();
+        // A comma occupying its own token is the documented pause phoneme,
+        // not a separator. Only strip commas attached to a phoneme name.
+        if (token != ",") {
+            while (!token.empty() && token.back() == ',') {
+                token.pop_back();
+            }
         }
         if (token.empty()) {
             pos = stop;
