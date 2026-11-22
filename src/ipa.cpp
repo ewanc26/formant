@@ -479,28 +479,28 @@ const std::vector<BaseSymbol> &baseSymbols() {
         symbol("u", vowel(0, 1, true)), symbol("\u026A", vowel(1, -1)), // ɪ
         symbol("\u028F", vowel(1, -1, true)),                           // ʏ
         symbol("\u028A", vowel(1, 1, true)),                            // ʊ
-        symbol("\u026A\u0339", vowel(1, 0)), // ᵻ-style central near-close
-        symbol("\u028A\u031C", vowel(1, 0, true)), symbol("e", vowel(2, -1)),
-        symbol("\u00F8", vowel(2, -1, true)),                          // ø
-        symbol("\u0258", vowel(2, 0)),                                 // ɘ
-        symbol("\u0275", vowel(2, 0, true)),                           // ɵ
-        symbol("\u0264", vowel(2, 1)),                                 // ɤ
-        symbol("o", vowel(2, 1, true)), symbol("\u0259", vowel(3, 0)), // ə
-        symbol("\u1D57", vowel(3, 0)),        // ᵗ central alias
-        symbol("\u025B", vowel(4, -1)),       // ɛ
-        symbol("\u0153", vowel(4, -1, true)), // œ
-        symbol("\u025C", vowel(4, 0)),        // ɜ
-        symbol("\u025E", vowel(4, 0, true)),  // ɞ
-        symbol("\u028C", vowel(4, 1)),        // ʌ
-        symbol("\u0254", vowel(4, 1, true)),  // ɔ
-        symbol("\u00E6", vowel(5, -1)),       // æ
-        symbol("\u0250", vowel(5, 0)),        // ɐ
-        symbol("a", vowel(6, -1)), symbol("\u00E4", vowel(6, 0)), // ä
-        symbol("\u0276", vowel(6, -1, true)),                     // ɶ
-        symbol("\u0251", vowel(6, 1)),                            // ɑ
-        symbol("\u0252", vowel(6, 1, true)),                      // ɒ
-        symbol("\u025A", vowel(3, 0)),                            // ɚ
-        symbol("\u025D", vowel(4, 0)),                            // ɝ
+        symbol("\u1D7B", vowel(1, 0)), // ᵻ near-close central unrounded (I\)
+        symbol("\u1D7F",
+               vowel(1, 0, true)), // ᵿ near-close central rounded (U\)
+        symbol("e", vowel(2, -1)), symbol("\u00F8", vowel(2, -1, true)), // ø
+        symbol("\u0258", vowel(2, 0)),                                   // ɘ
+        symbol("\u0275", vowel(2, 0, true)),                             // ɵ
+        symbol("\u0264", vowel(2, 1)),                                   // ɤ
+        symbol("o", vowel(2, 1, true)), symbol("\u0259", vowel(3, 0)),   // ə
+        symbol("\u025B", vowel(4, -1)),                                  // ɛ
+        symbol("\u0153", vowel(4, -1, true)),                            // œ
+        symbol("\u025C", vowel(4, 0)),                                   // ɜ
+        symbol("\u025E", vowel(4, 0, true)),                             // ɞ
+        symbol("\u028C", vowel(4, 1)),                                   // ʌ
+        symbol("\u0254", vowel(4, 1, true)),                             // ɔ
+        symbol("\u00E6", vowel(5, -1)),                                  // æ
+        symbol("\u0250", vowel(5, 0)),                                   // ɐ
+        symbol("a", vowel(6, -1)), symbol("\u00E4", vowel(6, 0)),        // ä
+        symbol("\u0276", vowel(6, -1, true)),                            // ɶ
+        symbol("\u0251", vowel(6, 1)),                                   // ɑ
+        symbol("\u0252", vowel(6, 1, true)),                             // ɒ
+        symbol("\u025A", vowel(3, 0)),                                   // ɚ
+        symbol("\u025D", vowel(4, 0)),                                   // ɝ
 
         // Extension laterals and rare sounds: parsed and rendered from
         // articulatory components rather than needing bespoke synthesis.
@@ -1034,6 +1034,7 @@ const std::vector<Translation> &xsampaTable() {
         {"H", "\u0265"},
         {"H\\", "\u029C"},
         {"I", "\u026A"},
+        {"I\\", "\u1D7B"},
         {"J", "\u0272"},
         {"J\\", "\u025F"},
         {"J\\_<", "\u0284"},
@@ -1054,6 +1055,7 @@ const std::vector<Translation> &xsampaTable() {
         {"S", "\u0283"},
         {"T", "\u03B8"},
         {"U", "\u028A"},
+        {"U\\", "\u1D7F"},
         {"V", "\u028C"},
         {"W", "\u028D"},
         {"X", "\u03C7"},

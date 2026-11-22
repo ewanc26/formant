@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-22
+
+### Fixed
+
+- X-SAMPA `I\` and `U\` now map to the near-close central vowels ᵻ and ᵿ instead of being rejected.
+- Replaced two unreachable multi-codepoint IPA table entries with the actual single-codepoint characters they described, so `--list-ipa` only advertises symbols the parser can match.
+- Removed the incorrect `ᵗ` (MODIFIER LETTER SMALL T) schwa alias.
+
 ## [0.4.0] - 2026-11-22
 
 ### Added
