@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.22] - 2026-11-22
+
+### Fixed
+
+- A phoneme following a diphthong now crossfades from the diphthong's final formant target (`endBands`) instead of its initial bands, removing a spurious backward formant jump at the boundary.
+
 ## [0.4.21] - 2026-11-22
 
 ### Fixed

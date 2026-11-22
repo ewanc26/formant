@@ -231,6 +231,41 @@ int main() {
               Synthesizer(voice).render({staticVersion}, 22050));
     }
 
+    // A diphthong finishes at endBands, so a following phoneme must crossfade
+    // from that final target. When ay's endBands equal ee's bands, ay + ee
+    // must render identically to ee + ee throughout, including the 35 ms
+    // crossfade at the start of the second segment. The old code started that
+    // crossfade from ay's initial bands, causing a backward formant jump.
+    const Phoneme *diphthong = findPhoneme("ay");
+    const Phoneme *settled = findPhoneme("ee");
+    CHECK(diphthong != nullptr && settled != nullptr && diphthong->hasEndBands);
+    if (diphthong && settled) {
+        Voice boundary = voicePreset("robot");
+        boundary.breathiness = 0.0;
+        boundary.vibratoRate = 0.0;
+        boundary.vibratoDepth = 0.0;
+        Phoneme glide = *diphthong;
+        glide.duration = settled->duration; // identical timing/phase
+        const auto viaGlide =
+            Synthesizer(boundary).render({glide, *settled}, 8000);
+        const auto viaSettled =
+            Synthesizer(boundary).render({*settled, *settled}, 8000);
+        CHECK(viaGlide.size() == viaSettled.size());
+        // Only the second segment is comparable: the first differs because a
+        // diphthong glides while a plain vowel holds its formants.
+        const size_t offset = static_cast<size_t>(settled->duration * 8000);
+        bool secondMatches = viaGlide.size() == viaSettled.size();
+        if (secondMatches) {
+            for (size_t sample = offset; sample < viaGlide.size(); ++sample) {
+                if (viaGlide[sample] != viaSettled[sample]) {
+                    secondMatches = false;
+                    break;
+                }
+            }
+        }
+        CHECK(secondMatches);
+    }
+
     Voice higher = voice;
     higher.pitch = 190.0;
     CHECK(Synthesizer(higher).render(vowels, 22050) != first);
