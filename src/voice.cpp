@@ -50,7 +50,8 @@ Voice voicePreset(std::string_view name) {
         voice.breathiness = 1.0;
         voice.harmonics = 0;
     } else {
-        throw std::invalid_argument("unknown voice preset: " + std::string(name));
+        throw std::invalid_argument("unknown voice preset: " +
+                                    std::string(name));
     }
 
     return voice;

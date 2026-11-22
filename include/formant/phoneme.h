@@ -28,16 +28,16 @@ struct Phoneme {
     std::string name;
     PhonemeKind kind = PhonemeKind::Silence;
     std::array<FormantBand, 4> bands{};
-    double duration = 0.1;   // seconds at rate 1.0
+    double duration = 0.1; // seconds at rate 1.0
     bool voiced = false;
-    bool pitchRise = false;  // marks a question-like final contour
+    bool pitchRise = false; // marks a question-like final contour
 };
 
 // The built-in phoneme inventory, in a stable order.
-const std::vector<Phoneme>& phonemeTable();
+const std::vector<Phoneme> &phonemeTable();
 
 // Case-sensitive lookup of a phoneme by its short name ("ee", "th", "_").
-const Phoneme* findPhoneme(std::string_view name);
+const Phoneme *findPhoneme(std::string_view name);
 
 // Convert text to phonemes using a small lexicon plus English letter rules.
 // Unknown words fall back to deterministic grapheme-to-phoneme conversion.

@@ -10,23 +10,22 @@ namespace formant {
 // Renders phonemes to mono 32-bit floating-point PCM. The output is
 // deterministic: the same voice and phonemes always produce the same samples.
 class Synthesizer {
-public:
+  public:
     explicit Synthesizer(Voice voice);
 
     // sampleRate must be at least 8000. The returned buffer has exactly
     // round(total phoneme duration * sampleRate / rate) samples.
-    std::vector<float> render(const std::vector<Phoneme>& phonemes,
+    std::vector<float> render(const std::vector<Phoneme> &phonemes,
                               int sampleRate = 44100) const;
 
-    const Voice& voice() const { return voice_; }
+    const Voice &voice() const { return voice_; }
 
-private:
+  private:
     Voice voice_;
 };
 
 // Convenience helper: phonemize and render in one call.
-std::vector<float> synthesizeText(std::string_view text,
-                                  const Voice& voice,
+std::vector<float> synthesizeText(std::string_view text, const Voice &voice,
                                   int sampleRate = 44100);
 
 } // namespace formant

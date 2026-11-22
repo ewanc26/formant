@@ -10,7 +10,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.1.0";
+constexpr const char *kVersion = "0.1.0";
 
 using formant::Voice;
 using formant::voicePreset;
@@ -54,7 +54,7 @@ Example:
 }
 
 void listVoices() {
-    for (const std::string& name : voicePresetNames()) {
+    for (const std::string &name : voicePresetNames()) {
         const Voice voice = voicePreset(name);
         std::cout << name << "\t" << voice.pitch << " Hz\tformants x"
                   << voice.formantScale << "\n";
@@ -62,12 +62,12 @@ void listVoices() {
 }
 
 void listPhonemes() {
-    for (const std::string& name : formant::phonemeNames()) {
+    for (const std::string &name : formant::phonemeNames()) {
         std::cout << name << "\n";
     }
 }
 
-double number(const std::string& flag, const std::string& value) {
+double number(const std::string &flag, const std::string &value) {
     try {
         size_t used = 0;
         const double result = std::stod(value, &used);
@@ -75,15 +75,17 @@ double number(const std::string& flag, const std::string& value) {
             throw std::invalid_argument("trailing characters");
         }
         return result;
-    } catch (const std::exception&) {
-        throw std::invalid_argument("invalid number for " + flag + ": " + value);
+    } catch (const std::exception &) {
+        throw std::invalid_argument("invalid number for " + flag + ": " +
+                                    value);
     }
 }
 
-int integer(const std::string& flag, const std::string& value) {
+int integer(const std::string &flag, const std::string &value) {
     const double parsed = number(flag, value);
     if (parsed != static_cast<double>(static_cast<int>(parsed))) {
-        throw std::invalid_argument("expected an integer for " + flag + ": " + value);
+        throw std::invalid_argument("expected an integer for " + flag + ": " +
+                                    value);
     }
     return static_cast<int>(parsed);
 }
@@ -99,7 +101,8 @@ struct Options {
 };
 
 // Accepts both "--flag value" and "--flag=value".
-std::string takeValue(int& index, int argc, char** argv, const std::string& flag) {
+std::string takeValue(int &index, int argc, char **argv,
+                      const std::string &flag) {
     const std::string prefix = flag + "=";
     const std::string arg = argv[index];
     if (arg.rfind(prefix, 0) == 0) {
@@ -111,12 +114,12 @@ std::string takeValue(int& index, int argc, char** argv, const std::string& flag
     return argv[++index];
 }
 
-Options parseOptions(int argc, char** argv) {
+Options parseOptions(int argc, char **argv) {
     Options options;
     const std::string doubleFlags[] = {
-        "--pitch", "--rate", "--formant-scale", "--vibrato-rate",
-        "--vibrato-depth", "--breathiness", "--gain", "--attack",
-        "--release", "--declination",
+        "--pitch",         "--rate",        "--formant-scale", "--vibrato-rate",
+        "--vibrato-depth", "--breathiness", "--gain",          "--attack",
+        "--release",       "--declination",
     };
 
     for (int i = 1; i < argc; ++i) {
@@ -144,22 +147,32 @@ Options parseOptions(int argc, char** argv) {
         }
 
         bool handled = false;
-        for (const std::string& flag : doubleFlags) {
+        for (const std::string &flag : doubleFlags) {
             if (arg != flag && arg.rfind(flag + "=", 0) != 0) {
                 continue;
             }
             const std::string value = takeValue(i, argc, argv, flag);
             const double parsed = number(flag, value);
-            if (flag == "--pitch") options.voice.pitch = parsed;
-            else if (flag == "--rate") options.voice.rate = parsed;
-            else if (flag == "--formant-scale") options.voice.formantScale = parsed;
-            else if (flag == "--vibrato-rate") options.voice.vibratoRate = parsed;
-            else if (flag == "--vibrato-depth") options.voice.vibratoDepth = parsed;
-            else if (flag == "--breathiness") options.voice.breathiness = parsed;
-            else if (flag == "--gain") options.voice.gain = parsed;
-            else if (flag == "--attack") options.voice.attack = parsed;
-            else if (flag == "--release") options.voice.release = parsed;
-            else if (flag == "--declination") options.voice.declination = parsed;
+            if (flag == "--pitch")
+                options.voice.pitch = parsed;
+            else if (flag == "--rate")
+                options.voice.rate = parsed;
+            else if (flag == "--formant-scale")
+                options.voice.formantScale = parsed;
+            else if (flag == "--vibrato-rate")
+                options.voice.vibratoRate = parsed;
+            else if (flag == "--vibrato-depth")
+                options.voice.vibratoDepth = parsed;
+            else if (flag == "--breathiness")
+                options.voice.breathiness = parsed;
+            else if (flag == "--gain")
+                options.voice.gain = parsed;
+            else if (flag == "--attack")
+                options.voice.attack = parsed;
+            else if (flag == "--release")
+                options.voice.release = parsed;
+            else if (flag == "--declination")
+                options.voice.declination = parsed;
             handled = true;
             break;
         }
@@ -176,10 +189,13 @@ Options parseOptions(int argc, char** argv) {
             options.voice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
             options.output = takeValue(i, argc, argv, "--output");
-        } else if (arg == "--sample-rate" || arg.rfind("--sample-rate=", 0) == 0) {
-            options.sampleRate = integer("--sample-rate", takeValue(i, argc, argv, "--sample-rate"));
+        } else if (arg == "--sample-rate" ||
+                   arg.rfind("--sample-rate=", 0) == 0) {
+            options.sampleRate = integer(
+                "--sample-rate", takeValue(i, argc, argv, "--sample-rate"));
         } else if (arg == "--harmonics" || arg.rfind("--harmonics=", 0) == 0) {
-            options.voice.harmonics = integer("--harmonics", takeValue(i, argc, argv, "--harmonics"));
+            options.voice.harmonics =
+                integer("--harmonics", takeValue(i, argc, argv, "--harmonics"));
         } else {
             throw std::invalid_argument("unknown option: " + arg);
         }
@@ -189,7 +205,7 @@ Options parseOptions(int argc, char** argv) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     try {
         const Options options = parseOptions(argc, argv);
 
@@ -200,22 +216,25 @@ int main(int argc, char** argv) {
             text = buffer.str();
         }
 
-        if (options.voice.rate <= 0.0 || options.voice.gain <= 0.0
-            || options.voice.pitch < 0.0 || options.voice.harmonics < 0) {
-            throw std::invalid_argument("rate and gain must be positive; pitch and harmonics must not be negative");
+        if (options.voice.rate <= 0.0 || options.voice.gain <= 0.0 ||
+            options.voice.pitch < 0.0 || options.voice.harmonics < 0) {
+            throw std::invalid_argument("rate and gain must be positive; pitch "
+                                        "and harmonics must not be negative");
         }
 
-        const std::vector<formant::Phoneme> phonemes = options.usePhonemes
-            ? formant::parsePhonemes(options.phonemes)
-            : formant::phonemize(text);
-        const std::vector<float> samples = formant::Synthesizer(options.voice)
-            .render(phonemes, options.sampleRate);
+        const std::vector<formant::Phoneme> phonemes =
+            options.usePhonemes ? formant::parsePhonemes(options.phonemes)
+                                : formant::phonemize(text);
+        const std::vector<float> samples =
+            formant::Synthesizer(options.voice)
+                .render(phonemes, options.sampleRate);
         formant::writeWav(options.output, samples, options.sampleRate);
 
-        std::cout << "Wrote " << samples.size() << " samples to " << options.output
-                  << " (" << options.voice.name << ", " << options.sampleRate << " Hz)\n";
+        std::cout << "Wrote " << samples.size() << " samples to "
+                  << options.output << " (" << options.voice.name << ", "
+                  << options.sampleRate << " Hz)\n";
         return 0;
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         std::cerr << "formant: " << error.what() << "\n";
         return 1;
     }

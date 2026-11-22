@@ -13,24 +13,26 @@ namespace {
 
 int failures = 0;
 
-#define CHECK(condition) do {                                                    \
-    if (!(condition)) {                                                          \
-        std::cerr << "FAIL " << __FILE__ << ":" << __LINE__ << ": " #condition  \
-                  << "\n";                                                       \
-        ++failures;                                                              \
-    }                                                                            \
-} while (false)
+#define CHECK(condition)                                                       \
+    do {                                                                       \
+        if (!(condition)) {                                                    \
+            std::cerr << "FAIL " << __FILE__ << ":" << __LINE__                \
+                      << ": " #condition << "\n";                              \
+            ++failures;                                                        \
+        }                                                                      \
+    } while (false)
 
-std::vector<std::string> names(const std::vector<formant::Phoneme>& phonemes) {
+std::vector<std::string> names(const std::vector<formant::Phoneme> &phonemes) {
     std::vector<std::string> result;
-    for (const formant::Phoneme& phoneme : phonemes) {
+    for (const formant::Phoneme &phoneme : phonemes) {
         result.push_back(phoneme.name);
     }
     return result;
 }
 
-bool contains(const std::vector<std::string>& items, const std::string& wanted) {
-    for (const std::string& item : items) {
+bool contains(const std::vector<std::string> &items,
+              const std::string &wanted) {
+    for (const std::string &item : items) {
         if (item == wanted) {
             return true;
         }
@@ -38,7 +40,7 @@ bool contains(const std::vector<std::string>& items, const std::string& wanted) 
     return false;
 }
 
-double peak(const std::vector<float>& samples) {
+double peak(const std::vector<float> &samples) {
     double result = 0.0;
     for (float sample : samples) {
         result = std::max(result, std::abs(static_cast<double>(sample)));
@@ -46,11 +48,11 @@ double peak(const std::vector<float>& samples) {
     return result;
 }
 
-uint32_t littleEndian32(const std::vector<uint8_t>& bytes, size_t offset) {
-    return static_cast<uint32_t>(bytes[offset])
-        | (static_cast<uint32_t>(bytes[offset + 1]) << 8)
-        | (static_cast<uint32_t>(bytes[offset + 2]) << 16)
-        | (static_cast<uint32_t>(bytes[offset + 3]) << 24);
+uint32_t littleEndian32(const std::vector<uint8_t> &bytes, size_t offset) {
+    return static_cast<uint32_t>(bytes[offset]) |
+           (static_cast<uint32_t>(bytes[offset + 1]) << 8) |
+           (static_cast<uint32_t>(bytes[offset + 2]) << 16) |
+           (static_cast<uint32_t>(bytes[offset + 3]) << 24);
 }
 
 } // namespace
@@ -61,13 +63,13 @@ int main() {
     // Voice presets are data, and every built-in name resolves.
     const std::vector<std::string> presets = voicePresetNames();
     CHECK(presets.size() >= 6);
-    for (const std::string& name : presets) {
+    for (const std::string &name : presets) {
         CHECK(voicePreset(name).name == name);
     }
     bool rejected = false;
     try {
         (void)voicePreset("nonexistent");
-    } catch (const std::invalid_argument&) {
+    } catch (const std::invalid_argument &) {
         rejected = true;
     }
     CHECK(rejected);
@@ -92,7 +94,7 @@ int main() {
     rejected = false;
     try {
         (void)parsePhonemes("[h notaphoneme]");
-    } catch (const std::invalid_argument&) {
+    } catch (const std::invalid_argument &) {
         rejected = true;
     }
     CHECK(rejected);
@@ -118,13 +120,13 @@ int main() {
     const Voice whisper = voicePreset("whisper");
     CHECK(peak(Synthesizer(whisper).render(vowels, 22050)) > 0.2);
 
-    CHECK(synthesizeText("hello", voice, 22050)
-          == Synthesizer(voice).render(phonemize("hello"), 22050));
+    CHECK(synthesizeText("hello", voice, 22050) ==
+          Synthesizer(voice).render(phonemize("hello"), 22050));
 
     rejected = false;
     try {
         (void)Synthesizer(voice).render(vowels, 4000);
-    } catch (const std::invalid_argument&) {
+    } catch (const std::invalid_argument &) {
         rejected = true;
     }
     CHECK(rejected);
@@ -143,7 +145,7 @@ int main() {
 
     const std::string path = "formant_test_output.wav";
     writeWav(path, first, 22050);
-    FILE* file = std::fopen(path.c_str(), "rb");
+    FILE *file = std::fopen(path.c_str(), "rb");
     CHECK(file != nullptr);
     if (file) {
         std::fseek(file, 0, SEEK_END);

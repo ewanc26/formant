@@ -11,7 +11,7 @@ namespace formant {
 namespace {
 
 template <typename T>
-void appendLittleEndian(std::vector<uint8_t>& out, T value) {
+void appendLittleEndian(std::vector<uint8_t> &out, T value) {
     static_assert(sizeof(T) <= 4, "unexpected integer width");
     for (size_t i = 0; i < sizeof(T); ++i) {
         out.push_back(static_cast<uint8_t>((value >> (8 * i)) & 0xff));
@@ -26,7 +26,8 @@ std::vector<uint8_t> wavHeader(size_t sampleCount, int sampleRate) {
     }
     const uint64_t bytes64 = static_cast<uint64_t>(sampleCount) * 2u;
     if (bytes64 > 0xffffffffull) {
-        throw std::invalid_argument("audio data is too large for a 32-bit WAV header");
+        throw std::invalid_argument(
+            "audio data is too large for a 32-bit WAV header");
     }
     const uint32_t dataBytes = static_cast<uint32_t>(bytes64);
     const uint32_t channels = 1;
@@ -50,21 +51,26 @@ std::vector<uint8_t> wavHeader(size_t sampleCount, int sampleRate) {
     return header;
 }
 
-void writeWav(std::string_view path, const std::vector<float>& samples, int sampleRate) {
+void writeWav(std::string_view path, const std::vector<float> &samples,
+              int sampleRate) {
     const std::vector<uint8_t> header = wavHeader(samples.size(), sampleRate);
     std::ofstream file(std::string(path), std::ios::binary | std::ios::trunc);
     if (!file) {
-        throw std::runtime_error("could not open WAV output: " + std::string(path));
+        throw std::runtime_error("could not open WAV output: " +
+                                 std::string(path));
     }
-    file.write(reinterpret_cast<const char*>(header.data()),
+    file.write(reinterpret_cast<const char *>(header.data()),
                static_cast<std::streamsize>(header.size()));
     for (float sample : samples) {
-        const double clamped = std::clamp(static_cast<double>(sample), -1.0, 1.0);
-        const auto value = static_cast<int16_t>(std::llround(clamped * 32767.0));
-        file.write(reinterpret_cast<const char*>(&value), sizeof(value));
+        const double clamped =
+            std::clamp(static_cast<double>(sample), -1.0, 1.0);
+        const auto value =
+            static_cast<int16_t>(std::llround(clamped * 32767.0));
+        file.write(reinterpret_cast<const char *>(&value), sizeof(value));
     }
     if (!file) {
-        throw std::runtime_error("could not write WAV output: " + std::string(path));
+        throw std::runtime_error("could not write WAV output: " +
+                                 std::string(path));
     }
 }
 
