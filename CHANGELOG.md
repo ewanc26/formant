@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.21] - 2026-11-22
+
+### Fixed
+
+- A run of prefix tone bars (for example `˥˩a` or X-SAMPA `<HL>a`) now produces a falling/rising F0 contour matching its postfix equivalent (`a˥˩` / `a<HL>`). Previously each prefix bar overwrote the last, leaving a flat tone.
+
 ## [0.4.20] - 2026-11-22
 
 ### Fixed
