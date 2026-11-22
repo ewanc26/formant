@@ -340,6 +340,10 @@ std::vector<std::string> spellWord(std::string_view word) {
             {"kn", "n"},
             {"wr", "r"},
             {"tion", "sh", "ah", "n"},
+            // -ssion is always /ʃən/ (mission, session, discussion). It must
+            // precede -sion so both s letters collapse into one /ʃ/ instead
+            // of leaving a stray /s/ before the voiced /ʒ/ of -sion.
+            {"ssion", "sh", "ah", "n"},
             {"sion", "zh", "ah", "n"},
             {"ing", "i", "ng"},
             {"th", "th"},
