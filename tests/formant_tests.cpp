@@ -170,6 +170,34 @@ int main() {
     CHECK(contains(names(phonemize("timber")), "b"));
     CHECK(contains(names(phonemize("combat")), "b"));
 
+    // The n in a word-final mn cluster is silent (hymn, autumn, column, damn,
+    // solemn, condemn, limn, and their plurals). The generic letter rules
+    // used to emit it, making "hymn" render byte-identically to [h i m n].
+    CHECK(names(phonemize("hymn")) ==
+          std::vector<std::string>({"h", "i", "m"}));
+    CHECK(names(phonemize("autumn")) ==
+          std::vector<std::string>({"a", "uh", "t", "uh", "m"}));
+    CHECK(names(phonemize("column")) ==
+          std::vector<std::string>({"k", "o", "l", "uh", "m"}));
+    CHECK(names(phonemize("damn")) ==
+          std::vector<std::string>({"d", "a", "m"}));
+    CHECK(names(phonemize("solemn")) ==
+          std::vector<std::string>({"s", "o", "l", "e", "m"}));
+    CHECK(names(phonemize("condemn")) ==
+          std::vector<std::string>({"k", "o", "n", "d", "e", "m"}));
+    CHECK(names(phonemize("hymns")) ==
+          std::vector<std::string>({"h", "i", "m", "s"}));
+    CHECK(names(phonemize("autumns")).back() == "s");
+    CHECK(names(phonemize("columns")).back() == "s");
+    // A medial mn cluster keeps its /n/ when a vowel follows (hymnal,
+    // autumnal, damnation, hymnody), as does initial mn (mnemonic).
+    CHECK(names(phonemize("hymnal")) ==
+          std::vector<std::string>({"h", "i", "m", "n", "a", "l"}));
+    CHECK(contains(names(phonemize("autumnal")), "n"));
+    CHECK(contains(names(phonemize("damnation")), "n"));
+    CHECK(contains(names(phonemize("hymnody")), "n"));
+    CHECK(names(phonemize("mnemonic")).front() == "m");
+
     // The gh digraph used to be spelled as /g/ + /h/. Word-initial gh is /g/;
     // eigh/aigh mark a long vowel; non-initial gh is silent except in the
     // irregular ough/augh words, which the lexicon covers.

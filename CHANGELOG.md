@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.39] - 2026-11-22
+
+### Fixed
+
+- English G2P now drops the silent `n` in word-final `mn` clusters (`hymn` -> `[h i m]`, `autumn` -> `[a uh t uh m]`, `column`, `damn`, `solemn`, `condemn`, `limn`, and their plurals). The generic letter rules previously emitted a spurious /n/, adding 560 samples of bogus audio at 8 kHz. A word-final-only rule, parallel to the existing `mb`/`gn` rules, keeps medial `mn` before a vowel (`hymnal`, `autumnal`, `damnation`, `mnemonic`) unchanged.
+
 ## [0.4.38] - 2026-11-22
 
 ### Fixed
