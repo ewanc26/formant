@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.17] - 2026-11-22
+
+### Fixed
+
+- Numeric CLI options now accept finite subnormal doubles such as `--gain 1e-310`. These were previously rejected because `std::stod` treats the `ERANGE` set on underflow as an error, even though the value is valid and finite.
+
 ## [0.4.16] - 2026-11-22
 
 ### Fixed

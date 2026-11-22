@@ -141,6 +141,21 @@ foreach(bad_flag --gain --rate --formant-scale --attack --declination)
     endif()
 endforeach()
 
+# Finite subnormal doubles are valid options: strtod sets ERANGE on underflow,
+# but stod turned that into an out_of_range exception and rejected them.
+foreach(subnormal_gain 1e-310 5e-324)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa a "--gain=${subnormal_gain}"
+            --harmonics 1 --breathiness 0 --vibrato-depth 0 --pitch 50
+            --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE subnormal_result
+        ERROR_VARIABLE subnormal_error
+    )
+    if(NOT subnormal_result EQUAL 0)
+        message(FATAL_ERROR "formant rejected finite subnormal gain ${subnormal_gain}: ${subnormal_error}")
+    endif()
+endforeach()
+
 # Out-of-range integers are rejected without an out-of-range double-to-int cast.
 foreach(out_of_range 3000000000 2147483648 -3000000000)
     execute_process(
