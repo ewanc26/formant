@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-11-22
+
+### Fixed
+
+- Peak normalisation now accumulates samples in double precision, so a large finite gain can no longer overflow a float and produce NaN output. Non-finite intermediate samples are rejected explicitly.
+
 ## [0.4.11] - 2026-11-22
 
 ### Fixed
