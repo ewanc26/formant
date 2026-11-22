@@ -290,6 +290,18 @@ std::vector<std::string> spellWord(std::string_view word) {
             continue;
         }
 
+        // The n in a word-final mn cluster is silent (hymn, autumn, column,
+        // damn, solemn, condemn, and their plurals). A medial mn as in hymnal
+        // or damnation keeps its /n/ because a vowel follows the cluster, so
+        // only the final cluster (optionally followed by plural -s) collapses.
+        if (startsWith(clean, i, "mn") &&
+            (i + 2 == clean.size() ||
+             (i + 3 == clean.size() && clean[i + 2] == 's'))) {
+            result.push_back("m");
+            i += 2;
+            continue;
+        }
+
         // The g in gn is silent at the start of a word (gnome, gnat) and at
         // the end (sign, campaign, foreign), including plural -s (signs).
         // A medial gn is a real /g/ + /n/ cluster across syllables (signal,
