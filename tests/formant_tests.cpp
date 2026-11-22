@@ -373,6 +373,30 @@ int main() {
     CHECK(names(phonemize("snowhill")) ==
           std::vector<std::string>({"s", "n", "o", "w", "h", "i", "l", "l"}));
 
+    // -ssion is always a single /ʃən/ (mission, session, discussion). The
+    // longer rule must precede -sion so both s letters collapse, otherwise
+    // the stray s plus voiced /ʒ/ renders mission as [m i s zh ah n]. Vowel
+    // + -sion keeps its /ʒən/ (vision, decision).
+    CHECK(names(phonemize("mission")) ==
+          std::vector<std::string>({"m", "i", "sh", "ah", "n"}));
+    CHECK(names(phonemize("session")) ==
+          std::vector<std::string>({"s", "e", "sh", "ah", "n"}));
+    CHECK(names(phonemize("passion")) ==
+          std::vector<std::string>({"p", "a", "sh", "ah", "n"}));
+    CHECK(
+        names(phonemize("discussion")) ==
+        std::vector<std::string>({"d", "i", "s", "k", "uh", "sh", "ah", "n"}));
+    CHECK(names(phonemize("admission")) ==
+          std::vector<std::string>({"a", "d", "m", "i", "sh", "ah", "n"}));
+    CHECK(names(phonemize("permission")) ==
+          std::vector<std::string>({"p", "er", "m", "i", "sh", "ah", "n"}));
+    CHECK(names(phonemize("confession")).back() == "n");
+    CHECK(!contains(names(phonemize("confession")), "zh"));
+    CHECK(names(phonemize("vision")) ==
+          std::vector<std::string>({"v", "i", "zh", "ah", "n"}));
+    CHECK(names(phonemize("decision")) ==
+          std::vector<std::string>({"d", "e", "s", "i", "zh", "ah", "n"}));
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));

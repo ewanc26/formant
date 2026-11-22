@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.38] - 2026-11-22
+
+### Fixed
+
+- English G2P now spells `-ssion` words as a single /ʃən/ (`mission` -> `[m i sh ah n]`, `session`, `passion`, `discussion`, `admission`, `permission`). A longer `ssion` rule now precedes the unconditional `sion` rule, so the doubled `s` no longer leaves a stray /s/ before the voiced /ʒ/. Vowel + `-sion` words such as `vision` and `decision` keep their /ʒən/ unchanged.
+
 ## [0.4.37] - 2026-11-22
 
 ### Fixed
