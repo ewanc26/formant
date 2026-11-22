@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.1.0
+  VERSION 0.2.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -41,8 +41,15 @@ if(FORMANT_SANITIZE)
     target_link_options(formant_core PUBLIC -fsanitize=address,undefined)
 endif()
 
+configure_file(
+    src/version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/version.h
+    @ONLY
+)
+
 add_executable(formant src/cli/main.cpp)
 target_link_libraries(formant PRIVATE formant_core)
+target_include_directories(formant PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 if(FORMANT_BUILD_TESTS)
     include(CTest)
