@@ -254,6 +254,18 @@ std::vector<std::string> spellWord(std::string_view word) {
             continue;
         }
 
+        // A digit embedded in an alphanumeric token (e.g. "B2" or "Room
+        // 101B") must be spelled just like a standalone number. The all-digit
+        // fast path above only covers tokens made entirely of digits, and the
+        // letter switch below would otherwise drop these silently.
+        if (std::isdigit(static_cast<unsigned char>(clean[i]))) {
+            const std::vector<std::string> spelled =
+                spellDigits(std::string_view(clean).substr(i, 1));
+            result.insert(result.end(), spelled.begin(), spelled.end());
+            ++i;
+            continue;
+        }
+
         const char c = clean[i];
         const char next = i + 1 < clean.size() ? clean[i + 1] : '\0';
         const bool final = i + 1 == clean.size();
