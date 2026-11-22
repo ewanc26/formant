@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.36] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats `sc` before `e`, `i` or `y` as a single /s/ (`scent` -> `[s e n t]`, now a homophone of `sent` and `cent`; also `scene`, `science`, `scissors`, `ascent`, `descent`, `crescent`). It previously emitted a doubled /s/ and added an extra 90 ms fricative. `sc` before other letters (`school`, `screen`, `score`) stays /sk/, and `sceptic` keeps its /sk/ exception.
+
 ## [0.4.35] - 2026-11-22
 
 ### Fixed

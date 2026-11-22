@@ -299,6 +299,37 @@ int main() {
     CHECK(names(phonemize("knee")).front() == "n");
     CHECK(names(phonemize("bomb")).back() == "m");
 
+    // sc before e, i or y is a single /s/ (scent, scene, science); the c is
+    // silent, so scent is a homophone of sent and cent. sc before a/o/u or a
+    // consonant stays /sk/ (school, screen, score, scrape), and the sc+h
+    // initial rule is untouched. sceptic is the documented /sk/ exception.
+    CHECK(names(phonemize("scent")) ==
+          std::vector<std::string>({"s", "e", "n", "t"}));
+    CHECK(names(phonemize("scent")) == names(phonemize("sent")));
+    CHECK(names(phonemize("scent")) == names(phonemize("cent")));
+    CHECK(names(phonemize("ascent")) ==
+          std::vector<std::string>({"a", "s", "e", "n", "t"}));
+    CHECK(names(phonemize("descent")) ==
+          std::vector<std::string>({"d", "e", "s", "e", "n", "t"}));
+    CHECK(names(phonemize("crescent")) ==
+          std::vector<std::string>({"k", "r", "e", "s", "e", "n", "t"}));
+    CHECK(names(phonemize("scene")) ==
+          std::vector<std::string>({"s", "e", "n"}));
+    CHECK(names(phonemize("science")) ==
+          std::vector<std::string>({"s", "ee", "n", "s"}));
+    CHECK(names(phonemize("scissors")).front() == "s");
+    CHECK(names(phonemize("scissors"))[1] == "i");
+    CHECK(names(phonemize("scenic")).front() == "s");
+    CHECK(names(phonemize("scintilla")).front() == "s");
+    CHECK(names(phonemize("school")) ==
+          std::vector<std::string>({"s", "k", "oo", "l"}));
+    CHECK(names(phonemize("scheme"))[1] == "k");
+    CHECK(names(phonemize("screen"))[1] == "k");
+    CHECK(names(phonemize("score"))[1] == "k");
+    CHECK(names(phonemize("scrape"))[1] == "k");
+    CHECK(names(phonemize("sceptic")) ==
+          std::vector<std::string>({"s", "k", "e", "p", "t", "i", "k"}));
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));
