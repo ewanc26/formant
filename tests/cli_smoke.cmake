@@ -1,4 +1,19 @@
-# Minimal end-to-end check: the CLI must write a plausible mono 16-bit WAV.
+# Minimal end-to-end check: the CLI must report the configured version and
+# write a plausible mono 16-bit WAV.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --version
+    RESULT_VARIABLE version_result
+    OUTPUT_VARIABLE version_output
+    ERROR_VARIABLE version_error
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if(NOT version_result EQUAL 0)
+    message(FATAL_ERROR "formant --version failed (${version_result}): ${version_error}")
+endif()
+if(NOT version_output STREQUAL "${FORMANT_EXPECTED_VERSION}")
+    message(FATAL_ERROR "CLI version '${version_output}' does not match CMake version '${FORMANT_EXPECTED_VERSION}'")
+endif()
+
 execute_process(
     COMMAND "${FORMANT_CLI}" --phonemes "[h ee l o]" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
     RESULT_VARIABLE result
