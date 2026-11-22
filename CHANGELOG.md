@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.23] - 2026-11-22
+
+### Fixed
+
+- Voice parameter overrides (`--pitch`, `--rate`, `--harmonics`, etc.) now apply regardless of whether they appear before or after `--voice`. Previously an override seen before `--voice` was discarded when the preset replaced the whole `Voice` struct, making audio depend on flag order.
+
 ## [0.4.22] - 2026-11-22
 
 ### Fixed
