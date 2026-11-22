@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-11-22
+
+### Changed
+
+- The Release workflow is now idempotent: re-running it for a tag whose release already exists refreshes the release notes instead of failing with an HTTP 422 error.
+
 ## [0.4.13] - 2026-11-22
 
 ### Fixed

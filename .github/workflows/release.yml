@@ -38,7 +38,14 @@ jobs:
             echo "No changelog section for $version" >&2
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+          # Re-running a failed workflow must not fail just because the release
+          # was already created in an earlier attempt. Refresh its notes when
+          # it exists; otherwise create it as normal.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+          fi
       - name: Attach source archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
