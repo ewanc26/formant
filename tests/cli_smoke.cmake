@@ -154,4 +154,16 @@ if(NOT integer_error MATCHES "expected an integer for --sample-rate")
     message(FATAL_ERROR "unexpected sample-rate integer message: ${integer_error}")
 endif()
 
+# A near-zero fundamental with many harmonics must render promptly, not loop
+# once per harmonic (billions of times) because the Nyquist break is unreachable.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --pitch 0.000001 --harmonics 2000000000 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE subsonic_result
+    ERROR_VARIABLE subsonic_error
+    TIMEOUT 20
+)
+if(NOT subsonic_result EQUAL 0)
+    message(FATAL_ERROR "formant hung or failed on a near-zero fundamental (${subsonic_result}): ${subsonic_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

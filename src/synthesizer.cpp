@@ -12,6 +12,11 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kHarmonicCeiling = 0.49; // fraction of the sample rate
+// Hard cap on voiced partials. The Nyquist break normally stops the harmonic
+// loop much earlier, but a near-zero fundamental never reaches it; without a
+// cap such a voice would iterate billions of times per sample. Beyond this
+// count the 1/h weighting makes each partial inaudible.
+constexpr int kMaxHarmonics = 4096;
 
 struct Segment {
     const Phoneme *phoneme = nullptr;
@@ -218,7 +223,11 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
 
             double voiced = 0.0;
             if (fundamental > 0.0 && voice_.harmonics > 0) {
-                for (int h = 1; h <= voice_.harmonics; ++h) {
+                // The ceiling bounds the useful partials, but a very small
+                // fundamental can keep every partial below it. Cap the count
+                // so a pathological voice cannot render without bound.
+                const int limit = std::min(voice_.harmonics, kMaxHarmonics);
+                for (int h = 1; h <= limit; ++h) {
                     const double frequency =
                         fundamental * static_cast<double>(h);
                     if (frequency > sampleRate * kHarmonicCeiling) {

@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-11-22
+
+### Fixed
+
+- Voiced rendering now caps the number of glottal harmonics. A near-zero fundamental can no longer make the Nyquist break unreachable and cause rendering to run indefinitely with a large `--harmonics` value.
+
 ## [0.4.10] - 2026-11-22
 
 ### Fixed
