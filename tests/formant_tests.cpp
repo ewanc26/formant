@@ -126,6 +126,19 @@ int main() {
     CHECK(names(phonemize("kite")).front() == "k");
     CHECK(names(phonemize("skin")).front() == "s");
 
+    // The w in a wr- cluster is silent. The generic letter rules used to emit
+    // a spurious /w/, making "wrong" render byte-identically to [w r o ng].
+    CHECK(names(phonemize("wrong")) ==
+          std::vector<std::string>({"r", "o", "ng"}));
+    CHECK(names(phonemize("wrist")).front() == "r");
+    CHECK(names(phonemize("wreck")).front() == "r");
+    CHECK(names(phonemize("wring")).front() == "r");
+    CHECK(names(phonemize("wrap")).front() == "r");
+    CHECK(contains(names(phonemize("rewrite")), "r"));
+    CHECK(names(phonemize("row")).front() == "r");
+    CHECK(names(phonemize("warm")).front() == "w");
+    CHECK(names(phonemize("water")).front() == "w");
+
     // Digits embedded in alphanumeric tokens are spelled rather than dropped;
     // the all-digit fast path alone used to leave them out (e.g. "B2", "H2O").
     const std::vector<std::string> b2 = names(phonemize("B2"));

@@ -204,9 +204,11 @@ std::vector<std::string> spellWord(std::string_view word) {
             const char *third = nullptr;
         };
         static const Rule rules[] = {
-            // The k in a kn- cluster is silent in English (knee, knight,
-            // knock, knowledge), including medially in words like unknown.
+            // The first letter of kn- and wr- clusters is silent in English
+            // (knee, knight / wrong, wrist), including after prefixes as in
+            // unknown and rewrite.
             {"kn", "n"},
+            {"wr", "r"},
             {"tion", "sh", "ah", "n"},
             {"sion", "zh", "ah", "n"},
             {"ing", "i", "ng"},
