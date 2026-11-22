@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-11-22
+
+### Fixed
+
+- `wavHeader()` now rejects sample counts whose `36 + dataBytes` RIFF chunk size would overflow 32 bits, instead of writing a corrupt size field.
+
 ## [0.4.8] - 2026-11-22
 
 ### Fixed
