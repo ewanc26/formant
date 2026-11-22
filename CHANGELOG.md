@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.35] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats `gn` as silent /n/ word-initially and word-finally, including plural `-s` (`gnome` -> `[n o m]`, `sign` -> `[s i n]`, `campaigns` -> `[k a m p ay n s]`). It previously emitted a spurious /g/ plosive, rendering `gnome` byte-identically to `[g n o m]`. Medial `gn` in words like `signal`, `magnet` and `signature` stays /g/ + /n/.
+
 ## [0.4.34] - 2026-11-22
 
 ### Fixed

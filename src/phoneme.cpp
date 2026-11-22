@@ -261,6 +261,18 @@ std::vector<std::string> spellWord(std::string_view word) {
             continue;
         }
 
+        // The g in gn is silent at the start of a word (gnome, gnat) and at
+        // the end (sign, campaign, foreign), including plural -s (signs).
+        // A medial gn is a real /g/ + /n/ cluster across syllables (signal,
+        // magnet, signature) and is left to the generic letter rules.
+        if (startsWith(clean, i, "gn") &&
+            (i == 0 || i + 2 == clean.size() ||
+             (i + 3 == clean.size() && clean[i + 2] == 's'))) {
+            result.push_back("n");
+            i += 2;
+            continue;
+        }
+
         // dg before e, i or y is the single affricate /dʒ/ (bridge, budget,
         // budgie); the d is silent. Consume only the two letters so a
         // following vowel is still handled by the normal rules: budget keeps
