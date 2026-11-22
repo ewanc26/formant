@@ -149,6 +149,29 @@ int main() {
         CHECK(std::isfinite(sample));
     }
 
+    // A large finite gain used to overflow the float sample before
+    // normalisation, leaving an infinite peak and NaN samples. Rendering must
+    // stay finite and deterministic at any finite gain.
+    Voice loud = voice;
+    loud.gain = 1e40;
+    const std::vector<float> loudSamples =
+        Synthesizer(loud).render(vowels, 22050);
+    CHECK(loudSamples.size() == first.size());
+    CHECK(loudSamples == Synthesizer(loud).render(vowels, 22050));
+    CHECK(peak(loudSamples) > 0.2);
+    CHECK(peak(loudSamples) <= 0.9001);
+    for (float sample : loudSamples) {
+        CHECK(std::isfinite(sample));
+    }
+    Voice huge = voice;
+    huge.gain = 1e300;
+    const std::vector<float> hugeSamples =
+        Synthesizer(huge).render(vowels, 22050);
+    CHECK(peak(hugeSamples) > 0.2);
+    for (float sample : hugeSamples) {
+        CHECK(std::isfinite(sample));
+    }
+
     const Phoneme *moving = findPhoneme("ay");
     CHECK(moving != nullptr);
     if (moving) {

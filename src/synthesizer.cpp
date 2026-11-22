@@ -142,7 +142,10 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     }
 
     const int totalSamples = cursor;
-    std::vector<float> output(static_cast<size_t>(totalSamples), 0.0f);
+    // Accumulate in double precision. Converting each sample to float before
+    // normalisation can overflow with a large gain, leaving an infinite peak
+    // and NaN samples after the inf * 0 scaling step.
+    std::vector<double> raw(static_cast<size_t>(totalSamples), 0.0);
     const std::vector<NoisePartial> partials = makeNoisePartials(sampleRate);
     const double transition =
         std::max(1.0, std::round(0.035 * sampleRate / rate));
@@ -253,20 +256,25 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                 noise = 0.6 * sum / static_cast<double>(partials.size());
             }
 
-            output[static_cast<size_t>(s)] =
-                static_cast<float>(voice_.gain * envelope * phoneme.amplitude *
-                                   (voicedMix * voiced + noiseMix * noise));
+            raw[static_cast<size_t>(s)] =
+                voice_.gain * envelope * phoneme.amplitude *
+                (voicedMix * voiced + noiseMix * noise);
         }
     }
 
-    float peak = 0.0f;
-    for (float sample : output) {
+    double peak = 0.0;
+    for (double sample : raw) {
+        if (!std::isfinite(sample)) {
+            throw std::invalid_argument(
+                "voice parameters produce non-finite output");
+        }
         peak = std::max(peak, std::abs(sample));
     }
-    if (peak > 0.0f) {
-        const float normalise = 0.9f / peak;
-        for (float &sample : output) {
-            sample *= normalise;
+    std::vector<float> output(raw.size(), 0.0f);
+    if (peak > 0.0) {
+        const double normalise = 0.9 / peak;
+        for (size_t i = 0; i < raw.size(); ++i) {
+            output[i] = static_cast<float>(raw[i] * normalise);
         }
     }
     return output;
