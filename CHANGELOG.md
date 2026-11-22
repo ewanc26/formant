@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.27] - 2026-11-22
+
+### Fixed
+
+- English G2P now treats the `w` in a `wr-` cluster as silent, so `wrong` renders as `[r o ng]` instead of `[w r o ng]` (and likewise `write`, `wrist`, `wreck`, `wring`, `wrap` and medial `wr` in `rewrite`). Words with a pronounced `w` such as `row`, `warm` and `water` are unchanged.
+
 ## [0.4.26] - 2026-11-22
 
 ### Fixed
