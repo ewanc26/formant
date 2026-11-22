@@ -408,6 +408,21 @@ int main() {
           parseIpa("a\u02E5\u02E9").front().pitchEnd);
     CHECK(parseIpa("a\u030C").front().pitchEnd >
           parseIpa("a\u030C").front().pitchStart);
+
+    // A run of prefix tone bars describes a contour from its first level to
+    // its last, matching the equivalent postfix run. Previously each prefix
+    // bar overwrote the last, leaving a flat tone at the final bar's level.
+    const Phoneme prefixFall = parseIpa("\u02E5\u02E9a").front();
+    const Phoneme postfixFall = parseIpa("a\u02E5\u02E9").front();
+    CHECK(prefixFall.pitchStart == postfixFall.pitchStart);
+    CHECK(prefixFall.pitchEnd == postfixFall.pitchEnd);
+    CHECK(prefixFall.pitchStart > prefixFall.pitchEnd);
+    const Phoneme prefixRise = parseXsampa("<LH>a").front();
+    const Phoneme postfixRise = parseXsampa("a<LH>").front();
+    CHECK(prefixRise.pitchStart == postfixRise.pitchStart);
+    CHECK(prefixRise.pitchEnd == postfixRise.pitchEnd);
+    CHECK(prefixRise.pitchEnd > prefixRise.pitchStart);
+    CHECK(prefixFall.pitchStart != prefixRise.pitchStart);
     CHECK(parseIpa("p\u02BC").front().kind == PhonemeKind::Plosive);
     CHECK(parseIpa("n\u0303").front().bands[1].amplitude <
           parseIpa("n").front().bands[1].amplitude);

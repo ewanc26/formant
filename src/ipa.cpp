@@ -984,15 +984,29 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
         bool tieNext = false;
         std::vector<Sound> sounds = found->second;
 
-        for (const uint32_t mod : pendingModifiers) {
-            if (mod == 0x0361 || mod == 0x035C) {
+        for (size_t mod = 0; mod < pendingModifiers.size();) {
+            const uint32_t cp = pendingModifiers[mod];
+            if (cp == 0x0361 || cp == 0x035C) {
                 tieNext = true;
-            } else if (isToneBar(mod)) {
-                setContour(prosody, toneLevel(mod), toneLevel(mod));
+                name = encodeUtf8(cp) + name;
+                ++mod;
+            } else if (isToneBar(cp)) {
+                // A run of prefix tone bars describes a contour from the
+                // first level to the last, just like a postfix run.
+                const double firstLevel = toneLevel(cp);
+                double lastLevel = firstLevel;
+                while (mod < pendingModifiers.size() &&
+                       isToneBar(pendingModifiers[mod])) {
+                    lastLevel = toneLevel(pendingModifiers[mod]);
+                    name = encodeUtf8(pendingModifiers[mod]) + name;
+                    ++mod;
+                }
+                setContour(prosody, firstLevel, lastLevel);
             } else {
-                applyDiacritic(mod, sounds, prosody);
+                applyDiacritic(cp, sounds, prosody);
+                name = encodeUtf8(cp) + name;
+                ++mod;
             }
-            name = encodeUtf8(mod) + name;
         }
         pendingModifiers.clear();
 
@@ -1015,15 +1029,27 @@ std::vector<Phoneme> parseIpaImpl(std::string_view text) {
     if (last.valid) {
         // A prefix modifier with no following base still belongs to the last
         // base; apply all of its fields rather than only pitch as before.
-        for (const uint32_t mod : pendingModifiers) {
-            if (mod == 0x0361 || mod == 0x035C) {
+        for (size_t mod = 0; mod < pendingModifiers.size();) {
+            const uint32_t cp = pendingModifiers[mod];
+            if (cp == 0x0361 || cp == 0x035C) {
                 last.tieNext = true;
-            } else if (isToneBar(mod)) {
-                setContour(last.prosody, toneLevel(mod), toneLevel(mod));
+                last.name = encodeUtf8(cp) + last.name;
+                ++mod;
+            } else if (isToneBar(cp)) {
+                const double firstLevel = toneLevel(cp);
+                double lastLevel = firstLevel;
+                while (mod < pendingModifiers.size() &&
+                       isToneBar(pendingModifiers[mod])) {
+                    lastLevel = toneLevel(pendingModifiers[mod]);
+                    last.name = encodeUtf8(pendingModifiers[mod]) + last.name;
+                    ++mod;
+                }
+                setContour(last.prosody, firstLevel, lastLevel);
             } else {
-                applyDiacritic(mod, last.sounds, last.prosody);
+                applyDiacritic(cp, last.sounds, last.prosody);
+                last.name = encodeUtf8(cp) + last.name;
+                ++mod;
             }
-            last.name = encodeUtf8(mod) + last.name;
         }
         pendingModifiers.clear();
         regenerateLast();
