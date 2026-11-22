@@ -125,17 +125,25 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     std::vector<Segment> segments;
     segments.reserve(phonemes.size());
     int cursor = 0;
+    // Place each segment boundary at the rounded cumulative duration rather
+    // than rounding each phoneme in isolation. Summing independently rounded
+    // lengths drifts from the documented total by up to one sample per
+    // segment; cumulative boundaries make the final cursor exactly
+    // round(total duration * sampleRate / rate).
+    double cumulativeDuration = 0.0;
     std::array<FormantBand, 4> previousBands = zeroBands();
     bool previousVoiced = false;
     double previousNoise = 0.0;
 
     for (const Phoneme &phoneme : phonemes) {
+        cumulativeDuration += phoneme.duration;
         const double wanted =
-            phoneme.duration / rate * static_cast<double>(sampleRate);
+            cumulativeDuration * static_cast<double>(sampleRate) / rate;
         if (!std::isfinite(wanted) || wanted < -kMaxInt || wanted > kMaxInt) {
             throw std::invalid_argument("phoneme duration / rate out of range");
         }
-        const int length = std::max(1, static_cast<int>(std::llround(wanted)));
+        const int boundary = static_cast<int>(std::llround(wanted));
+        const int length = std::max(1, boundary - cursor);
         if (cursor > std::numeric_limits<int>::max() - length) {
             throw std::invalid_argument("rendered audio is too long");
         }
