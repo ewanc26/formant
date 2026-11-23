@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-23
+
+### Added
+
+- Language-tagged text front ends. `phonemize(text, Language)` and a new `synthesizeText(text, Language, voice, sampleRate)` overload select a G2P module; `Language` covers English (`en`) and Spanish (`es`), `languageFromTag()` accepts BCP-47-style tags such as `es-MX`, and `languageTags()` / `languageTag()` expose the registry. English remains the default, so existing calls are unchanged.
+- Rule-based Castilian Spanish G2P: context-sensitive `c`/`z` -> /θ/, `g` before a front vowel -> /x/, silent `u` in `gu`/`qu`, the `b`/`v` merger, `ll` -> /ʝ/, `ñ` -> /ɲ/, word-initial and post-nasal/lateral trill versus intervocalic tap, diphthong glides, and stress from written accents or the penultimate/final rule. UTF-8 input is handled without locale dependence, including accented capitals and inverted `¿`/`¡`; digits are read in Spanish.
+- CLI `--lang TAG` and `--list-languages`. `--lang` is rejected with the language-independent transcription modes, and an unsupported tag reports the supported set.
+
 ## [0.4.43] - 2026-11-22
 
 ### Fixed

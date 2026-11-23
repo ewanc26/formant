@@ -327,4 +327,9 @@ std::vector<float> synthesizeText(std::string_view text, const Voice &voice,
     return Synthesizer(voice).render(phonemize(text), sampleRate);
 }
 
+std::vector<float> synthesizeText(std::string_view text, Language language,
+                                  const Voice &voice, int sampleRate) {
+    return Synthesizer(voice).render(phonemize(text, language), sampleRate);
+}
+
 } // namespace formant

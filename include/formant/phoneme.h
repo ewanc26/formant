@@ -50,9 +50,25 @@ const std::vector<Phoneme> &phonemeTable();
 // Case-sensitive lookup of a phoneme by its short name ("ee", "th", "_").
 const Phoneme *findPhoneme(std::string_view name);
 
-// Convert text to phonemes using a small lexicon plus English letter rules.
-// Unknown words fall back to deterministic grapheme-to-phoneme conversion.
-std::vector<Phoneme> phonemize(std::string_view text);
+// Text front ends share one phoneme inventory and one synthesis path. The
+// language tag selects only grapheme-to-phoneme conversion; IPA and X-SAMPA
+// input bypass the text layer entirely.
+enum class Language { English, Spanish };
+
+// Stable BCP-47-style primary tags ("en", "es") and display names.
+std::string_view languageTag(Language language);
+std::string_view languageName(Language language);
+std::vector<std::string> languageTags();
+
+// Parse a language tag, accepting any region or script suffix ("es-MX",
+// "en_US"). Throws std::invalid_argument for an unsupported language.
+Language languageFromTag(std::string_view tag);
+
+// Convert text to phonemes with the selected language front end. English is
+// the default, so existing callers keep their behaviour. Unknown English
+// words fall back to deterministic grapheme-to-phoneme conversion.
+std::vector<Phoneme> phonemize(std::string_view text,
+                               Language language = Language::English);
 
 // Parse a bracketed phoneme string such as "[h ee l ow]" used by the CLI.
 // Commas and question marks inside the brackets become pauses/rises.

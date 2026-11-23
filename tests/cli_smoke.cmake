@@ -248,4 +248,54 @@ if(override_before_hash STREQUAL preset_only_hash)
     message(FATAL_ERROR "overrides before --voice were discarded")
 endif()
 
+# The language registry is discoverable, Spanish text renders, and --lang is
+# rejected both for unsupported tags and for language-independent input modes.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-languages
+    RESULT_VARIABLE languages_result
+    OUTPUT_VARIABLE languages_output
+    ERROR_VARIABLE languages_error
+)
+if(NOT languages_result EQUAL 0 OR NOT languages_output MATCHES "Spanish")
+    message(FATAL_ERROR "formant --list-languages failed: ${languages_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang es --text "Hola, mundo."
+        --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE spanish_result
+    ERROR_VARIABLE spanish_error
+)
+if(NOT spanish_result EQUAL 0)
+    message(FATAL_ERROR "formant Spanish render failed (${spanish_result}): ${spanish_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" spanish_size)
+if(spanish_size LESS 44)
+    message(FATAL_ERROR "Spanish WAV output is too short: ${spanish_size} bytes")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang fr --text "bonjour" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE bad_language_result
+    ERROR_VARIABLE bad_language_error
+)
+if(bad_language_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted unsupported language 'fr'")
+endif()
+if(NOT bad_language_error MATCHES "unsupported language tag")
+    message(FATAL_ERROR "unexpected unsupported-language message: ${bad_language_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang es --ipa "a" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE language_mode_result
+    ERROR_VARIABLE language_mode_error
+)
+if(language_mode_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted --lang with --ipa")
+endif()
+if(NOT language_mode_error MATCHES "--lang only applies to text input")
+    message(FATAL_ERROR "unexpected --lang mode message: ${language_mode_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

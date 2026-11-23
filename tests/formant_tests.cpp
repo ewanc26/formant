@@ -1221,6 +1221,99 @@ int main() {
           Synthesizer(ipaVoice).render(parseXsampa("h@"), 22050));
     CHECK(peak(synthesizeIpa("a\u02E5\u02E9", ipaVoice, 22050)) > 0.2);
 
+    // Text front ends are language-tagged, but every module returns the same
+    // phoneme sequence and feeds the same synthesiser. English stays default.
+    CHECK(names(phonemize("Hello, world.", Language::English)) == hello);
+    CHECK(languageTags().size() == 2);
+    CHECK(languageTag(Language::English) == "en");
+    CHECK(languageTag(Language::Spanish) == "es");
+    CHECK(languageName(Language::English) == "English");
+    CHECK(languageName(Language::Spanish) == "Spanish");
+    CHECK(languageFromTag("en") == Language::English);
+    CHECK(languageFromTag("EN-us") == Language::English);
+    CHECK(languageFromTag("es-MX") == Language::Spanish);
+    CHECK(languageFromTag("es_419") == Language::Spanish);
+    rejected = false;
+    try {
+        (void)languageFromTag("fr");
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    CHECK(rejected);
+
+    // Castilian Spanish is rule based: context-sensitive c/g/qu/gü, b/v
+    // merger, ll/ñ/ch, trill versus tap, silent h and orthographic stress.
+    CHECK(names(phonemize("hola", Language::Spanish)) ==
+          std::vector<std::string>({"o", "l", "a"}));
+    CHECK(names(phonemize("casa", Language::Spanish)) ==
+          std::vector<std::string>({"k", "a", "s", "a"}));
+    CHECK(names(phonemize("gente", Language::Spanish)) ==
+          std::vector<std::string>({"x", "e", "n", "t", "e"}));
+    CHECK(names(phonemize("guitarra", Language::Spanish)) ==
+          std::vector<std::string>({"g", "i", "t", "a", "r", "a"}));
+    CHECK(names(phonemize("perro", Language::Spanish)) ==
+          std::vector<std::string>({"p", "e", "r", "o"}));
+    CHECK(names(phonemize("pero", Language::Spanish)) ==
+          std::vector<std::string>({"p", "e", "\u027E", "o"}));
+    CHECK(names(phonemize("llave", Language::Spanish)) ==
+          std::vector<std::string>({"\u029D", "a", "b", "e"}));
+    CHECK(names(phonemize("ma\u00F1ana", Language::Spanish)) ==
+          std::vector<std::string>({"m", "a", "\u0272", "a", "n", "a"}));
+    CHECK(names(phonemize("zapato", Language::Spanish)) ==
+          std::vector<std::string>({"\u03B8", "a", "p", "a", "t", "o"}));
+    CHECK(names(phonemize("queso", Language::Spanish)) ==
+          std::vector<std::string>({"k", "e", "s", "o"}));
+    CHECK(names(phonemize("chico", Language::Spanish)) ==
+          std::vector<std::string>({"t", "\u0283", "i", "k", "o"}));
+    // Diphthongs become glides, and the default stress lands on the
+    // penultimate syllable. ciudad keeps its final /d/ and stresses the a.
+    const auto ciudad = phonemize("ciudad", Language::Spanish);
+    CHECK(names(ciudad) ==
+          std::vector<std::string>({"\u03B8", "j", "w", "d", "a", "d"}));
+    CHECK(ciudad.back().name == "d");
+    // A written acute accent overrides the default stress position; the
+    // tokeniser is UTF-8 aware, including accented capitals.
+    {
+        const auto cafe = phonemize("caf\u00E9", Language::Spanish);
+        CHECK(names(cafe) == std::vector<std::string>({"k", "a", "f", "e"}));
+        CHECK(cafe.back().amplitude > 1.0);
+        const auto angela = phonemize("\u00C1NGELA", Language::Spanish);
+        CHECK(names(angela) ==
+              std::vector<std::string>({"a", "n", "x", "e", "l", "a"}));
+        CHECK(angela.front().amplitude > 1.0);
+    }
+    // gü keeps its u as a glide, and the i after it carries the stress.
+    {
+        const auto pinguino = phonemize("ping\u00FCino", Language::Spanish);
+        CHECK(names(pinguino) == std::vector<std::string>(
+                                     {"p", "i", "n", "g", "w", "i", "n", "o"}));
+        CHECK(pinguino[5].amplitude > 1.0);
+    }
+    // Inverted punctuation separates words, and a closing question mark still
+    // carries the utterance-final rise.
+    {
+        const auto question =
+            phonemize("\u00BFQu\u00E9 tal?", Language::Spanish);
+        CHECK(question.back().name == "?");
+        CHECK(question.back().pitchRise);
+        CHECK(contains(names(question), "k"));
+        CHECK(contains(names(question), "t"));
+        CHECK(contains(names(question), "a"));
+    }
+    // Digits are read in Spanish, one word at a time.
+    CHECK(names(phonemize("123", Language::Spanish)) ==
+          std::vector<std::string>(
+              {"u", "n", "o", "d", "o", "s", "t", "\u027E", "e", "s"}));
+    // The language-aware convenience overload uses the shared synthesis path.
+    CHECK(peak(synthesizeText("hola", Language::Spanish, voicePreset("neutral"),
+                              8000)) > 0.2);
+    // A Spanish word and its IPA transcription produce identical PCM: the
+    // language module is only a front end, not a second synthesis path.
+    CHECK(Synthesizer(voicePreset("neutral"))
+              .render(phonemize("hola", Language::Spanish), 8000) ==
+          Synthesizer(voicePreset("neutral"))
+              .render(parseIpa("\u02C8ola"), 8000));
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 
