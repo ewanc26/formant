@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -910,24 +911,115 @@ std::vector<Phoneme> applyPhonemeRules(const std::vector<Phoneme> &input,
     return result;
 }
 
+// Distance over the articulatory/acoustic features already carried by every
+// Phoneme. Formant bands are scaled so a band's own width, not raw Hz, decides
+// closeness; a kind or voicing mismatch dominates. Ties are resolved by the
+// caller in sorted declaration order, so the result is deterministic.
+double featureDistance(const Phoneme &a, const Phoneme &b) {
+    constexpr double kScales[4] = {400.0, 800.0, 1200.0, 1600.0};
+    double distance = a.kind == b.kind ? 0.0 : 3.0;
+    if (a.voiced != b.voiced) {
+        distance += 1.0;
+    }
+    for (size_t i = 0; i < 4; ++i) {
+        distance += std::min(
+            std::fabs(a.bands[i].frequency - b.bands[i].frequency) / kScales[i],
+            3.0);
+    }
+    distance += std::min(std::fabs(a.duration - b.duration) / 0.08, 1.0);
+    return distance;
+}
+
+struct NearestPhoneme {
+    std::string name;
+    Phoneme phoneme;
+    double distance = 0.0;
+};
+
+std::optional<NearestPhoneme>
+nearestDeclared(const Phoneme &target, const LanguageDefinition &language) {
+    std::vector<std::string> names;
+    names.reserve(language.phonemes.size());
+    for (const auto &entry : language.phonemes) {
+        names.push_back(entry.first);
+    }
+    std::sort(names.begin(), names.end());
+
+    std::optional<NearestPhoneme> best;
+    for (const std::string &name : names) {
+        try {
+            const std::vector<Phoneme> parsed = parseIpa(name);
+            if (parsed.empty()) {
+                continue;
+            }
+            Phoneme candidate = parsed.front();
+            applyPhonemeOverride(candidate, language.phonemes.at(name));
+            const double distance = featureDistance(target, candidate);
+            if (!best || distance < best->distance) {
+                best = NearestPhoneme{name, candidate, distance};
+            }
+        } catch (const std::invalid_argument &) {
+            // A declared symbol the universal mapper cannot parse cannot be a
+            // realization target; inventory membership still uses its spelling.
+        }
+    }
+    return best;
+}
+
 void finalizeConlangPhonemes(std::vector<Phoneme> &phonemes,
-                             const LanguageDefinition &language) {
+                             const LanguageDefinition &language,
+                             std::vector<std::string> *warnings) {
     for (Phoneme &phoneme : phonemes) {
         const auto found = language.phonemes.find(phoneme.name);
         if (found != language.phonemes.end()) {
             applyPhonemeOverride(phoneme, found->second);
+            continue;
         }
-        if (language.strictInventory && found == language.phonemes.end()) {
-            throw std::invalid_argument("phoneme \"" + phoneme.name +
-                                        "\" is not declared in the " +
-                                        language.name + " inventory");
+        const auto nearest = nearestDeclared(phoneme, language);
+        if (language.strictInventory) {
+            std::string message = "phoneme \"" + phoneme.name +
+                                  "\" is not declared in the " + language.name +
+                                  " inventory";
+            if (nearest) {
+                message +=
+                    " (nearest declared phoneme: \"" + nearest->name + "\")";
+            }
+            throw std::invalid_argument(message);
+        }
+        if (!nearest) {
+            continue;
+        }
+        Phoneme replacement = nearest->phoneme;
+        replacement.name = nearest->name;
+        // Keep the original suprasegmentals so stress, tone and lexical pitch
+        // survive the substitution.
+        replacement.amplitude = phoneme.amplitude;
+        replacement.pitchStart = phoneme.pitchStart;
+        replacement.pitchEnd = phoneme.pitchEnd;
+        replacement.f0StartHz = phoneme.f0StartHz;
+        replacement.f0EndHz = phoneme.f0EndHz;
+        replacement.pitchRise = phoneme.pitchRise;
+        const std::string message =
+            "phoneme \"" + phoneme.name + "\" is outside the " + language.name +
+            " inventory; using nearest declared phoneme \"" + nearest->name +
+            "\"";
+        if (warnings && std::find(warnings->begin(), warnings->end(),
+                                  message) == warnings->end()) {
+            warnings->push_back(message);
+        }
+        phoneme = replacement;
+    }
+    if (language.typology.rate) {
+        for (Phoneme &phoneme : phonemes) {
+            phoneme.duration *= *language.typology.rate;
         }
     }
 }
 
 std::vector<Phoneme> mapConlangWord(std::string_view word,
                                     const LanguageDefinition &language,
-                                    std::vector<std::string> *trace) {
+                                    std::vector<std::string> *trace,
+                                    std::vector<std::string> *warnings) {
     const std::string key = asciiLower(word);
     std::vector<Phoneme> result;
     if (const auto found = language.words.find(key);
@@ -977,7 +1069,17 @@ std::vector<Phoneme> mapConlangWord(std::string_view word,
     }
 
     result = applyPhonemeRules(result, language, trace);
-    finalizeConlangPhonemes(result, language);
+    if (language.typology.stress == "fixed") {
+        for (Phoneme &phoneme : result) {
+            if (phoneme.kind == PhonemeKind::Voiced && phoneme.voiced) {
+                phoneme.pitchStart = 1.12;
+                phoneme.pitchEnd = 1.06;
+                phoneme.amplitude = 1.15;
+                break;
+            }
+        }
+    }
+    finalizeConlangPhonemes(result, language, warnings);
     return result;
 }
 
@@ -1001,7 +1103,8 @@ bool isConlangSeparator(uint32_t codePoint) {
 
 std::vector<Phoneme> conlangPhonemes(std::string_view text,
                                      const LanguageDefinition &language,
-                                     std::vector<std::string> *trace) {
+                                     std::vector<std::string> *trace,
+                                     std::vector<std::string> *warnings) {
     std::vector<Phoneme> result;
     std::string word;
     size_t pos = 0;
@@ -1017,7 +1120,7 @@ std::vector<Phoneme> conlangPhonemes(std::string_view text,
             return;
         }
         const std::vector<Phoneme> mapped =
-            mapConlangWord(word, language, trace);
+            mapConlangWord(word, language, trace, warnings);
         if (!mapped.empty()) {
             result.insert(result.end(), mapped.begin(), mapped.end());
             if (const Phoneme *gapPhoneme = findPhoneme("_")) {
@@ -1175,6 +1278,45 @@ LanguageDefinition parseLanguageDefinition(std::string_view text) {
                     languageFileError(lineNumber, "lenient takes no value");
                 }
                 definition.strictInventory = false;
+            } else if (directive == "tone" || directive == "stress" ||
+                       directive == "rhythm" || directive == "rate") {
+                if (fields.size() != 2) {
+                    languageFileError(lineNumber,
+                                      directive + " needs one value");
+                }
+                if (directive == "rate") {
+                    const double value =
+                        languageFileNumber(fields[1], lineNumber);
+                    if (value <= 0.0) {
+                        languageFileError(lineNumber, "rate must be positive");
+                    }
+                    definition.typology.rate = value;
+                } else {
+                    const std::string allowed =
+                        directive == "tone"
+                            ? "none simple complex"
+                            : (directive == "stress" ? "none fixed free"
+                                                     : "stress syllable mora");
+                    std::vector<std::string> choices;
+                    std::istringstream choicesStream(allowed);
+                    std::string choice;
+                    while (choicesStream >> choice) {
+                        choices.push_back(choice);
+                    }
+                    if (std::find(choices.begin(), choices.end(), fields[1]) ==
+                        choices.end()) {
+                        languageFileError(lineNumber,
+                                          "unknown " + directive +
+                                              " value: " + fields[1]);
+                    }
+                    if (directive == "tone") {
+                        definition.typology.tone = fields[1];
+                    } else if (directive == "stress") {
+                        definition.typology.stress = fields[1];
+                    } else {
+                        definition.typology.rhythm = fields[1];
+                    }
+                }
             } else if (directive == "phoneme") {
                 if (fields.size() < 2) {
                     languageFileError(lineNumber,
@@ -1304,8 +1446,9 @@ LanguageDefinition parseLanguageDefinition(std::string_view text) {
 
 std::vector<Phoneme> phonemize(std::string_view text,
                                const LanguageDefinition &language,
-                               std::vector<std::string> *trace) {
-    return conlangPhonemes(text, language, trace);
+                               std::vector<std::string> *trace,
+                               std::vector<std::string> *warnings) {
+    return conlangPhonemes(text, language, trace, warnings);
 }
 
 namespace {
@@ -1470,11 +1613,12 @@ std::vector<Phoneme> phonemize(std::string_view text, Language language,
 std::vector<Phoneme> phonemize(std::string_view text,
                                const LanguageDefinition &language,
                                const PronunciationLexicon &lexicon,
-                               std::vector<std::string> *trace) {
+                               std::vector<std::string> *trace,
+                               std::vector<std::string> *warnings) {
     return phonemizeWithLexicon(
         text, lexicon,
-        [&language, trace](std::string_view word) {
-            return phonemize(word, language, trace);
+        [&language, trace, warnings](std::string_view word) {
+            return phonemize(word, language, trace, warnings);
         },
         trace);
 }

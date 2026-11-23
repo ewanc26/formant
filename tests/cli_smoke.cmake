@@ -508,6 +508,86 @@ if(NOT trace_mode_error MATCHES "--trace only applies with --lang-file or --lexi
     message(FATAL_ERROR "unexpected --trace mode message: ${trace_mode_error}")
 endif()
 
+# #112: conlang inventories, nearest-feature fallback and typology defaults.
+set(FORMANT_FALLBACK_FILE "${CMAKE_CURRENT_BINARY_DIR}/fallback.lang")
+file(WRITE "${FORMANT_FALLBACK_FILE}" [=[name Fallback Smoke
+lenient
+tone simple
+stress fixed
+rhythm syllable
+rate 0.9
+phoneme a
+phoneme s
+grapheme a a
+grapheme z z
+]=])
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-phonemes --lang-file "${FORMANT_FALLBACK_FILE}"
+    RESULT_VARIABLE conlang_list_result
+    OUTPUT_VARIABLE conlang_list_output
+    ERROR_VARIABLE conlang_list_error
+)
+if(NOT conlang_list_result EQUAL 0)
+    message(FATAL_ERROR "conlang --list-phonemes failed: ${conlang_list_error}")
+endif()
+if(NOT conlang_list_output STREQUAL "a\ns\n")
+    message(FATAL_ERROR "--list-phonemes did not print the conlang inventory: ${conlang_list_output}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_FALLBACK_FILE}"
+        --list-phonemes
+    RESULT_VARIABLE conlang_list2_result
+    OUTPUT_VARIABLE conlang_list2_output
+    ERROR_VARIABLE conlang_list2_error
+)
+if(NOT conlang_list2_result EQUAL 0 OR NOT conlang_list2_output STREQUAL conlang_list_output)
+    message(FATAL_ERROR "--list-phonemes depends on flag order: ${conlang_list2_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_FALLBACK_FILE}"
+        --text "z a" --sample-rate 22050
+        --output "${CMAKE_CURRENT_BINARY_DIR}/fallback.wav"
+    RESULT_VARIABLE conlang_fallback_result
+    OUTPUT_VARIABLE conlang_fallback_output
+    ERROR_VARIABLE conlang_fallback_error
+)
+if(NOT conlang_fallback_result EQUAL 0)
+    message(FATAL_ERROR "conlang fallback render failed: ${conlang_fallback_error}")
+endif()
+if(NOT conlang_fallback_output MATCHES "warning: phoneme \"z\" is outside the Fallback Smoke inventory; using nearest declared phoneme \"s\"")
+    message(FATAL_ERROR "missing nearest-feature warning: ${conlang_fallback_output}")
+endif()
+
+set(FORMANT_STRICT112_FILE "${CMAKE_CURRENT_BINARY_DIR}/strict112.lang")
+file(WRITE "${FORMANT_STRICT112_FILE}" [=[name Strict Smoke
+strict
+phoneme a
+phoneme s
+grapheme a a
+grapheme z z
+]=])
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_STRICT112_FILE}"
+        --text "z" --output "${CMAKE_CURRENT_BINARY_DIR}/strict112.wav"
+    RESULT_VARIABLE conlang_strict_result
+    ERROR_VARIABLE conlang_strict_error
+)
+if(conlang_strict_result EQUAL 0 OR NOT conlang_strict_error MATCHES "nearest declared phoneme: \"s\"")
+    message(FATAL_ERROR "strict inventory error lost its suggestion: ${conlang_strict_error}")
+endif()
+
+file(WRITE "${FORMANT_FALLBACK_FILE}" "name Bad\nname Bad\ntone wild\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_FALLBACK_FILE}"
+        --text "a" --output "${CMAKE_CURRENT_BINARY_DIR}/bad112.wav"
+    RESULT_VARIABLE conlang_bad_result
+    ERROR_VARIABLE conlang_bad_error
+)
+if(conlang_bad_result EQUAL 0 OR NOT conlang_bad_error MATCHES "unknown tone value: wild")
+    message(FATAL_ERROR "invalid typology value was accepted: ${conlang_bad_error}")
+endif()
+
 # A user lexicon supplies pronunciations as data and reports its source layer.
 set(FORMANT_LEXICON_FILE "${CMAKE_CURRENT_BINARY_DIR}/smoke.lex")
 file(WRITE "${FORMANT_LEXICON_FILE}" [=[# names

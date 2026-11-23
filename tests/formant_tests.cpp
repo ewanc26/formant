@@ -1750,6 +1750,76 @@ int main() {
         CHECK(names(phonemize("ab", lenient)) ==
               std::vector<std::string>({"a"}));
     }
+    // #112: nearest-feature inventory fallback and typology defaults.
+    {
+        const LanguageDefinition fallback =
+            parseLanguageDefinition("name Fallback\n"
+                                    "lenient\n"
+                                    "tone simple\n"
+                                    "stress fixed\n"
+                                    "rhythm syllable\n"
+                                    "rate 0.5\n"
+                                    "phoneme a\n"
+                                    "phoneme s\n"
+                                    "grapheme a a\n"
+                                    "grapheme z z\n");
+        CHECK(fallback.typology.tone == "simple");
+        CHECK(fallback.typology.stress == "fixed");
+        CHECK(fallback.typology.rhythm == "syllable");
+        CHECK(fallback.typology.rate.has_value());
+        CHECK(std::abs(*fallback.typology.rate - 0.5) < 1e-12);
+
+        std::vector<std::string> warnings;
+        std::vector<std::string> again;
+        const auto first = phonemize("z a", fallback, nullptr, &warnings);
+        const auto second = phonemize("z a", fallback, nullptr, &again);
+        CHECK(warnings == again);
+        CHECK(warnings.size() == 1);
+        CHECK(warnings.front().find("\"z\"") != std::string::npos);
+        CHECK(warnings.front().find("\"s\"") != std::string::npos);
+        CHECK(first.size() == second.size());
+        CHECK(names(first) == names(second));
+        CHECK(names(first)[0] == "s");
+        // rate scales every segment duration; stress=fixed lifts the first
+        // vowel's pitch onset and amplitude.
+        const Phoneme plainA = parseIpa("a").front();
+        CHECK(std::abs(first.back().duration - plainA.duration * 0.5) < 1e-9);
+        CHECK(first.back().pitchStart > 1.0);
+        CHECK(first.back().amplitude > 1.0);
+
+        const LanguageDefinition strict =
+            parseLanguageDefinition("name Strict\n"
+                                    "strict\n"
+                                    "phoneme a\n"
+                                    "phoneme s\n"
+                                    "grapheme a a\n"
+                                    "grapheme z z\n");
+        bool suggestion = false;
+        try {
+            (void)phonemize("z", strict);
+        } catch (const std::invalid_argument &error) {
+            suggestion = std::string(error.what())
+                             .find("nearest declared phoneme: \"s\"") !=
+                         std::string::npos;
+        }
+        CHECK(suggestion);
+    }
+    {
+        const auto rejects = [](std::string_view text) {
+            try {
+                (void)parseLanguageDefinition(text);
+            } catch (const std::invalid_argument &) {
+                return true;
+            }
+            return false;
+        };
+        CHECK(rejects("name X\ntone wild\n"));
+        CHECK(rejects("name X\nstress loud\n"));
+        CHECK(rejects("name X\nrhythm free\n"));
+        CHECK(rejects("name X\nrate 0\n"));
+        CHECK(rejects("name X\nrate nope\n"));
+        CHECK(rejects("name X\ntone\n"));
+    }
     // Malformed files fail with line-aware errors rather than silently
     // producing the wrong language.
     {
