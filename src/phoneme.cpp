@@ -39,6 +39,11 @@ bool endsWith(std::string_view text, std::string_view token) {
            text.substr(text.size() - token.size()) == token;
 }
 
+bool isSibilant(std::string_view phoneme) {
+    return phoneme == "s" || phoneme == "z" || phoneme == "sh" ||
+           phoneme == "zh" || phoneme == "ch" || phoneme == "j";
+}
+
 std::string lower(std::string_view text) {
     std::string result;
     result.reserve(text.size());
@@ -215,6 +220,19 @@ const std::unordered_map<std::string, std::vector<std::string>> &lexicon() {
             {"hour", {"ow", "er"}},
             {"salmon", {"s", "a", "m", "ah", "n"}},
             {"sword", {"s", "or", "d"}},
+            // Common -s words whose final sound cannot be inferred by the
+            // plural rule, either because they are singular or because their
+            // -es is not a silent e.
+            {"always", {"or", "l", "w", "ay", "z"}},
+            {"goes", {"g", "ow", "z"}},
+            {"heroes", {"h", "er", "o", "z"}},
+            {"his", {"h", "i", "z"}},
+            {"news", {"n", "oo", "z"}},
+            {"says", {"s", "e", "z"}},
+            {"series", {"s", "ee", "r", "ee", "z"}},
+            {"shoes", {"sh", "oo", "z"}},
+            {"species", {"s", "p", "ee", "sh", "ee", "z"}},
+            {"toes", {"t", "ow", "z"}},
             // Word-final mb has a silent b; these two also have irregular
             // vowels, so the generic speller cannot produce them correctly.
             {"climb", {"k", "l", "ay", "m"}},
@@ -316,11 +334,7 @@ std::vector<std::string> spellWord(std::string_view word) {
             }
             if (suffix == "'s") {
                 const Phoneme *last = findPhoneme(base.back());
-                const bool sibilant =
-                    base.back() == "s" || base.back() == "z" ||
-                    base.back() == "sh" || base.back() == "zh" ||
-                    base.back() == "ch" || base.back() == "j";
-                if (sibilant) {
+                if (isSibilant(base.back())) {
                     base.emplace_back("uh");
                     base.emplace_back("z");
                 } else {
@@ -338,6 +352,60 @@ std::vector<std::string> spellWord(std::string_view word) {
     found = lexicon().find(clean);
     if (found != lexicon().end()) {
         return found->second;
+    }
+
+    // Inflected -s: voice the suffix from the base's final sound instead of
+    // always emitting /s/. The base is spelled recursively so silent letters,
+    // digraphs and contractions are resolved first. -ss/-us/-is words are
+    // nearly always singular and are left to the generic letter rules.
+    if (clean.size() > 2 && endsWith(clean, "s")) {
+        // Consonant + y becomes -ies with a voiced /z/ (cities, studies).
+        if (endsWith(clean, "ies") && clean.size() > 3) {
+            std::vector<std::string> base =
+                spellWord(clean.substr(0, clean.size() - 3) + "y");
+            if (!base.empty()) {
+                base.emplace_back("z");
+                return base;
+            }
+        }
+        // Silent-e or sibilant -es (lines, cakes, boxes, watches, pages).
+        // Spell the base with its e so a silent e is handled normally, then
+        // choose /s/, /z/ or a syllabic /ɪz/ from the base's final sound.
+        if (endsWith(clean, "es") && clean.size() > 3) {
+            std::vector<std::string> base = spellWord(
+                std::string_view(clean).substr(0, clean.size() - 1));
+            if (!base.empty() && base.back() != "e") {
+                if (isSibilant(base.back())) {
+                    base.emplace_back("uh");
+                    base.emplace_back("z");
+                } else {
+                    const Phoneme *last = findPhoneme(base.back());
+                    base.emplace_back(last && last->voiced ? "z" : "s");
+                }
+                return base;
+            }
+        }
+        // A final s after a consonant voices by the base's last sound (cats,
+        // dogs, books, cars).
+        if (!endsWith(clean, "ss") && !endsWith(clean, "us") &&
+            !endsWith(clean, "is") && !isVowel(clean[clean.size() - 2])) {
+            std::vector<std::string> base = spellWord(
+                std::string_view(clean).substr(0, clean.size() - 1));
+            if (!base.empty()) {
+                const Phoneme *last = findPhoneme(base.back());
+                base.emplace_back(last && last->voiced ? "z" : "s");
+                return base;
+            }
+        }
+        // A final s after y is a plural or third-person form (days, plays).
+        if (clean[clean.size() - 2] == 'y') {
+            std::vector<std::string> base = spellWord(
+                std::string_view(clean).substr(0, clean.size() - 1));
+            if (!base.empty()) {
+                base.emplace_back("z");
+                return base;
+            }
+        }
     }
     if (std::all_of(clean.begin(), clean.end(), [](char c) {
             return std::isdigit(static_cast<unsigned char>(c));
