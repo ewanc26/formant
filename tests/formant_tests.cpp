@@ -779,6 +779,75 @@ int main() {
         CHECK(std::isfinite(sample));
     }
 
+    // Issue #110: a chain of continued renders must be byte-identical to one
+    // render of the concatenation. The state is a pure value: it carries the
+    // accumulated phonemes, the exact glottal phase, the absolute sine-noise
+    // time base, the combined length and the utterance-final rise flag.
+    {
+        const int rate = 22050;
+        Synthesizer synth(voice);
+        const size_t split = vowels.size() / 2;
+        const std::vector<Phoneme> head(vowels.begin(), vowels.begin() + split);
+        const std::vector<Phoneme> tail(vowels.begin() + split, vowels.end());
+        CHECK(!head.empty() && !tail.empty());
+
+        const std::vector<float> single = synth.render(vowels, rate);
+        const RenderResult first = synth.renderContinued(head, rate, {});
+        const RenderResult chain =
+            synth.renderContinued(tail, rate, first.state);
+        const RenderResult whole = synth.renderContinued(vowels, rate, {});
+
+        CHECK(first.samples == synth.render(head, rate));
+        CHECK(chain.samples == single);
+        CHECK(whole.samples == single);
+        CHECK(chain.samples.size() == single.size());
+
+        // State carry is exact: chain and whole agree field for field.
+        CHECK(chain.state.phonemes == whole.state.phonemes);
+        CHECK(chain.state.sampleRate == rate);
+        CHECK(chain.state.sampleRate == whole.state.sampleRate);
+        CHECK(chain.state.totalSamples == whole.state.totalSamples);
+        CHECK(chain.state.totalSamples == static_cast<int>(single.size()));
+        CHECK(chain.state.noiseTimeBase == whole.state.noiseTimeBase);
+        CHECK(chain.state.noiseTimeBase ==
+              static_cast<double>(single.size()) / rate);
+        CHECK(chain.state.phase == whole.state.phase);
+        CHECK(chain.state.phase >= 0.0 &&
+              chain.state.phase < 2.0 * detail::kPi);
+        CHECK(chain.state.rising == whole.state.rising);
+        CHECK(chain.state.totalSamples > first.state.totalSamples);
+
+        // An empty append is a no-op that still returns the whole chain.
+        const RenderResult idle = synth.renderContinued({}, rate, chain.state);
+        CHECK(idle.samples == single);
+        CHECK(idle.state.phonemes == chain.state.phonemes);
+        CHECK(idle.state.phase == chain.state.phase);
+
+        // A mismatched rate is rejected rather than silently re-basing time.
+        bool wrongRate = false;
+        try {
+            (void)synth.renderContinued(tail, 44100, first.state);
+        } catch (const std::invalid_argument &) {
+            wrongRate = true;
+        }
+        CHECK(wrongRate);
+
+        // The splice itself is smooth: the largest adjacent-sample change in
+        // a small window around the joint stays within a 0.05 bound, the same
+        // order as the 108 taper bound. The byte-identity check above proves
+        // the joint is treated exactly like an interior phoneme boundary.
+        const size_t joint = static_cast<size_t>(first.state.totalSamples);
+        CHECK(joint > 3 && joint + 3 < chain.samples.size());
+        double spliceDelta = 0.0;
+        for (size_t n = joint - 3; n <= joint + 3; ++n) {
+            spliceDelta =
+                std::max(spliceDelta,
+                         std::abs(static_cast<double>(chain.samples[n]) -
+                                  static_cast<double>(chain.samples[n - 1])));
+        }
+        CHECK(spliceDelta <= 0.05);
+    }
+
     const Phoneme *moving = findPhoneme("ay");
     CHECK(moving != nullptr);
     if (moving) {

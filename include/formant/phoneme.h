@@ -22,6 +22,8 @@ struct FormantBand {
     double frequency = 0.0;
     double amplitude = 0.0;
     double bandwidth = 100.0;
+
+    bool operator==(const FormantBand &) const = default;
 };
 
 struct Phoneme {
@@ -42,6 +44,8 @@ struct Phoneme {
     double amplitude = 1.0;
     double pitchStart = 1.0;
     double pitchEnd = 1.0;
+
+    bool operator==(const Phoneme &) const = default;
 };
 
 // The built-in phoneme inventory, in a stable order.
