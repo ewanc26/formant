@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.8.0
+  VERSION 0.9.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -27,6 +27,8 @@ add_library(formant_core STATIC
     src/lexicon.cpp
     src/ipa.cpp
     src/synthesizer.cpp
+    src/schedule.cpp
+    src/timing.cpp
     src/wav.cpp
 )
 add_library(formant::formant ALIAS formant_core)

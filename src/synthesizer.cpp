@@ -1,5 +1,7 @@
 #include "formant/synthesizer.h"
 
+#include "schedule.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -130,51 +132,30 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
 
     // The documented contract is round(total duration * sampleRate / rate)
     // samples. Never clamp the caller's rate: a slow rate must really produce
-    // slower audio. Extremes are rejected below rather than overflowing int.
+    // slower audio. The shared scheduler applies that cumulative-boundary
+    // rule, so timing reports use exactly the spans rendered here.
     const double rate = voice_.rate;
-    constexpr double kMaxInt =
-        static_cast<double>(std::numeric_limits<int>::max());
     const bool rising = endsWithRise(phonemes);
+    const std::vector<detail::ScheduledSpan> spans =
+        detail::schedulePhonemes(phonemes, rate, sampleRate);
 
     std::vector<Segment> segments;
     segments.reserve(phonemes.size());
-    int cursor = 0;
-    // Place each segment boundary at the rounded cumulative duration rather
-    // than rounding each phoneme in isolation. Summing independently rounded
-    // lengths drifts from the documented total by up to one sample per
-    // segment; cumulative boundaries make the final cursor exactly
-    // round(total duration * sampleRate / rate).
-    double cumulativeDuration = 0.0;
     std::array<FormantBand, 4> previousBands = zeroBands();
     bool previousVoiced = false;
     double previousNoise = 0.0;
 
-    for (const Phoneme &phoneme : phonemes) {
-        cumulativeDuration += phoneme.duration;
-        const double wanted =
-            cumulativeDuration * static_cast<double>(sampleRate) / rate;
-        if (!std::isfinite(wanted) || wanted < -kMaxInt || wanted > kMaxInt) {
-            throw std::invalid_argument("phoneme duration / rate out of range");
-        }
-        const int boundary = static_cast<int>(std::llround(wanted));
-        // A segment can legitimately round to zero samples when rate is fast
-        // or two adjacent short segments share a boundary. Forcing a minimum
-        // of one sample here pushed the final cursor past the cumulative
-        // boundary and broke the documented exact sample-count contract.
-        const int length = std::max(0, boundary - cursor);
-        if (cursor > std::numeric_limits<int>::max() - length) {
-            throw std::invalid_argument("rendered audio is too long");
-        }
+    for (size_t i = 0; i < phonemes.size(); ++i) {
+        const Phoneme &phoneme = phonemes[i];
         Segment segment;
         segment.phoneme = &phoneme;
-        segment.start = cursor;
-        segment.end = cursor + length;
+        segment.start = spans[i].start;
+        segment.end = spans[i].end;
         segment.from = previousBands;
         segment.wasVoiced = previousVoiced;
         segment.wasNoise = previousNoise;
         segments.push_back(segment);
 
-        cursor = segment.end;
         // A diphthong finishes at endBands, so the next segment must crossfade
         // from that final target, not from its initial bands.
         previousBands = phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
@@ -184,7 +165,7 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                             : (phoneme.voiced ? voice_.breathiness : 1.0);
     }
 
-    const int totalSamples = cursor;
+    const int totalSamples = spans.back().end;
     // Accumulate in double precision. Converting each sample to float before
     // normalisation can overflow with a large gain, leaving an infinite peak
     // and NaN samples after the inf * 0 scaling step.

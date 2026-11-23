@@ -11,5 +11,6 @@
 #include "formant/lexicon.h"
 #include "formant/ipa.h"
 #include "formant/synthesizer.h"
+#include "formant/timing.h"
 #include "formant/voice.h"
 #include "formant/wav.h"

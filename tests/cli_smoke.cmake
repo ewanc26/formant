@@ -439,4 +439,97 @@ if(NOT lexicon_mode_error MATCHES "--lexicon only applies to text input")
     message(FATAL_ERROR "unexpected --lexicon mode message: ${lexicon_mode_error}")
 endif()
 
+# Exact timing: --timing infers the caption format from its extension and the
+# word boundaries must match the rendered WAV sample count.
+set(FORMANT_TIMING_DIR "${CMAKE_CURRENT_BINARY_DIR}/timing-smoke")
+file(MAKE_DIRECTORY "${FORMANT_TIMING_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hello, world." --sample-rate 22050
+        --output "${FORMANT_OUTPUT}"
+        --timing "${FORMANT_TIMING_DIR}/words.json"
+        --visemes "${FORMANT_TIMING_DIR}/visemes.json"
+    RESULT_VARIABLE timing_result
+    OUTPUT_VARIABLE timing_output
+    ERROR_VARIABLE timing_error
+)
+if(NOT timing_result EQUAL 0)
+    message(FATAL_ERROR "formant timing render failed (${timing_result}): ${timing_error}")
+endif()
+if(NOT timing_output MATCHES "Wrote timing to")
+    message(FATAL_ERROR "formant did not report the timing output: ${timing_output}")
+endif()
+if(NOT timing_output MATCHES "Wrote visemes to")
+    message(FATAL_ERROR "formant did not report the viseme output: ${timing_output}")
+endif()
+file(READ "${FORMANT_TIMING_DIR}/words.json" timing_json)
+if(NOT timing_json MATCHES "\"format\": \"formant-timing\"")
+    message(FATAL_ERROR "invalid timing JSON: ${timing_json}")
+endif()
+if(NOT timing_json MATCHES "\"label\": \"Hello\"")
+    message(FATAL_ERROR "timing JSON is missing the first word: ${timing_json}")
+endif()
+if(NOT timing_json MATCHES "\"totalSamples\": 26791")
+    message(FATAL_ERROR "timing JSON sample count does not match the WAV: ${timing_json}")
+endif()
+file(READ "${FORMANT_TIMING_DIR}/visemes.json" visemes_json)
+if(NOT visemes_json MATCHES "\"format\": \"formant-visemes\"")
+    message(FATAL_ERROR "invalid viseme JSON: ${visemes_json}")
+endif()
+if(NOT visemes_json MATCHES "\"shape\": \"round\"")
+    message(FATAL_ERROR "viseme JSON has no lip shapes: ${visemes_json}")
+endif()
+
+foreach(ext srt vtt lrc)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --text "Hello, world." --sample-rate 22050
+            --output "${FORMANT_OUTPUT}"
+            --timing "${FORMANT_TIMING_DIR}/words.${ext}"
+        RESULT_VARIABLE caption_result
+        ERROR_VARIABLE caption_error
+    )
+    if(NOT caption_result EQUAL 0)
+        message(FATAL_ERROR "formant --timing .${ext} failed: ${caption_error}")
+    endif()
+    file(READ "${FORMANT_TIMING_DIR}/words.${ext}" caption_text)
+    if(ext STREQUAL "srt" AND NOT caption_text MATCHES "00:00:00,000 -->")
+        message(FATAL_ERROR "invalid SRT output: ${caption_text}")
+    endif()
+    if(ext STREQUAL "vtt" AND NOT caption_text MATCHES "WEBVTT")
+        message(FATAL_ERROR "invalid VTT output: ${caption_text}")
+    endif()
+    if(ext STREQUAL "lrc" AND NOT caption_text MATCHES "\\[00:00\\.")
+        message(FATAL_ERROR "invalid LRC output: ${caption_text}")
+    endif()
+endforeach()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hello" --output "${FORMANT_OUTPUT}"
+        --timing "${FORMANT_TIMING_DIR}/words.bad"
+    RESULT_VARIABLE timing_ext_result
+    ERROR_VARIABLE timing_ext_error
+)
+if(timing_ext_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted an unsupported timing extension")
+endif()
+if(NOT timing_ext_error MATCHES "unsupported timing file extension")
+    message(FATAL_ERROR "unexpected timing extension error: ${timing_ext_error}")
+endif()
+
+# Timing files must be deterministic across runs, just like the WAV output.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hello, world." --sample-rate 22050
+        --output "${FORMANT_OUTPUT}"
+        --timing "${FORMANT_TIMING_DIR}/again.json"
+    RESULT_VARIABLE timing_again_result
+    ERROR_VARIABLE timing_again_error
+)
+if(NOT timing_again_result EQUAL 0)
+    message(FATAL_ERROR "second formant timing render failed: ${timing_again_error}")
+endif()
+file(SHA256 "${FORMANT_TIMING_DIR}/words.json" timing_first_hash)
+file(SHA256 "${FORMANT_TIMING_DIR}/again.json" timing_second_hash)
+if(NOT timing_first_hash STREQUAL timing_second_hash)
+    message(FATAL_ERROR "timing output is not deterministic: ${timing_first_hash} vs ${timing_second_hash}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

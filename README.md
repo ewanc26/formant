@@ -166,6 +166,29 @@ const auto phonemes =
 
 See [docs/lexicons.md](docs/lexicons.md) for the file format, layer precedence, validation trace and documented limits.
 
+### Exact timing and captions
+
+Because every phoneme's duration is planned before synthesis, Formant can emit
+sample-accurate timing alongside the audio. This powers captions, karaoke
+highlights and lip-sync tracks without forced alignment.
+
+```sh
+# Word/phoneme timing JSON, SRT, WebVTT and enhanced LRC captions
+build/formant --text "Hello, world." --output hello.wav --timing hello.json
+build/formant --text "Hello, world." --output hello.wav --timing hello.srt
+build/formant --text "Hello, world." --output hello.wav --timing hello.vtt
+build/formant --text "Hello, world." --output hello.wav --timing hello.lrc
+
+# A separate viseme track for animation rigs
+build/formant --text "Hello, world." --output hello.wav --visemes hello.visemes.json
+```
+
+`--timing` picks the format from the extension (`.json`, `.srt`, `.vtt`,
+`.lrc`). Word boundaries match the WAV sample count exactly; for `--ipa`,
+`--xsampa` and `--phonemes` the words are derived from the phoneme stream.
+See [docs/timing.md](docs/timing.md) for the file schemas, the documented
+viseme mapping and the `planTiming()` / `planVisemes()` library API.
+
 ### Customisation
 
 A voice is a plain `formant::Voice` struct. Change any field, or start from a preset:
