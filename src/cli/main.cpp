@@ -50,6 +50,11 @@ Options:
   --phonemes "[h ee l o]" Speak a bracketed phoneme sequence instead of text
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
+  --gibberish "PATTERN"   Generate seeded phonotactic words (Awkwords grammar)
+  --seed N                Unsigned 32-bit seed for --gibberish (default: 1)
+  --count N               Words to generate per render (default: 5)
+  --transcript FILE       Save the generated IPA transcript (one word per line)
+  --list-pattern-help     Print the pattern grammar and exit
   --lang TAG              Text language: en (English), es (Spanish)
   --lang-file FILE        Speak text with a user-defined language definition
   --lexicon FILE          Apply user pronunciation entries and homograph rules
@@ -236,20 +241,18 @@ formant::AudioFormat audioFormat(const std::string &name) {
                                 "raw32f)");
 }
 
-uint32_t ditherSeed(const std::string &value) {
+uint32_t unsignedSeed(const std::string &flag, const std::string &value) {
     if (value.empty() || value[0] == '-') {
-        throw std::invalid_argument("expected an unsigned 32-bit seed for "
-                                    "--dither: " +
-                                    value);
+        throw std::invalid_argument("expected an unsigned 32-bit seed for " +
+                                    flag + ": " + value);
     }
     char *end = nullptr;
     errno = 0;
     const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
     if (errno == ERANGE || end != value.c_str() + value.size() ||
         parsed > std::numeric_limits<uint32_t>::max()) {
-        throw std::invalid_argument("expected an unsigned 32-bit seed for "
-                                    "--dither: " +
-                                    value);
+        throw std::invalid_argument("expected an unsigned 32-bit seed for " +
+                                    flag + ": " + value);
     }
     return static_cast<uint32_t>(parsed);
 }
@@ -261,6 +264,10 @@ struct Options {
     std::string phonemes;
     std::string ipa;
     std::string xsampa;
+    std::string gibberish;
+    uint32_t seed = 1;
+    int gibberishCount = 5;
+    std::string transcriptFile;
     std::string languageFile;
     std::string lexiconFile;
     std::string ssmlFile;
@@ -293,6 +300,7 @@ struct Options {
     bool usePhonemes = false;
     bool useIpa = false;
     bool useXsampa = false;
+    bool useGibberish = false;
     bool useStdin = false;
     bool useLanguage = false;
     bool useLanguageFile = false;
@@ -390,6 +398,10 @@ Options parseOptions(int argc, char **argv) {
             listLanguages();
             std::exit(0);
         }
+        if (arg == "--list-pattern-help") {
+            std::cout << formant::patternGrammarHelp();
+            std::exit(0);
+        }
         if (arg == "--stdin") {
             options.useStdin = true;
             continue;
@@ -483,6 +495,18 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--xsampa" || arg.rfind("--xsampa=", 0) == 0) {
             options.xsampa = takeValue(i, argc, argv, "--xsampa");
             options.useXsampa = true;
+        } else if (arg == "--gibberish" || arg.rfind("--gibberish=", 0) == 0) {
+            options.gibberish = takeValue(i, argc, argv, "--gibberish");
+            options.useGibberish = true;
+        } else if (arg == "--seed" || arg.rfind("--seed=", 0) == 0) {
+            options.seed =
+                unsignedSeed("--seed", takeValue(i, argc, argv, "--seed"));
+        } else if (arg == "--count" || arg.rfind("--count=", 0) == 0) {
+            options.gibberishCount =
+                integer("--count", takeValue(i, argc, argv, "--count"));
+        } else if (arg == "--transcript" ||
+                   arg.rfind("--transcript=", 0) == 0) {
+            options.transcriptFile = takeValue(i, argc, argv, "--transcript");
         } else if (arg == "--lang" || arg.rfind("--lang=", 0) == 0) {
             options.language =
                 languageFromTag(takeValue(i, argc, argv, "--lang"));
@@ -554,7 +578,7 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--dither" || arg.rfind("--dither=", 0) == 0) {
             options.audioOptions.dither = true;
             options.audioOptions.seed =
-                ditherSeed(takeValue(i, argc, argv, "--dither"));
+                unsignedSeed("--dither", takeValue(i, argc, argv, "--dither"));
         } else if (arg == "--timing" || arg.rfind("--timing=", 0) == 0) {
             options.timingFile = takeValue(i, argc, argv, "--timing");
         } else if (arg == "--visemes" || arg.rfind("--visemes=", 0) == 0) {
@@ -940,6 +964,21 @@ int main(int argc, char **argv) {
                                         "--xsampa (each overrides --text and "
                                         "--stdin)");
         }
+        if (options.useGibberish && inputModes > 0) {
+            throw std::invalid_argument(
+                "use only one of --gibberish, --phonemes, --ipa or --xsampa");
+        }
+        if (options.useGibberish && options.useSsml) {
+            throw std::invalid_argument(
+                "--ssml-file cannot be combined with --gibberish");
+        }
+        if (options.gibberishCount < 1) {
+            throw std::invalid_argument("--count must be positive");
+        }
+        if (!options.transcriptFile.empty() && !options.useGibberish) {
+            throw std::invalid_argument(
+                "--transcript only applies to --gibberish");
+        }
         if (options.useSsml && inputModes > 0) {
             throw std::invalid_argument(
                 "--ssml-file cannot be combined with --phonemes, --ipa or "
@@ -1085,7 +1124,30 @@ int main(int argc, char **argv) {
 
         std::vector<std::string> trace;
         std::vector<formant::Phoneme> phonemes;
-        if (options.useSsml) {
+        std::string generatedTranscript;
+        if (options.useGibberish) {
+            formant::PatternGrammar grammar =
+                formant::parsePatternGrammar(options.gibberish);
+            formant::PatternInventory inventory =
+                options.useLanguageFile
+                    ? formant::patternInventory(languageDefinition)
+                    : formant::defaultPatternInventory();
+            formant::GibberishSettings settings;
+            settings.seed = options.seed;
+            settings.count = options.gibberishCount;
+            const formant::GibberishResult result = formant::generateGibberish(
+                grammar, inventory, settings, options.language);
+            phonemes = result.phonemes;
+            generatedTranscript = result.transcript;
+            status << "Generated " << result.words.size()
+                   << " word(s) from pattern (seed " << options.seed << ")\n";
+            status << generatedTranscript << "\n";
+            if (!options.transcriptFile.empty()) {
+                writeTextFile(options.transcriptFile, generatedTranscript);
+                status << "Wrote transcript to " << options.transcriptFile
+                       << "\n";
+            }
+        } else if (options.useSsml) {
             // SSML composes with the selected text layer: the same front end
             // that converts --text drives its text runs, while <phoneme> maps
             // straight to IPA. Precedence is documented in docs/ssml.md.

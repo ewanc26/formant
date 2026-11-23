@@ -173,7 +173,7 @@ Without `strict`, undeclared IPA symbols use their universal articulatory realis
 - It does not implement SCA category substitution, metathesis, optional environment elements, wildcard contexts, rule exceptions or nonce bracket classes. Classes are literal sets; replacements are literal sequences.
 - Rule environments do not cross word boundaries or pauses.
 - There is no automatic stress or tone assignment. Write stress in the IPA of a word entry, or map a grapheme to an IPA sequence containing stress. An allophone replacement uses the universal realization of the replacement; unchanged phonemes keep their original prosody.
-- There is no phonotactic word generation, number expansion or per-feature override.
+- There is no number expansion or per-feature override. Seeded phonotactic word generation lives in a separate `--gibberish` front end (see [docs/gibberish.md](gibberish.md)); it can draw its C/V/N inventories from this file's `class` directives or phoneme inventory.
 - Rule lines cannot carry trailing `#` comments, because `#` is the boundary token.
 - An unsupported tag, malformed line or unknown override fails loudly with a line number instead of being ignored.
 - `--lang-file`, and therefore `--trace`, applies to text input. `--ipa`, `--xsampa` and `--phonemes` remain language-independent.

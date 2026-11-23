@@ -1149,4 +1149,106 @@ if(pair_same_hash STREQUAL pair_tuned_hash)
     message(FATAL_ERROR "inline pair parameter had no effect")
 endif()
 
+# --- issue #114: seeded phonotactic gibberish -----------------------------
+set(GIB_DIR "${CMAKE_CURRENT_BINARY_DIR}/gibberish")
+file(MAKE_DIRECTORY "${GIB_DIR}")
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --seed 7 --count 4
+        --transcript "${GIB_DIR}/first.txt" --output "${GIB_DIR}/first.wav"
+    RESULT_VARIABLE gib_first_result
+    ERROR_VARIABLE gib_first_error
+    OUTPUT_VARIABLE gib_first_stdout
+)
+if(NOT gib_first_result EQUAL 0)
+    message(FATAL_ERROR "gibberish render failed: ${gib_first_error}")
+endif()
+if(NOT gib_first_stdout MATCHES "Generated 4 word")
+    message(FATAL_ERROR "gibberish status missing: ${gib_first_stdout}")
+endif()
+file(SHA256 "${GIB_DIR}/first.wav" gib_first_hash)
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --seed 7 --count 4
+        --output "${GIB_DIR}/second.wav"
+    RESULT_VARIABLE gib_second_result
+    ERROR_VARIABLE gib_second_error
+)
+if(NOT gib_second_result EQUAL 0)
+    message(FATAL_ERROR "second gibberish render failed: ${gib_second_error}")
+endif()
+file(SHA256 "${GIB_DIR}/second.wav" gib_second_hash)
+if(NOT gib_second_hash STREQUAL gib_first_hash)
+    message(FATAL_ERROR "same seed did not reproduce gibberish audio")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --seed 8 --count 4
+        --output "${GIB_DIR}/other.wav"
+    RESULT_VARIABLE gib_other_result
+    ERROR_VARIABLE gib_other_error
+)
+if(NOT gib_other_result EQUAL 0)
+    message(FATAL_ERROR "different-seed render failed: ${gib_other_error}")
+endif()
+file(SHA256 "${GIB_DIR}/other.wav" gib_other_hash)
+if(gib_other_hash STREQUAL gib_first_hash)
+    message(FATAL_ERROR "different seeds produced identical gibberish audio")
+endif()
+
+file(READ "${GIB_DIR}/first.txt" gib_transcript)
+if(gib_transcript STREQUAL "" OR NOT gib_transcript MATCHES "\n")
+    message(FATAL_ERROR "gibberish transcript is missing or not line-per-word")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-pattern-help
+    RESULT_VARIABLE gib_help_result
+    OUTPUT_VARIABLE gib_help_output
+)
+if(NOT gib_help_result EQUAL 0 OR NOT gib_help_output MATCHES "Awkwords-compatible")
+    message(FATAL_ERROR "pattern help is missing: ${gib_help_output}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --seed 7 --count 4 --lang-file
+        "${CMAKE_CURRENT_LIST_DIR}/../examples/velta.lang"
+        --output "${GIB_DIR}/conlang.wav"
+    RESULT_VARIABLE gib_conlang_result
+    ERROR_VARIABLE gib_conlang_error
+)
+if(NOT gib_conlang_result EQUAL 0)
+    message(FATAL_ERROR "conlang gibberish render failed: ${gib_conlang_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --seed not-a-number
+        --output "${GIB_DIR}/bad.wav"
+    RESULT_VARIABLE gib_bad_seed_result
+    ERROR_VARIABLE gib_bad_seed_error
+)
+if(gib_bad_seed_result EQUAL 0 OR NOT gib_bad_seed_error MATCHES "unsigned 32-bit seed for --seed")
+    message(FATAL_ERROR "invalid --seed was not rejected: ${gib_bad_seed_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --ipa "a"
+        --output "${GIB_DIR}/conflict.wav"
+    RESULT_VARIABLE gib_conflict_result
+    ERROR_VARIABLE gib_conflict_error
+)
+if(gib_conflict_result EQUAL 0 OR NOT gib_conflict_error MATCHES "use only one of --gibberish, --phonemes, --ipa or --xsampa")
+    message(FATAL_ERROR "gibberish/input-mode conflict was not rejected: ${gib_conflict_error}")
+endif()
+
+# The exact transcription-mode error text is a compatibility contract.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --phonemes "[a]" --output "${GIB_DIR}/contract.wav"
+    RESULT_VARIABLE gib_contract_result
+    ERROR_VARIABLE gib_contract_error
+)
+if(gib_contract_result EQUAL 0 OR NOT gib_contract_error MATCHES "use only one of --phonemes, --ipa or --xsampa \\(each overrides --text and --stdin\\)")
+    message(FATAL_ERROR "mutual-exclusion message changed: ${gib_contract_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")
