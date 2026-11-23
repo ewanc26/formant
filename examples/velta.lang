@@ -1,6 +1,7 @@
 # Velta: an original example conlang for Formant language files.
 # Speak it with:
-#   formant --lang-file examples/velta.lang --text "Velta shael, toran."
+#   formant --lang-file examples/velta.lang --text "Velta tata, celta, toran'."
+#   formant --lang-file examples/velta.lang --trace --text "tata"
 
 name Velta
 tag x-velta
@@ -25,6 +26,7 @@ phoneme v
 phoneme ʃ duration-scale=1.10
 phoneme j
 phoneme ʔ duration-scale=0.70
+phoneme ɾ
 
 # Romanisation. Multi-letter graphemes win over single letters (sh before s).
 grapheme a a
@@ -44,6 +46,18 @@ grapheme v v
 grapheme sh ʃ
 grapheme y j
 grapheme ' ʔ
+
+# Ordered rewrite rules. The first two apply to graphemes before lookup;
+# the last two apply to mapped phonemes, before realization overrides.
+class V a e i o u
+class C p t k m n s l r v ʃ j ʔ
+
+grapheme-rule c > s / _ e
+grapheme-rule c > s / _ i
+grapheme-rule c > k
+
+phoneme-rule t > ɾ / V _ V
+phoneme-rule ʔ > 0 / C _ #
 
 # Lexicon entries take precedence over the grapheme table and carry stress.
 word velta ˈvelta
