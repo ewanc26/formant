@@ -110,14 +110,27 @@ if(FORMANT_BUILD_TESTS)
 
         add_executable(formant_property_tests tests/formant_property_tests.cpp)
         target_link_libraries(formant_property_tests PRIVATE formant_core)
-        add_test(NAME formant_property_tests COMMAND formant_property_tests)
+        # Instrumented renders are ~25x slower, so keep the sanitizer job well
+        # inside ctest's 300s per-test timeout while still exercising all five
+        # properties on Linux.
+        if(FORMANT_SANITIZE)
+            add_test(NAME formant_property_tests COMMAND formant_property_tests
+                --seeds 24)
+        else()
+            add_test(NAME formant_property_tests COMMAND formant_property_tests)
+        endif()
 
         # The long campaign is built by default (nightly.yml invokes it
         # directly); a small slice also runs in the fast PR gate.
         add_executable(formant_fuzz tests/formant_fuzz.cpp)
         target_link_libraries(formant_fuzz PRIVATE formant_core)
-        add_test(NAME formant_fuzz_smoke COMMAND formant_fuzz
-            --scripts 200 --seed-base 1)
+        if(FORMANT_SANITIZE)
+            add_test(NAME formant_fuzz_smoke COMMAND formant_fuzz
+                --scripts 20 --seed-base 1)
+        else()
+            add_test(NAME formant_fuzz_smoke COMMAND formant_fuzz
+                --scripts 200 --seed-base 1)
+        endif()
     endif()
 endif()
 

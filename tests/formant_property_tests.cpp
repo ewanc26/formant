@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -353,10 +354,22 @@ void checkUnicode(uint32_t seed) {
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
     // Fast CI property run: 240 seeds x 5 properties is seconds, not minutes.
-    constexpr uint32_t kSeedCount = 240;
-    for (uint32_t seed = 1; seed <= kSeedCount; ++seed) {
+    // Sanitizer builds pass a smaller count because instrumented renders are
+    // roughly 25x slower and ctest enforces a 300s per-test limit.
+    uint32_t seedCount = 240;
+    if (argc == 3 && std::string_view(argv[1]) == "--seeds") {
+        seedCount = static_cast<uint32_t>(std::strtoul(argv[2], nullptr, 10));
+        if (seedCount == 0) {
+            std::cerr << "--seeds must be positive\n";
+            return 2;
+        }
+    } else if (argc != 1) {
+        std::cerr << "usage: formant_property_tests [--seeds N]\n";
+        return 2;
+    }
+    for (uint32_t seed = 1; seed <= seedCount; ++seed) {
         checkDeterminism(seed);
         checkBounds(seed);
         checkRejection(seed);
@@ -371,6 +384,6 @@ int main() {
                      "--seed-base SEED\n";
         return 1;
     }
-    std::cout << "property tests passed (" << kSeedCount << " seeds)\n";
+    std::cout << "property tests passed (" << seedCount << " seeds)\n";
     return 0;
 }
