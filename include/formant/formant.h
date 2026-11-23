@@ -7,6 +7,7 @@
 // it renders floating-point PCM that callers can feed to any audio stack.
 
 #include "formant/phoneme.h"
+#include "formant/language.h"
 #include "formant/ipa.h"
 #include "formant/synthesizer.h"
 #include "formant/voice.h"

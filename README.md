@@ -75,6 +75,9 @@ build/formant --xsampa "h@loU" --output xsampa.wav
 # Speak Spanish text with the Castilian front end
 build/formant --lang es --text "Hola, mundo." --output hola.wav
 
+# Speak a user-defined conlang from a language definition file
+build/formant --lang-file examples/velta.lang --text "Velta shael." --output velta.wav
+
 # Read text from stdin
 echo "Are you there?" | build/formant --stdin --output question.wav
 
@@ -124,6 +127,22 @@ const auto samples = formant::synthesizeText(
 
 The language module only decides how text becomes phonemes. Formant tables, IPA parsing, prosody and the additive synthesiser are shared, so adding a language is a front-end job rather than a DSP job. This is the same separation used by eSpeak NG and MaryTTS.
 
+#### Conlangs and user languages
+
+A language definition file supplies a language as data: grapheme-to-IPA mappings, a word lexicon, an optional inventory and per-phoneme realization overrides. No C++ or rebuild is needed.
+
+```sh
+build/formant --lang-file examples/velta.lang --text "Velta shael, toran." --output velta.wav
+build/formant --lang-file examples/velta.lang --text "vel'ta" --output glottal.wav
+```
+
+```cpp
+const auto velta = formant::parseLanguageDefinition(source);
+const auto phonemes = formant::phonemize("Velta shael.", velta);
+```
+
+See [docs/language-files.md](docs/language-files.md) for the grammar, matching rules and override semantics. [`examples/velta.lang`](examples/velta.lang) is a complete example.
+
 ### Customisation
 
 A voice is a plain `formant::Voice` struct. Change any field, or start from a preset:
@@ -154,7 +173,7 @@ src/                    – synthesis engine, language front ends and IPA implem
 src/cli/                – command-line driver
 tests/                  – unit tests and the CLI smoke check
 examples/               – small text and phoneme inputs
-docs/                   – synthesis design notes and roadmap
+docs/                   – synthesis design notes, language-file grammar and release process
 .github/workflows/      – CI on Linux and macOS
 ```
 
@@ -168,13 +187,14 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-The suite covers voice presets, English and Spanish text-to-phoneme conversion, language tags, bracket parsing, the full IPA symbol inventory, X-SAMPA translation, stress/length/tone diacritics, deterministic rendering, WAV headers and a CLI end-to-end render. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
+The suite covers voice presets, English and Spanish text-to-phoneme conversion, language tags, user-defined language files, bracket parsing, the full IPA symbol inventory, X-SAMPA translation, stress/length/tone diacritics, deterministic rendering, WAV headers and a CLI end-to-end render. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
 
 ---
 
 ## Limitations
 
 - The English text layer is a small lexicon plus letter rules (including `-tion`, `-sion`, `-ing` and common contractions), not a full G2P model. The Spanish layer is a rule-based Castilian front end without a lexicon; dialect variation and allophonic realisations such as [β ð ɣ] are not modelled. IPA and X-SAMPA input avoid the text layer entirely.
+- User-defined language files cover grapheme maps, word lexicons, inventories and per-phoneme realization overrides. Ordered rewrite rules, phonotactic generation and automatic stress/tone selection are not implemented.
 - Only English and Spanish text front ends are built in. The IPA and X-SAMPA front ends remain language-independent.
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.

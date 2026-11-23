@@ -298,4 +298,69 @@ if(NOT language_mode_error MATCHES "--lang only applies to text input")
     message(FATAL_ERROR "unexpected --lang mode message: ${language_mode_error}")
 endif()
 
+# A standalone language definition file must drive text to speech. The file
+# is data only: a grapheme map plus one lexicon entry is enough.
+set(FORMANT_LANGUAGE_FILE "${CMAKE_CURRENT_BINARY_DIR}/smoke.lang")
+file(WRITE "${FORMANT_LANGUAGE_FILE}" [=[name Smoke
+ tag x-smoke
+ phoneme a
+ phoneme t
+ grapheme a a
+ grapheme t t
+ word ta ˈta
+]=])
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_LANGUAGE_FILE}"
+        --text "ta" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE language_file_result
+    ERROR_VARIABLE language_file_error
+)
+if(NOT language_file_result EQUAL 0)
+    message(FATAL_ERROR "formant language-file render failed: ${language_file_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" language_file_size)
+if(language_file_size LESS 44)
+    message(FATAL_ERROR "language-file WAV output is too short: ${language_file_size} bytes")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang es --lang-file "${FORMANT_LANGUAGE_FILE}"
+        --text "ta" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE language_conflict_result
+    ERROR_VARIABLE language_conflict_error
+)
+if(language_conflict_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted both --lang and --lang-file")
+endif()
+if(NOT language_conflict_error MATCHES "use only one of --lang and --lang-file")
+    message(FATAL_ERROR "unexpected language conflict message: ${language_conflict_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_LANGUAGE_FILE}"
+        --ipa "a" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE language_mode_result
+    ERROR_VARIABLE language_mode_error
+)
+if(language_mode_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted --lang-file with --ipa")
+endif()
+if(NOT language_mode_error MATCHES "--lang-file only applies to text input")
+    message(FATAL_ERROR "unexpected --lang-file mode message: ${language_mode_error}")
+endif()
+
+file(WRITE "${FORMANT_LANGUAGE_FILE}" "grapheme a a\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_LANGUAGE_FILE}"
+        --text "a" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE bad_language_file_result
+    ERROR_VARIABLE bad_language_file_error
+)
+if(bad_language_file_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted a language file without a name")
+endif()
+if(NOT bad_language_file_error MATCHES "language definition has no name")
+    message(FATAL_ERROR "unexpected language-file error: ${bad_language_file_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

@@ -1,0 +1,52 @@
+# Velta: an original example conlang for Formant language files.
+# Speak it with:
+#   formant --lang-file examples/velta.lang --text "Velta shael, toran."
+
+name Velta
+tag x-velta
+strict
+
+# Inventory. Realization overrides are optional; unset values keep the
+# universal IPA mapping. An open vowel is slightly longer and brighter.
+phoneme a formant-scale=1.04 duration-scale=1.15
+phoneme e
+phoneme i
+phoneme o
+phoneme u
+phoneme p
+phoneme t
+phoneme k
+phoneme m
+phoneme n
+phoneme s
+phoneme l
+phoneme r
+phoneme v
+phoneme ʃ duration-scale=1.10
+phoneme j
+phoneme ʔ duration-scale=0.70
+
+# Romanisation. Multi-letter graphemes win over single letters (sh before s).
+grapheme a a
+grapheme e e
+grapheme i i
+grapheme o o
+grapheme u u
+grapheme p p
+grapheme t t
+grapheme k k
+grapheme m m
+grapheme n n
+grapheme s s
+grapheme l l
+grapheme r r
+grapheme v v
+grapheme sh ʃ
+grapheme y j
+grapheme ' ʔ
+
+# Lexicon entries take precedence over the grapheme table and carry stress.
+word velta ˈvelta
+word shael ˈʃael
+word toran ˈtoran
+word vel'ta ˈvelʔta

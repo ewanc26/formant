@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-23
+
+### Added
+
+- User-defined language definition files. A plain-text file supplies a language as data: grapheme-to-IPA routes with longest-match resolution, a case-insensitive word lexicon, an optional phoneme inventory, and per-phoneme duration, amplitude, pitch and formant-scale overrides. `LanguageDefinition`, `PhonemeOverride` and `parseLanguageDefinition()` expose the model to embedders, while `phonemize(text, definition)` produces the same `Phoneme` sequence as the built-in front ends.
+- CLI `--lang-file FILE` for text input. Malformed files report line-aware errors, strict definitions reject undeclared phonemes and unmapped graphemes, and lenient definitions skip unknown graphemes while keeping universal IPA realizations.
+- `examples/velta.lang`, `examples/velta.txt` and [docs/language-files.md](docs/language-files.md): a complete conlang example, sample text, formal grammar, precedence rules and documented limits.
+
 ## [0.5.0] - 2026-11-23
 
 ### Added

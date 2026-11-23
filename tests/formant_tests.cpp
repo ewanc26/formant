@@ -1314,6 +1314,93 @@ int main() {
           Synthesizer(voicePreset("neutral"))
               .render(parseIpa("\u02C8ola"), 8000));
 
+    // User-defined language files turn romanisation, a lexicon and phonetic
+    // realization into data. No C++ is needed to add a conlang.
+    const LanguageDefinition velta = parseLanguageDefinition(
+        "# Velta test definition\n"
+        "name Velta\n"
+        "tag x-velta\n"
+        "phoneme a duration-scale=1.25 formant-scale=1.05\n"
+        "phoneme \u0283 duration-scale=1.10\n"
+        "grapheme sh \u0283\n"
+        "grapheme s s\n"
+        "grapheme h\n"
+        "grapheme a a\n"
+        "word sh a\n"
+        "word velta \u02C8velta\n");
+    CHECK(velta.name == "Velta");
+    CHECK(velta.tag == "x-velta");
+    // Longest grapheme wins: sh is one phoneme, not s + silent h.
+    CHECK(names(phonemize("sha", velta)) ==
+          std::vector<std::string>({"\u0283", "a"}));
+    // A whole-word entry beats the grapheme table, and lookup is ASCII
+    // case-insensitive.
+    CHECK(names(phonemize("sh", velta)) == std::vector<std::string>({"a"}));
+    CHECK(names(phonemize("SH", velta)) == std::vector<std::string>({"a"}));
+    // An empty IPA mapping makes a grapheme silent.
+    CHECK(names(phonemize("ha", velta)) == std::vector<std::string>({"a"}));
+    // Realization overrides apply after the universal IPA mapping.
+    {
+        const auto plain = parseIpa("a").front();
+        const auto tuned = phonemize("a", velta).front();
+        CHECK(tuned.duration > plain.duration);
+        CHECK(std::abs(tuned.bands[0].frequency -
+                       plain.bands[0].frequency * 1.05) < 1e-9);
+    }
+    // Punctuation and the utterance-final rise still work through the shared
+    // phoneme sequence.
+    {
+        const auto phrase = phonemize("sh, a!", velta);
+        CHECK(contains(names(phrase), ","));
+        CHECK(phrase.back().name == "!");
+        CHECK(!phrase.back().pitchRise);
+    }
+    // Strict mode rejects undeclared phonemes; lenient mode skips an unknown
+    // grapheme instead of failing.
+    {
+        const LanguageDefinition strict =
+            parseLanguageDefinition("name Strict\n"
+                                    "strict\n"
+                                    "phoneme a\n"
+                                    "grapheme a a\n"
+                                    "grapheme b b\n");
+        bool rejectedStrict = false;
+        try {
+            (void)phonemize("ab", strict);
+        } catch (const std::invalid_argument &) {
+            rejectedStrict = true;
+        }
+        CHECK(rejectedStrict);
+        CHECK(names(phonemize("a", strict)) == std::vector<std::string>({"a"}));
+
+        const LanguageDefinition lenient =
+            parseLanguageDefinition("name Lenient\n"
+                                    "grapheme a a\n");
+        CHECK(names(phonemize("ab", lenient)) ==
+              std::vector<std::string>({"a"}));
+    }
+    // Malformed files fail with line-aware errors rather than silently
+    // producing the wrong language.
+    {
+        const auto rejects = [](std::string_view text) {
+            try {
+                (void)parseLanguageDefinition(text);
+            } catch (const std::invalid_argument &) {
+                return true;
+            }
+            return false;
+        };
+        CHECK(rejects("grapheme a a\n"));
+        CHECK(rejects("name X\nunknown y\n"));
+        CHECK(rejects("name X\nphoneme a duration-scale=zero\n"));
+        CHECK(rejects("name X\ngrapheme\n"));
+    }
+    // A language file is deterministic and feeds the shared renderer.
+    CHECK(Synthesizer(voicePreset("neutral"))
+              .render(phonemize("velta", velta), 8000) ==
+          Synthesizer(voicePreset("neutral"))
+              .render(phonemize("velta", velta), 8000));
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 

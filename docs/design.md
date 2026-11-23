@@ -52,7 +52,9 @@ This mirrors the split used by eSpeak NG (language rules and phoneme tables feed
 
 English uses a small lexicon plus letter rules. Spanish uses Castilian rules: `c`/`z` become /θ/, `g` before a front vowel becomes /x/, `gu`/`qu` keep a silent `u`, `b` and `v` merge, `ll` becomes /ʝ/ and `ñ` /ɲ/. Word-initial and post-nasal or post-lateral `r` is a trill while intervocalic `r` is a tap, and `i`/`u` become glides inside diphthongs. Stress comes from a written acute accent, otherwise from the penultimate/final rule. Inverted `¿`/`¡` are separators; a closing `?` still marks the utterance-final rise.
 
-Adding another language means implementing a tokeniser and a G2P module, adding a tag to the registry and adding test vectors. No synthesis code changes. Known limits: no allophonic rules ([β ð ɣ]), no dialect selection (seseo/distinción), no automatic language detection, and Spanish has no lexicon yet.
+Adding another built-in language means implementing a tokeniser and a G2P module, adding a tag to the registry and adding test vectors. No synthesis code changes. Known limits: no allophonic rules ([β ð ɣ]), no dialect selection (seseo/distinción), no automatic language detection, and Spanish has no lexicon yet.
+
+A language definition file extends this without C++: it supplies grapheme routes, a word lexicon, an optional inventory and per-phoneme realization overrides, then feeds the same IPA parser and synthesizer. The line-oriented format and precedence rules are in [docs/language-files.md](language-files.md). Ordered context-sensitive rewrite rules and phonotactic generation remain separate work.
 
 ## Possible extensions
 
