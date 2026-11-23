@@ -329,6 +329,78 @@ void verifySampleRates() {
     }
 }
 
+// Parameter-domain transposition must move the measured quantities, not just
+// the voice fields. A steady vowel is rendered at the base pitch, an octave
+// up, and with its formants widened; the analyzers then check that F0 and
+// resonance positions moved by the requested ratios while the other axis held.
+void verifyTransposition() {
+    const formant::Phoneme *source = formant::findPhoneme("ee");
+    if (source == nullptr) {
+        std::cerr << "FAIL missing test vowel 'ee'\n";
+        ++failures;
+        return;
+    }
+    formant::Phoneme vowel = *source;
+    vowel.duration = 1.0;
+
+    formant::Voice base = formant::voicePreset("robot");
+    base.pitch = 100.0;
+    base.harmonics = 200;
+    base.declination = 0.0;
+
+    formant::AnalyzerOptions options;
+    options.maxF0 = 800.0;
+    const std::array<double, 2> expected = {source->bands[0].frequency,
+                                            source->bands[1].frequency};
+
+    auto measureF0 = [&](const formant::Voice &voice) {
+        const std::vector<float> samples =
+            formant::Synthesizer(voice).render({vowel}, 44100);
+        return meanVoicedF0(formant::estimateF0(samples, 44100, options),
+                            voice.pitch);
+    };
+
+    const double plainF0 = measureF0(base);
+    const formant::Voice octave = formant::shiftPitch(base, 1200.0);
+    const double octaveF0 = measureF0(octave);
+    CHECK(std::abs(octaveF0 / plainF0 - 2.0) < 0.03);
+
+    const formant::Voice wider = formant::scaleFormants(base, 1.25);
+    const double widerF0 = measureF0(wider);
+    CHECK(std::abs(widerF0 / plainF0 - 1.0) < 0.03);
+
+    const std::vector<float> plainSamples =
+        formant::Synthesizer(base).render({vowel}, 44100);
+    const std::vector<float> widerSamples =
+        formant::Synthesizer(wider).render({vowel}, 44100);
+    const auto plainPeaks = formant::estimateFormantPeaks(
+        plainSamples, 44100, plainF0, base.harmonics, expected);
+    const std::array<double, 2> widerExpected = {expected[0] * 1.25,
+                                                 expected[1] * 1.25};
+    const auto widerPeaks = formant::estimateFormantPeaks(
+        widerSamples, 44100, widerF0, wider.harmonics, widerExpected);
+    CHECK(widerPeaks[0].frequency > plainPeaks[0].frequency);
+    CHECK(widerPeaks[1].frequency > plainPeaks[1].frequency);
+    CHECK(formant::compareFormants(widerPeaks, widerExpected).maxErrorHz <=
+          kThresholds.formantErrorHz);
+
+    // A large upward shift is finite and normalised: the #108 ceiling taper
+    // fades harmonics as the stack moves rather than clipping or aliasing.
+    const formant::Voice extreme = formant::shiftPitch(base, 3600.0);
+    const std::vector<float> extremeSamples =
+        formant::Synthesizer(extreme).render({vowel}, 44100);
+    CHECK(extremeSamples ==
+          formant::Synthesizer(extreme).render({vowel}, 44100));
+    CHECK(*std::max_element(extremeSamples.begin(), extremeSamples.end()) <=
+          0.9001f);
+    CHECK(*std::min_element(extremeSamples.begin(), extremeSamples.end()) >=
+          -0.9001f);
+
+    std::cout << "transposition: F0 " << number(plainF0) << " -> "
+              << number(octaveF0) << " Hz at +1200 cents, formants x1.25 at "
+              << number(widerF0) << " Hz\n";
+}
+
 // Renders a deliberately wrong voice but scores it against the intended
 // tracks. A CI job passes only when the metrics reject the regression, which
 // demonstrates the thresholds are not vacuous.
@@ -420,6 +492,7 @@ int main(int argc, char **argv) {
     }
 
     verifySampleRates();
+    verifyTransposition();
     const std::vector<Case> cases = corpus();
     std::vector<ReportRow> rows;
     rows.reserve(cases.size());
