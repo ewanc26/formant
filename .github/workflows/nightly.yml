@@ -1,0 +1,35 @@
+name: Nightly fuzz
+
+# Long seeded campaigns are deliberately kept out of the fast PR gate. They
+# run nightly on the default branch and can also be started by hand from the
+# Actions tab to reproduce or extend a campaign.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-fuzz
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Seeded script fuzz (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      - name: Render 50,000 seeded scripts
+        # Every failure prints the reproducing seed; the exit status makes a
+        # broken invariant fail the job so it is visible in the Actions log.
+        run: ./build/formant_fuzz --scripts 50000 --seed-base 1

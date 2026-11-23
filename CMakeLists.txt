@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.21.0
+  VERSION 0.22.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -101,6 +101,36 @@ if(FORMANT_BUILD_TESTS)
             -DFORMANT_CLI=$<TARGET_FILE:formant>
             -DFORMANT_REPORT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-report.tsv
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmark_smoke.cmake)
+
+        add_test(NAME formant_checksum_corpus COMMAND
+            ${CMAKE_COMMAND}
+            -DFORMANT_CLI=$<TARGET_FILE:formant>
+            -DFORMANT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/checksum_corpus.cmake)
+
+        add_executable(formant_property_tests tests/formant_property_tests.cpp)
+        target_link_libraries(formant_property_tests PRIVATE formant_core)
+        # Instrumented renders are ~25x slower, so keep the sanitizer job well
+        # inside ctest's 300s per-test timeout while still exercising all five
+        # properties on Linux.
+        if(FORMANT_SANITIZE)
+            add_test(NAME formant_property_tests COMMAND formant_property_tests
+                --seeds 24)
+        else()
+            add_test(NAME formant_property_tests COMMAND formant_property_tests)
+        endif()
+
+        # The long campaign is built by default (nightly.yml invokes it
+        # directly); a small slice also runs in the fast PR gate.
+        add_executable(formant_fuzz tests/formant_fuzz.cpp)
+        target_link_libraries(formant_fuzz PRIVATE formant_core)
+        if(FORMANT_SANITIZE)
+            add_test(NAME formant_fuzz_smoke COMMAND formant_fuzz
+                --scripts 20 --seed-base 1)
+        else()
+            add_test(NAME formant_fuzz_smoke COMMAND formant_fuzz
+                --scripts 200 --seed-base 1)
+        endif()
     endif()
 endif()
 
