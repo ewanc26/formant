@@ -55,7 +55,7 @@ English uses a small lexicon plus letter rules. Spanish uses Castilian rules: `c
 
 Adding another built-in language means implementing a tokeniser and a G2P module, adding a tag to the registry and adding test vectors. No synthesis code changes. Known limits: no allophonic rules ([β ð ɣ]), no dialect selection (seseo/distinción), no automatic language detection, and Spanish has no lexicon yet.
 
-A language definition file extends this without C++: it supplies grapheme routes, a word lexicon, an optional inventory, per-phoneme realization overrides and ordered context-sensitive rewrite rules for romanisation and allophony, then feeds the same IPA parser and synthesizer. The line-oriented format, rule matching and precedence are in [docs/language-files.md](language-files.md). Phonotactic generation remains separate work.
+A language definition file extends this without C++: it supplies grapheme routes, a word lexicon, an optional inventory, per-phoneme realization overrides and ordered context-sensitive rewrite rules for romanisation and allophony, then feeds the same IPA parser and synthesizer. The line-oriented format, rule matching and precedence are in [docs/language-files.md](language-files.md). Seeded phonotactic word generation is a separate text front end described in [docs/gibberish.md](gibberish.md); it produces IPA for the ordinary parser and never introduces randomness into synthesis.
 
 ## Exact timing
 

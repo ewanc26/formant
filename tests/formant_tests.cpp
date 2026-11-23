@@ -3141,6 +3141,196 @@ int main() {
         CHECK(formant::parseVoiceDefinition(crlf).version == "1.2.3");
     }
 
+    // ------------------------------------------------------------------
+    // #114: seeded phonotactic gibberish generator.
+    // ------------------------------------------------------------------
+    {
+        using formant::GibberishResult;
+        using formant::GibberishSettings;
+        using formant::PatternGrammar;
+        using formant::PatternInventory;
+
+        auto throwsInvalid = [](auto operation) {
+            try {
+                operation();
+            } catch (const std::invalid_argument &) {
+                return true;
+            }
+            return false;
+        };
+
+        const PatternInventory builtin = formant::defaultPatternInventory();
+        CHECK(!builtin.empty('C'));
+        CHECK(!builtin.empty('V'));
+        CHECK(!builtin.empty('N'));
+        // Categories outside the built-in set are empty until defined.
+        CHECK(builtin.empty('X'));
+
+        // Same seed, pattern and profile => identical transcript and PCM.
+        const PatternGrammar cvc = formant::parsePatternGrammar("CVC");
+        GibberishSettings settings;
+        settings.seed = 7;
+        settings.count = 4;
+        const GibberishResult first =
+            formant::generateGibberish(cvc, builtin, settings);
+        const GibberishResult second =
+            formant::generateGibberish(cvc, builtin, settings);
+        CHECK(first.words.size() == 4);
+        CHECK(first.transcript == second.transcript);
+        CHECK(first.phonemes == second.phonemes);
+        CHECK(
+            Synthesizer(voicePreset("neutral")).render(first.phonemes, 8000) ==
+            Synthesizer(voicePreset("neutral")).render(second.phonemes, 8000));
+
+        // A different seed produces a different transcript.
+        settings.seed = 8;
+        CHECK(formant::generateGibberish(cvc, builtin, settings).transcript !=
+              first.transcript);
+
+        // Generated transcripts are valid IPA and round-trip through parseIpa.
+        for (const formant::GeneratedWord &word : first.words) {
+            CHECK(!word.ipa.empty());
+            CHECK(!word.phonemes.empty());
+            CHECK(names(word.phonemes) == names(formant::parseIpa(word.ipa)));
+        }
+        CHECK(first.transcript.find('\n') != std::string::npos);
+
+        // Weights are respected over a fixed seed sweep (bucket test).
+        const PatternGrammar weighted = formant::parsePatternGrammar("a/b*3");
+        settings.count = 1;
+        settings.prosody = false;
+        int optionA = 0;
+        int optionB = 0;
+        for (uint32_t seed = 1; seed <= 200; ++seed) {
+            settings.seed = seed;
+            const GibberishResult one =
+                formant::generateGibberish(weighted, builtin, settings);
+            CHECK(one.words.size() == 1);
+            if (one.words[0].ipa == "a") {
+                ++optionA;
+            } else if (one.words[0].ipa == "b") {
+                ++optionB;
+            } else {
+                CHECK(false);
+            }
+        }
+        CHECK(optionA + optionB == 200);
+        // 1:3 split: expect roughly 50/150; allow a generous margin so this is
+        // a distribution check rather than a test of one particular seed.
+        CHECK(optionB > optionA * 2);
+
+        // Exclusions are honoured: no two identical adjacent vowels.
+        const PatternGrammar filtered =
+            formant::parsePatternGrammar("[[a/i/u][a/i/u]]^aa^ii^uu");
+        settings.seed = 3;
+        settings.count = 30;
+        settings.prosody = true;
+        const GibberishResult filteredWords =
+            formant::generateGibberish(filtered, builtin, settings);
+        for (const formant::GeneratedWord &word : filteredWords.words) {
+            const std::vector<std::string> segment = names(word.phonemes);
+            CHECK(segment.size() >= 2);
+            CHECK(segment[0] != segment[1]);
+        }
+
+        // Optional groups and nesting work, and empty expansions are skipped.
+        const PatternGrammar optional = formant::parsePatternGrammar("a(b(c))");
+        settings.seed = 11;
+        settings.count = 20;
+        const GibberishResult optionalWords =
+            formant::generateGibberish(optional, builtin, settings);
+        bool sawShort = false;
+        bool sawFull = false;
+        for (const formant::GeneratedWord &word : optionalWords.words) {
+            CHECK(word.ipa == "a" || word.ipa == "a b" || word.ipa == "a b c");
+            sawShort = sawShort || word.ipa == "a";
+            sawFull = sawFull || word.ipa == "a b c";
+        }
+        CHECK(sawShort);
+        CHECK(sawFull);
+
+        // Inline subpattern definitions override the inventory and may refer
+        // to each other.
+        const PatternGrammar defined =
+            formant::parsePatternGrammar("C=p/t/k\nV=a/i/u\nX=CV\nXX");
+        settings.seed = 5;
+        settings.count = 10;
+        const GibberishResult definedWords =
+            formant::generateGibberish(defined, builtin, settings);
+        CHECK(definedWords.words.size() == 10);
+        for (const formant::GeneratedWord &word : definedWords.words) {
+            const std::vector<std::string> segment = names(word.phonemes);
+            CHECK(segment.size() == 4);
+            CHECK(segment[0] == "p" || segment[0] == "t" || segment[0] == "k" ||
+                  segment[0] == "i" || segment[0] == "u" || segment[0] == "a");
+        }
+        CHECK(throwsInvalid([&] {
+            formant::generateGibberish(
+                formant::parsePatternGrammar("X=Y\nY=X\nX"),
+                formant::defaultPatternInventory(), GibberishSettings{});
+        }));
+
+        // Conlang definition files supply categories through their classes.
+        const LanguageDefinition conlang =
+            formant::parseLanguageDefinition("name Testlang\n"
+                                             "tag zz\n"
+                                             "class V a e\n"
+                                             "class C p t k\n"
+                                             "phoneme a\n"
+                                             "phoneme e\n"
+                                             "phoneme p\n"
+                                             "phoneme t\n"
+                                             "phoneme k\n");
+        const PatternInventory conlangInventory =
+            formant::patternInventory(conlang);
+        CHECK(conlangInventory.get('V') ==
+              std::vector<std::string>({"a", "e"}));
+        CHECK(conlangInventory.get('C') ==
+              std::vector<std::string>({"p", "t", "k"}));
+        const GibberishResult conlangWords = formant::generateGibberish(
+            cvc, conlangInventory, settings, Language::English);
+        CHECK(conlangWords.words.size() == 10);
+        for (const formant::GeneratedWord &word : conlangWords.words) {
+            const std::vector<std::string> segment = names(word.phonemes);
+            CHECK(contains(std::vector<std::string>({"a", "e", "p", "t", "k"}),
+                           segment.front()));
+        }
+
+        // Prosody variation changes the phoneme contour but not the transcript.
+        settings.seed = 21;
+        settings.count = 8;
+        settings.prosody = false;
+        const GibberishResult plain =
+            formant::generateGibberish(cvc, builtin, settings);
+        settings.prosody = true;
+        const GibberishResult varying =
+            formant::generateGibberish(cvc, builtin, settings);
+        CHECK(plain.transcript == varying.transcript);
+        CHECK(plain.phonemes != varying.phonemes);
+        CHECK(contains(names(varying.phonemes), "?") ||
+              contains(names(varying.phonemes), ",") ||
+              contains(names(varying.phonemes), "."));
+
+        // Grammar errors are rejected early and instructively.
+        CHECK(throwsInvalid([] { formant::parsePatternGrammar(""); }));
+        CHECK(throwsInvalid([] { formant::parsePatternGrammar("a/b*0"); }));
+        CHECK(throwsInvalid([] { formant::parsePatternGrammar("a/b*129"); }));
+        CHECK(throwsInvalid([] { formant::parsePatternGrammar("[a"); }));
+        CHECK(throwsInvalid([] { formant::parsePatternGrammar("a(b"); }));
+        CHECK(throwsInvalid([] { formant::parsePatternGrammar("[a]^"); }));
+        CHECK(throwsInvalid([&] {
+            formant::generateGibberish(formant::parsePatternGrammar("X"),
+                                       builtin, GibberishSettings{});
+        }));
+        CHECK(throwsInvalid([&] {
+            GibberishSettings bad;
+            bad.count = 0;
+            formant::generateGibberish(cvc, builtin, bad);
+        }));
+        CHECK(formant::patternGrammarHelp().find("weight") !=
+              std::string::npos);
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 

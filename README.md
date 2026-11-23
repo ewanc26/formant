@@ -72,6 +72,11 @@ build/formant --phonemes "[h ee l o , w er l d .]" --output raw.wav
 build/formant --ipa "ˈhəˈloʊ" --output ipa.wav
 build/formant --xsampa "h@loU" --output xsampa.wav
 
+# Generate deterministic, seeded gibberish from an Awkwords-style pattern
+build/formant --gibberish "CVC" --seed 7 --count 4 \
+  --transcript babble.txt --output babble.wav
+build/formant --list-pattern-help
+
 # Speak Spanish text with the Castilian front end
 build/formant --lang es --text "Hola, mundo." --output hola.wav
 
@@ -332,13 +337,13 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 ## Limitations
 
 - The English text layer is a small lexicon plus letter rules (including `-tion`, `-sion`, `-ing` and common contractions), not a full G2P model. The Spanish layer is a rule-based Castilian front end without a lexicon; dialect variation and allophonic realisations such as [β ð ɣ] are not modelled. IPA and X-SAMPA input avoid the text layer entirely.
-- User-defined language files cover grapheme maps, word lexicons, inventories and per-phoneme realization overrides. Ordered rewrite rules, phonotactic generation and automatic stress/tone selection are not implemented.
+- User-defined language files cover grapheme maps, word lexicons, inventories and per-phoneme realization overrides. Ordered rewrite rules are supported; automatic stress/tone selection remains unimplemented. Seeded phonotactic word generation is available separately via `--gibberish` (see [docs/gibberish.md](docs/gibberish.md)).
 - Only English and Spanish text front ends are built in. The IPA and X-SAMPA front ends remain language-independent.
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

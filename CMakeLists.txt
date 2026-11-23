@@ -26,6 +26,7 @@ add_library(formant_core STATIC
     src/hash.cpp
     src/transpose.cpp
     src/phoneme.cpp
+    src/gibberish.cpp
     src/language.cpp
     src/lexicon.cpp
     src/ipa.cpp
