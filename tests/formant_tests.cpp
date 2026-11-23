@@ -883,6 +883,42 @@ int main() {
         }
     }
 
+    // The minimum-one-sample segment clamp used to add one bogus sample per
+    // phoneme at fast rates. When the cumulative boundary rounds to zero, the
+    // documented contract requires an empty buffer, not one silent sample.
+    {
+        const Phoneme *a = findPhoneme("a");
+        CHECK(a != nullptr);
+        if (a) {
+            for (double speakingRate : {1e6, 1e10, 1e100}) {
+                Voice fast = voice;
+                fast.rate = speakingRate;
+                const std::vector<float> samples =
+                    Synthesizer(fast).render({*a}, 44100);
+                CHECK(samples.empty());
+            }
+            Voice fast = voice;
+            fast.rate = 1e6;
+            const std::vector<float> four =
+                Synthesizer(fast).render(parsePhonemes("[h ee l o]"), 44100);
+            CHECK(four.empty());
+        }
+        // A normal rate still produces the exact documented count and keeps
+        // rendering finite and deterministic.
+        Voice normal = voice;
+        normal.rate = 1.0;
+        const std::vector<Phoneme> phrase = parsePhonemes("[h ee l o]");
+        double total = 0.0;
+        for (const Phoneme &p : phrase) {
+            total += p.duration;
+        }
+        const std::vector<float> normalSamples =
+            Synthesizer(normal).render(phrase, 44100);
+        CHECK(normalSamples.size() ==
+              static_cast<size_t>(std::llround(total * 44100.0)));
+        CHECK(normalSamples == Synthesizer(normal).render(phrase, 44100));
+    }
+
     // Removing the clamp would divide by zero unless rate is validated.
     const double badRates[] = {0.0, -1.0,
                                std::numeric_limits<double>::infinity(),

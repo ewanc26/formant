@@ -12,6 +12,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - CLI `--lexicon FILE` for text input. Homograph rules take precedence over exact entries, which take precedence over the language front end; unmatched words fall through. `--trace` now works with `--lexicon` (alone or with `--lang-file`) and reports the source layer per word (`homograph`, `lexicon` or `fallback`) as a validation view.
 - [docs/lexicons.md](docs/lexicons.md) documents the format, precedence, trace output, composition with language profiles and the documented limits of adjacent-word context matching.
 
+## [0.7.1] - 2026-11-23
+
+### Fixed
+
+- `render()` now returns exactly `round(total phoneme duration * sampleRate / rate)` samples at fast rates. A residual minimum-one-sample clamp forced one silent sample per segment when the cumulative boundary rounded to zero, so `--ipa a --rate 1e6` produced one sample instead of the documented zero and a four-phoneme phrase produced four. Zero-length segments are now allowed; empty renders produce an empty buffer and a valid 44-byte WAV. Normal and slow rates are unchanged.
+
 ## [0.7.0] - 2026-11-23
 
 ### Added
