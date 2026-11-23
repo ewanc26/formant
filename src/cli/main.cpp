@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -35,6 +36,7 @@ Options:
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
   --lang TAG              Text language: en (English), es (Spanish)
+  --lang-file FILE        Speak text with a user-defined language definition
   --voice NAME            Built-in voice: neutral, alto, bass, child, robot, whisper
   --list-voices           List available voices and exit
   --list-phonemes         List available phonemes and exit
@@ -130,6 +132,7 @@ struct Options {
     std::string phonemes;
     std::string ipa;
     std::string xsampa;
+    std::string languageFile;
     std::string output = "output.wav";
     int sampleRate = 44100;
     bool usePhonemes = false;
@@ -137,6 +140,7 @@ struct Options {
     bool useXsampa = false;
     bool useStdin = false;
     bool useLanguage = false;
+    bool useLanguageFile = false;
 };
 
 // Accepts both "--flag value" and "--flag=value".
@@ -252,6 +256,9 @@ Options parseOptions(int argc, char **argv) {
             options.language =
                 languageFromTag(takeValue(i, argc, argv, "--lang"));
             options.useLanguage = true;
+        } else if (arg == "--lang-file" || arg.rfind("--lang-file=", 0) == 0) {
+            options.languageFile = takeValue(i, argc, argv, "--lang-file");
+            options.useLanguageFile = true;
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
@@ -297,6 +304,37 @@ int main(int argc, char **argv) {
                 "--lang only applies to text input; --phonemes, --ipa and "
                 "--xsampa are language-independent");
         }
+        if (options.useLanguage && options.useLanguageFile) {
+            throw std::invalid_argument(
+                "use only one of --lang and --lang-file");
+        }
+        if (options.useLanguageFile && inputModes > 0) {
+            throw std::invalid_argument(
+                "--lang-file only applies to text input; --phonemes, --ipa "
+                "and --xsampa are language-independent");
+        }
+
+        formant::LanguageDefinition languageDefinition;
+        if (options.useLanguageFile) {
+            std::ifstream file(options.languageFile);
+            if (!file) {
+                throw std::runtime_error("cannot open language file: " +
+                                         options.languageFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read language file: " +
+                                         options.languageFile);
+            }
+            try {
+                languageDefinition =
+                    formant::parseLanguageDefinition(source.str());
+            } catch (const std::invalid_argument &error) {
+                throw std::invalid_argument(options.languageFile + ": " +
+                                            error.what());
+            }
+        }
 
         // A transcription mode replaces the text source, so never wait on
         // stdin in that case even if --stdin was also supplied.
@@ -313,11 +351,18 @@ int main(int argc, char **argv) {
                                         "and harmonics must not be negative");
         }
 
-        const std::vector<formant::Phoneme> phonemes =
-            options.usePhonemes ? formant::parsePhonemes(options.phonemes)
-            : options.useIpa    ? formant::parseIpa(options.ipa)
-            : options.useXsampa ? formant::parseXsampa(options.xsampa)
-                                : formant::phonemize(text, options.language);
+        std::vector<formant::Phoneme> phonemes;
+        if (options.usePhonemes) {
+            phonemes = formant::parsePhonemes(options.phonemes);
+        } else if (options.useIpa) {
+            phonemes = formant::parseIpa(options.ipa);
+        } else if (options.useXsampa) {
+            phonemes = formant::parseXsampa(options.xsampa);
+        } else if (options.useLanguageFile) {
+            phonemes = formant::phonemize(text, languageDefinition);
+        } else {
+            phonemes = formant::phonemize(text, options.language);
+        }
         const std::vector<float> samples =
             formant::Synthesizer(options.voice)
                 .render(phonemes, options.sampleRate);

@@ -1,12 +1,17 @@
 #include "language_internal.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "formant/ipa.h"
+#include "formant/language.h"
 
 namespace formant {
 namespace {
@@ -482,6 +487,245 @@ std::vector<Phoneme> spanishPhonemes(std::string_view text) {
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// User-defined language files.
+// ---------------------------------------------------------------------------
+
+std::string_view trimView(std::string_view text) {
+    size_t begin = 0;
+    while (begin < text.size() &&
+           std::isspace(static_cast<unsigned char>(text[begin]))) {
+        ++begin;
+    }
+    size_t end = text.size();
+    while (end > begin &&
+           std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+        --end;
+    }
+    return text.substr(begin, end - begin);
+}
+
+std::vector<std::string> splitFields(std::string_view line) {
+    std::vector<std::string> fields;
+    size_t pos = 0;
+    while (pos < line.size()) {
+        while (pos < line.size() &&
+               std::isspace(static_cast<unsigned char>(line[pos]))) {
+            ++pos;
+        }
+        if (pos == line.size()) {
+            break;
+        }
+        size_t stop = pos;
+        while (stop < line.size() &&
+               !std::isspace(static_cast<unsigned char>(line[stop]))) {
+            ++stop;
+        }
+        fields.emplace_back(line.substr(pos, stop - pos));
+        pos = stop;
+    }
+    return fields;
+}
+
+std::string joinFields(const std::vector<std::string> &fields, size_t begin) {
+    std::string result;
+    for (size_t i = begin; i < fields.size(); ++i) {
+        if (!result.empty()) {
+            result.push_back(' ');
+        }
+        result += fields[i];
+    }
+    return result;
+}
+
+[[noreturn]] void languageFileError(size_t line, const std::string &message) {
+    throw std::invalid_argument("line " + std::to_string(line) + ": " +
+                                message);
+}
+
+double languageFileNumber(std::string_view text, size_t line) {
+    if (text.empty()) {
+        languageFileError(line, "missing number");
+    }
+    const std::string copy(text);
+    char *end = nullptr;
+    const double value = std::strtod(copy.c_str(), &end);
+    if (end != copy.c_str() + copy.size() || !std::isfinite(value)) {
+        languageFileError(line, "invalid number: " + copy);
+    }
+    return value;
+}
+
+void applyPhonemeOverride(Phoneme &phoneme, const PhonemeOverride &changes) {
+    if (changes.durationScale) {
+        phoneme.duration *= *changes.durationScale;
+    }
+    if (changes.amplitude) {
+        phoneme.amplitude = *changes.amplitude;
+    }
+    if (changes.pitchStart) {
+        phoneme.pitchStart = *changes.pitchStart;
+    }
+    if (changes.pitchEnd) {
+        phoneme.pitchEnd = *changes.pitchEnd;
+    }
+    if (changes.formantScale) {
+        for (FormantBand &band : phoneme.bands) {
+            band.frequency *= *changes.formantScale;
+        }
+        if (phoneme.hasEndBands) {
+            for (FormantBand &band : phoneme.endBands) {
+                band.frequency *= *changes.formantScale;
+            }
+        }
+    }
+}
+
+std::vector<Phoneme> conlangIpa(std::string_view ipa,
+                                const LanguageDefinition &language) {
+    std::vector<Phoneme> phonemes = parseIpa(ipa);
+    for (Phoneme &phoneme : phonemes) {
+        const auto found = language.phonemes.find(phoneme.name);
+        if (found != language.phonemes.end()) {
+            applyPhonemeOverride(phoneme, found->second);
+        }
+        if (language.strictInventory && found == language.phonemes.end()) {
+            throw std::invalid_argument("phoneme \"" + phoneme.name +
+                                        "\" is not declared in the " +
+                                        language.name + " inventory");
+        }
+    }
+    return phonemes;
+}
+
+std::vector<Phoneme> mapConlangWord(std::string_view word,
+                                    const LanguageDefinition &language) {
+    const std::string key = asciiLower(word);
+    if (const auto found = language.words.find(key);
+        found != language.words.end()) {
+        return conlangIpa(found->second, language);
+    }
+
+    size_t longest = 0;
+    for (const auto &entry : language.graphemes) {
+        longest = std::max(longest, entry.first.size());
+    }
+
+    std::vector<Phoneme> result;
+    size_t pos = 0;
+    while (pos < key.size()) {
+        bool matched = false;
+        const size_t limit = std::min(longest, key.size() - pos);
+        for (size_t length = limit; length > 0; --length) {
+            const auto found = language.graphemes.find(key.substr(pos, length));
+            if (found == language.graphemes.end()) {
+                continue;
+            }
+            const std::vector<Phoneme> mapped =
+                conlangIpa(found->second, language);
+            result.insert(result.end(), mapped.begin(), mapped.end());
+            pos += length;
+            matched = true;
+            break;
+        }
+        if (matched) {
+            continue;
+        }
+
+        size_t length = 1;
+        while (pos + length < key.size() &&
+               (static_cast<unsigned char>(key[pos + length]) & 0xC0u) ==
+                   0x80u) {
+            ++length;
+        }
+        if (language.strictInventory) {
+            throw std::invalid_argument("no grapheme mapping for \"" +
+                                        key.substr(pos, length) + "\" in " +
+                                        language.name);
+        }
+        pos += length;
+    }
+    return result;
+}
+
+bool isConlangPause(uint32_t codePoint) {
+    return codePoint == ',' || codePoint == '.' || codePoint == ';' ||
+           codePoint == ':' || codePoint == '?' || codePoint == '!' ||
+           codePoint == 0x2026;
+}
+
+bool isConlangSeparator(uint32_t codePoint) {
+    if (codePoint < 0x80) {
+        return std::isspace(static_cast<unsigned char>(codePoint)) != 0 ||
+               codePoint == '"' || codePoint == '(' || codePoint == ')' ||
+               codePoint == '[' || codePoint == ']' || codePoint == '{' ||
+               codePoint == '}' || codePoint == '/' || codePoint == '\\';
+    }
+    return codePoint == 0x201C || codePoint == 0x201D || codePoint == 0x2018 ||
+           codePoint == 0x2019 || codePoint == 0x00AB || codePoint == 0x00BB ||
+           codePoint == 0x2013 || codePoint == 0x2014;
+}
+
+std::vector<Phoneme> conlangPhonemes(std::string_view text,
+                                     const LanguageDefinition &language) {
+    std::vector<Phoneme> result;
+    std::string word;
+    size_t pos = 0;
+
+    const auto appendPause = [&](std::string_view name) {
+        if (const Phoneme *pause = findPhoneme(name)) {
+            result.push_back(*pause);
+        }
+    };
+
+    const auto flush = [&]() {
+        if (word.empty()) {
+            return;
+        }
+        const std::vector<Phoneme> mapped = mapConlangWord(word, language);
+        if (!mapped.empty()) {
+            result.insert(result.end(), mapped.begin(), mapped.end());
+            if (const Phoneme *gapPhoneme = findPhoneme("_")) {
+                Phoneme gap = *gapPhoneme;
+                gap.name = "|";
+                gap.duration = 0.035;
+                result.push_back(gap);
+            }
+        }
+        word.clear();
+    };
+
+    while (pos < text.size()) {
+        const size_t start = pos;
+        uint32_t cp = 0;
+        if (!decodeUtf8(text, pos, cp)) {
+            throw std::invalid_argument("invalid UTF-8 in text");
+        }
+        if (isConlangPause(cp)) {
+            flush();
+            if (cp == ',') {
+                appendPause(",");
+            } else if (cp == '?') {
+                appendPause("?");
+            } else if (cp == '!') {
+                appendPause("!");
+            } else {
+                appendPause(".");
+            }
+        } else if (isConlangSeparator(cp)) {
+            flush();
+        } else {
+            word.append(text.data() + start, pos - start);
+        }
+    }
+    flush();
+
+    while (!result.empty() && result.back().name == "|") {
+        result.pop_back();
+    }
+    return result;
+}
+
 } // namespace
 
 std::vector<Phoneme> phonemizeSpanish(std::string_view text) {
@@ -535,6 +779,134 @@ std::vector<Phoneme> phonemize(std::string_view text, Language language) {
         return phonemizeSpanish(text);
     }
     throw std::invalid_argument("unsupported language");
+}
+
+LanguageDefinition parseLanguageDefinition(std::string_view text) {
+    LanguageDefinition definition;
+    size_t lineNumber = 0;
+    size_t pos = 0;
+
+    while (pos <= text.size()) {
+        size_t end = text.find('\n', pos);
+        if (end == std::string_view::npos) {
+            end = text.size();
+        }
+        std::string_view line = text.substr(pos, end - pos);
+        ++lineNumber;
+        if (const size_t comment = line.find('#');
+            comment != std::string_view::npos) {
+            line = line.substr(0, comment);
+        }
+        line = trimView(line);
+
+        if (!line.empty()) {
+            const std::vector<std::string> fields = splitFields(line);
+            const std::string &directive = fields.front();
+            if (directive == "name") {
+                definition.name = joinFields(fields, 1);
+                if (definition.name.empty()) {
+                    languageFileError(lineNumber, "name needs a value");
+                }
+            } else if (directive == "tag") {
+                definition.tag = joinFields(fields, 1);
+                if (definition.tag.empty()) {
+                    languageFileError(lineNumber, "tag needs a value");
+                }
+            } else if (directive == "strict") {
+                if (fields.size() != 1) {
+                    languageFileError(lineNumber, "strict takes no value");
+                }
+                definition.strictInventory = true;
+            } else if (directive == "lenient") {
+                if (fields.size() != 1) {
+                    languageFileError(lineNumber, "lenient takes no value");
+                }
+                definition.strictInventory = false;
+            } else if (directive == "phoneme") {
+                if (fields.size() < 2) {
+                    languageFileError(lineNumber,
+                                      "phoneme needs an IPA symbol");
+                }
+                PhonemeOverride &changes = definition.phonemes[fields[1]];
+                for (size_t i = 2; i < fields.size(); ++i) {
+                    const size_t equal = fields[i].find('=');
+                    if (equal == std::string::npos) {
+                        languageFileError(lineNumber,
+                                          "expected key=value, got: " +
+                                              fields[i]);
+                    }
+                    const std::string key = fields[i].substr(0, equal);
+                    const double value = languageFileNumber(
+                        std::string_view(fields[i]).substr(equal + 1),
+                        lineNumber);
+                    if (key == "duration-scale") {
+                        if (value <= 0.0) {
+                            languageFileError(
+                                lineNumber, "duration-scale must be positive");
+                        }
+                        changes.durationScale = value;
+                    } else if (key == "amplitude") {
+                        if (value < 0.0) {
+                            languageFileError(lineNumber,
+                                              "amplitude must not be negative");
+                        }
+                        changes.amplitude = value;
+                    } else if (key == "pitch-start") {
+                        if (value <= 0.0) {
+                            languageFileError(lineNumber,
+                                              "pitch-start must be positive");
+                        }
+                        changes.pitchStart = value;
+                    } else if (key == "pitch-end") {
+                        if (value <= 0.0) {
+                            languageFileError(lineNumber,
+                                              "pitch-end must be positive");
+                        }
+                        changes.pitchEnd = value;
+                    } else if (key == "formant-scale") {
+                        if (value <= 0.0) {
+                            languageFileError(lineNumber,
+                                              "formant-scale must be positive");
+                        }
+                        changes.formantScale = value;
+                    } else {
+                        languageFileError(lineNumber,
+                                          "unknown override: " + key);
+                    }
+                }
+            } else if (directive == "grapheme" || directive == "word") {
+                if (fields.size() < 2) {
+                    languageFileError(lineNumber,
+                                      directive + " needs a spelling");
+                }
+                const std::string key = asciiLower(fields[1]);
+                const std::string ipa = joinFields(fields, 2);
+                if (directive == "grapheme") {
+                    definition.graphemes[key] = ipa;
+                } else {
+                    definition.words[key] = ipa;
+                }
+            } else {
+                languageFileError(lineNumber,
+                                  "unknown directive: " + directive);
+            }
+        }
+
+        if (end == text.size()) {
+            break;
+        }
+        pos = end + 1;
+    }
+
+    if (definition.name.empty()) {
+        throw std::invalid_argument("language definition has no name");
+    }
+    return definition;
+}
+
+std::vector<Phoneme> phonemize(std::string_view text,
+                               const LanguageDefinition &language) {
+    return conlangPhonemes(text, language);
 }
 
 } // namespace formant
