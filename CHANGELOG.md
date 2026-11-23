@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-23
+
+### Added
+
+- A reproducible Modified Rhyme Test (MRT) intelligibility battery via `--mrt DIR`. The command renders the canonical 50-ensemble House et al. (1965) CVC word list as deterministic WAV stimuli and writes response-sheet/answer-key templates plus administration notes, so releases and voice presets can be compared on the same segmental intelligibility protocol.
+
 ## [0.24.0] - 2026-11-23
 
 ### Added

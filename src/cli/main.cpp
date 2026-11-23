@@ -84,6 +84,7 @@ Options:
   --benchmark-repeats N   Timed renders per benchmark case (default: 5)
   --benchmark-report FILE Write a machine-readable benchmark report (TSV)
   --benchmark-expected FILE Write the checked-in expected-results data file
+  --mrt DIR               Render the standard MRT intelligibility battery to DIR
   --output FILE           Audio output path, or - for stdout (default: output.wav)
   --format NAME           wav16 (default), wav24, wav32f, raw16, raw24, raw32f
   --dither SEED           Deterministic TPDF dither for 16/24-bit integers
@@ -295,6 +296,7 @@ struct Options {
     int benchmarkRepeats = 5;
     std::string benchmarkReport;
     std::string benchmarkExpected;
+    std::string mrtOutDir;
     std::string output = "output.wav";
     formant::AudioFormat format = formant::AudioFormat::Pcm16;
     formant::AudioWriteOptions audioOptions;
@@ -435,6 +437,10 @@ Options parseOptions(int argc, char **argv) {
             arg.rfind("--benchmark-expected=", 0) == 0) {
             options.benchmarkExpected =
                 takeValue(i, argc, argv, "--benchmark-expected");
+            continue;
+        }
+        if (arg == "--mrt" || arg.rfind("--mrt=", 0) == 0) {
+            options.mrtOutDir = takeValue(i, argc, argv, "--mrt");
             continue;
         }
 
@@ -959,6 +965,24 @@ int main(int argc, char **argv) {
                 status << "benchmark checksum mismatch\n";
                 return 1;
             }
+            return 0;
+        }
+
+        if (!options.mrtOutDir.empty()) {
+            if (options.useLanguageFile) {
+                throw std::invalid_argument(
+                    "--mrt currently supports built-in text languages; "
+                    "--lang-file is not supported");
+            }
+            formant::MrtBatteryOptions mrt;
+            mrt.outDir = options.mrtOutDir;
+            mrt.voice = options.voice;
+            mrt.language = options.language;
+            mrt.sampleRate = options.sampleRate;
+            const formant::MrtBatteryResult result =
+                formant::writeMrtBattery(mrt);
+            status << "Wrote MRT battery (" << result.filesWritten
+                   << " files) to " << result.outDir << "\n";
             return 0;
         }
 

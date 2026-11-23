@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -3422,6 +3423,35 @@ int main() {
             bad.styleTag = "nope-lang";
             formant::generateGibberish(formant::PatternGrammar{}, builtin, bad);
         }));
+    }
+
+    // #105: Modified Rhyme Test battery generation.
+    {
+        const auto ensembles = formant::mrtEnsembles();
+        CHECK(ensembles.size() == 50);
+        for (const formant::MrtEnsemble &e : ensembles) {
+            CHECK(!e.id.empty());
+            CHECK(e.focus == "initial" || e.focus == "final");
+            for (const std::string &w : e.words) {
+                CHECK(!w.empty());
+            }
+        }
+        const std::filesystem::path dir =
+            std::filesystem::temp_directory_path() / "formant-mrt-test";
+        std::filesystem::remove_all(dir);
+        formant::MrtBatteryOptions opt;
+        opt.outDir = dir.string();
+        opt.voice = formant::voicePreset("neutral");
+        opt.language = formant::Language::English;
+        opt.sampleRate = 22050;
+        const formant::MrtBatteryResult r = formant::writeMrtBattery(opt);
+        CHECK(r.filesWritten == 303);
+        CHECK(std::filesystem::exists(dir / "response_sheet.csv"));
+        CHECK(std::filesystem::exists(dir / "answer_key.csv"));
+        CHECK(std::filesystem::exists(dir / "README.txt"));
+        CHECK(std::filesystem::exists(dir / "mrt_001_e01_initial_went.wav"));
+        CHECK(std::filesystem::exists(dir / "mrt_300_e50_initial_nun.wav"));
+        std::filesystem::remove_all(dir);
     }
 
     // The English paths remain byte-for-byte unchanged.
