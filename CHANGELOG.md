@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-23
+
 ### Added
 
 - A seeded phonotactic gibberish generator via `--gibberish "PATTERN"`, with `--seed`, `--count`, `--transcript` and `--list-pattern-help`. The Awkwords-compatible grammar supports `/` alternatives, `*n` weights, `()` optionals, `[]` grouping, `""` literals, inline `X=...` subpatterns and `^` exclusion filters. Categories resolve from built-in C/V/N IPA inventories or a conlang file's classes and phoneme inventory. Generation is deterministic: the same seed, pattern and profile reproduce the transcript and byte-identical audio, and word generation and seeded statement/question/list contours use independent RNG streams so prosody cannot perturb the transcript. Documented in `docs/gibberish.md` with README examples.
