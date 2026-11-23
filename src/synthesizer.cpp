@@ -2,6 +2,7 @@
 
 #include "prosody.h"
 #include "schedule.h"
+#include "sine_kernel.h"
 
 #include <algorithm>
 #include <array>
@@ -211,7 +212,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                     }
                     voiced += detail::formantResponse(frequency, formants) /
                               static_cast<double>(h) * gain *
-                              std::sin(static_cast<double>(h) * draft.phase);
+                              detail::sine(static_cast<double>(h) * draft.phase);
                 }
             }
 
@@ -223,8 +224,9 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                 for (const NoisePartial &partial : partials) {
                     sum +=
                         detail::formantResponse(partial.frequency, formants) *
-                        std::sin(2.0 * detail::kPi * partial.frequency * time +
-                                 partial.phase);
+                        detail::sine(2.0 * detail::kPi * partial.frequency *
+                                         time +
+                                     partial.phase);
                 }
                 noise = 0.6 * sum / static_cast<double>(partials.size());
             }
