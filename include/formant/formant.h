@@ -13,5 +13,6 @@
 #include "formant/metrics.h"
 #include "formant/synthesizer.h"
 #include "formant/timing.h"
+#include "formant/transpose.h"
 #include "formant/voice.h"
 #include "formant/wav.h"

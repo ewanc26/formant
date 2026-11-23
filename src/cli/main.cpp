@@ -55,8 +55,11 @@ Options:
   --visemes FILE          Write a lip-sync viseme track as JSON
   --sample-rate HZ        PCM sample rate (default: 44100, minimum: 8000)
   --pitch HZ              Fundamental frequency; 0 disables voicing
+  --pitch-shift CENTS     Relative F0 shift in cents (1200 = one octave)
   --rate FACTOR           Speaking-rate multiplier (default: 1)
-  --formant-scale FACTOR  Vocal-tract length multiplier (default: 1)
+  --formant-scale FACTOR  Formant frequency/bandwidth multiplier (default: 1)
+  --formant-ratio RATIO   Relative formant multiplier, parameter-domain shift
+  --vocal-tract-scale N   Physical tract length; formants divide by N
   --vibrato-rate HZ       Vibrato speed in Hz
   --vibrato-depth CENTS   Vibrato depth in cents
   --breathiness 0..1      Sine-noise mixed into voiced sounds
@@ -226,9 +229,19 @@ Options parseOptions(int argc, char **argv) {
     Voice baseVoice = options.voice;
     std::vector<std::function<void(Voice &)>> overrides;
     const std::string doubleFlags[] = {
-        "--pitch",         "--rate",        "--formant-scale", "--vibrato-rate",
-        "--vibrato-depth", "--breathiness", "--gain",          "--attack",
-        "--release",       "--declination",
+        "--pitch",
+        "--rate",
+        "--formant-scale",
+        "--vibrato-rate",
+        "--vibrato-depth",
+        "--breathiness",
+        "--gain",
+        "--attack",
+        "--release",
+        "--declination",
+        "--pitch-shift",
+        "--formant-ratio",
+        "--vocal-tract-scale",
     };
 
     for (int i = 1; i < argc; ++i) {
@@ -299,6 +312,17 @@ Options parseOptions(int argc, char **argv) {
             else if (flag == "--declination")
                 overrides.push_back(
                     [parsed](Voice &v) { v.declination = parsed; });
+            else if (flag == "--pitch-shift")
+                overrides.push_back(
+                    [parsed](Voice &v) { v = formant::shiftPitch(v, parsed); });
+            else if (flag == "--formant-ratio")
+                overrides.push_back([parsed](Voice &v) {
+                    v = formant::scaleFormants(v, parsed);
+                });
+            else if (flag == "--vocal-tract-scale")
+                overrides.push_back([parsed](Voice &v) {
+                    v = formant::withVocalTractLength(v, parsed);
+                });
             handled = true;
             break;
         }

@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-23
+
+### Added
+
+- Parameter-domain transposition in the pure `formant/transpose.h` API: `centsToRatio()`, `shiftPitch()`, `scaleFormants()`, `withVocalTractLength()`, `transposeVoice()` and `detuneVoices()`. Pitch and formants move independently before synthesis, so there is no phase-vocoder artifact and identical arguments render byte-identically. The CLI exposes `--pitch-shift`, `--formant-ratio` and `--vocal-tract-scale`.
+- The verification harness now measures the transposed audio: an octave shift doubles measured F0 with formants unchanged, a 1.25 formant ratio moves both resonances with F0 unchanged, and a large shift stays finite and normalised through the #108 taper. Design notes document the axes and known-good ranges.
+
 ## [0.13.0] - 2026-11-23
 
 ### Added

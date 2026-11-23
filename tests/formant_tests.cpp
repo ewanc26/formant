@@ -27,6 +27,20 @@ int failures = 0;
         }                                                                      \
     } while (false)
 
+// Mean of the voiced frames of an F0 track, used to compare a transposed
+// render against its source without depending on a single frame's estimate.
+double meanFrequency(const formant::F0Track &track) {
+    double sum = 0.0;
+    int count = 0;
+    for (const formant::F0Frame &frame : track) {
+        if (frame.frequency > 0.0) {
+            sum += frame.frequency;
+            ++count;
+        }
+    }
+    return count > 0 ? sum / static_cast<double>(count) : 0.0;
+}
+
 std::vector<std::string> names(const std::vector<formant::Phoneme> &phonemes) {
     std::vector<std::string> result;
     for (const formant::Phoneme &phoneme : phonemes) {
@@ -2333,6 +2347,150 @@ int main() {
         const double bound = 2.0 * fadedEnvelope.second;
         CHECK(fadedEnvelope.first <= bound);
         CHECK(abruptEnvelope.first > bound);
+    }
+
+    // Issue #133: transposition happens in parameter space, before any sine
+    // is generated. The helpers are pure, so identical arguments render
+    // byte-identically and no post-processing stage is involved.
+    {
+        CHECK(centsToRatio(0.0) == 1.0);
+        CHECK(std::abs(centsToRatio(1200.0) - 2.0) < 1e-12);
+        CHECK(std::abs(centsToRatio(-1200.0) - 0.5) < 1e-12);
+
+        Voice base = voicePreset("robot");
+        base.pitch = 100.0;
+        base.harmonics = 200;
+        base.declination = 0.0;
+        const Voice octave = shiftPitch(base, 1200.0);
+        CHECK(std::abs(octave.pitch - 200.0) < 1e-9);
+        CHECK(octave.formantScale == base.formantScale);
+        const Voice wider = scaleFormants(base, 1.25);
+        CHECK(wider.pitch == base.pitch);
+        CHECK(std::abs(wider.formantScale - 1.25) < 1e-12);
+        const Voice longer = withVocalTractLength(base, 1.25);
+        CHECK(std::abs(longer.formantScale - 0.8) < 1e-12);
+        const Voice both = transposeVoice(base, 700.0, 1.1);
+        CHECK(std::abs(both.pitch - shiftPitch(base, 700.0).pitch) < 1e-9);
+        CHECK(std::abs(both.formantScale - 1.1) < 1e-12);
+
+        const std::vector<Voice> choir = detuneVoices(base, {-12.0, 0.0, 12.0});
+        CHECK(choir.size() == 3);
+        CHECK(choir[0].pitch < choir[1].pitch);
+        CHECK(choir[1].pitch < choir[2].pitch);
+        for (const Voice &v : choir) {
+            CHECK(v.formantScale == base.formantScale);
+        }
+
+        bool rejected = false;
+        try {
+            (void)shiftPitch(base, std::numeric_limits<double>::infinity());
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+        rejected = false;
+        try {
+            (void)scaleFormants(base, 0.0);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+        rejected = false;
+        try {
+            (void)withVocalTractLength(base, -1.0);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+
+        // A whisper has no F0 to shift, so transposition leaves it unvoiced.
+        const Voice whisper = shiftPitch(voicePreset("whisper"), 1200.0);
+        CHECK(whisper.pitch == 0.0);
+
+        const formant::Phoneme *source = findPhoneme("ee");
+        CHECK(source != nullptr);
+        if (source != nullptr) {
+            formant::Phoneme vowel = *source;
+            vowel.duration = 1.0;
+            AnalyzerOptions options;
+            options.maxF0 = 800.0;
+            const std::vector<float> plain =
+                Synthesizer(base).render({vowel}, 44100);
+            const std::vector<float> shifted =
+                Synthesizer(octave).render({vowel}, 44100);
+            CHECK(shifted == Synthesizer(octave).render({vowel}, 44100));
+            CHECK(shifted != plain);
+
+            // Choir detune renders distinct voices at small cent offsets, all
+            // sharing the same formants. The zero-cent voice is an exact copy
+            // of the base and must render byte-identically to it.
+            const std::vector<Voice> choirVoices =
+                detuneVoices(base, {-12.0, 0.0, 12.0});
+            std::vector<std::vector<float>> choirRenders;
+            for (const Voice &v : choirVoices) {
+                choirRenders.push_back(Synthesizer(v).render({vowel}, 44100));
+            }
+            CHECK(choirRenders.size() == 3);
+            CHECK(choirRenders[0] != choirRenders[1]);
+            CHECK(choirRenders[1] != choirRenders[2]);
+            CHECK(choirRenders[1] == plain);
+
+            const double f0Plain =
+                meanFrequency(estimateF0(plain, 44100, options));
+            const double f0Shifted =
+                meanFrequency(estimateF0(shifted, 44100, options));
+            CHECK(std::abs(f0Shifted / f0Plain - 2.0) < 0.02);
+
+            // Pitch alone does not move the resonances: both renders peak
+            // near the same F1/F2 of the unchanged phoneme table.
+            const std::array<double, 2> expected = {
+                source->bands[0].frequency * base.formantScale,
+                source->bands[1].frequency * base.formantScale};
+            const auto plainPeaks = estimateFormantPeaks(
+                plain, 44100, f0Plain, base.harmonics, expected);
+            const auto shiftedPeaks = estimateFormantPeaks(
+                shifted, 44100, f0Shifted, octave.harmonics, expected);
+            // A peak lands on the nearest strong harmonic, so a doubled F0
+            // can move the selected bin by a whole grid step. The absolute
+            // formant-error checks below are the substantive assertion.
+            const double gridTolerance = f0Shifted + 20.0;
+            CHECK(std::abs(plainPeaks[0].frequency -
+                           shiftedPeaks[0].frequency) < gridTolerance);
+            CHECK(std::abs(plainPeaks[1].frequency -
+                           shiftedPeaks[1].frequency) < gridTolerance);
+            CHECK(compareFormants(plainPeaks, expected).maxErrorHz <= 150.0);
+            CHECK(compareFormants(shiftedPeaks, expected).maxErrorHz <= 150.0);
+
+            // Scaling formants moves both peaks by the requested ratio while
+            // F0 stays put.
+            const std::vector<float> widened =
+                Synthesizer(wider).render({vowel}, 44100);
+            const std::array<double, 2> widerExpected = {expected[0] * 1.25,
+                                                         expected[1] * 1.25};
+            const double f0Widened =
+                meanFrequency(estimateF0(widened, 44100, options));
+            CHECK(std::abs(f0Widened / f0Plain - 1.0) < 0.02);
+            const auto widerPeaks = estimateFormantPeaks(
+                widened, 44100, f0Widened, wider.harmonics, widerExpected);
+            const FormantMetrics widerMetrics =
+                compareFormants(widerPeaks, widerExpected);
+            CHECK(widerMetrics.maxErrorHz <= 150.0);
+            CHECK(widerPeaks[0].frequency > plainPeaks[0].frequency);
+            CHECK(widerPeaks[1].frequency > plainPeaks[1].frequency);
+
+            // A very large shift stays finite and normalised; the #108 taper
+            // still removes partials at the ceiling as the stack moves.
+            const Voice extreme = shiftPitch(base, 3600.0);
+            CHECK(std::abs(extreme.pitch / base.pitch - 8.0) < 1e-9);
+            const std::vector<float> extremeSamples =
+                Synthesizer(extreme).render({vowel}, 44100);
+            CHECK(extremeSamples ==
+                  Synthesizer(extreme).render({vowel}, 44100));
+            CHECK(peak(extremeSamples) <= 0.9001);
+            for (float sample : extremeSamples) {
+                CHECK(std::isfinite(sample));
+            }
+        }
     }
 
     // The English paths remain byte-for-byte unchanged.

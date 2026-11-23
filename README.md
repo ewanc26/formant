@@ -244,6 +244,11 @@ voice.vibratoDepth = 10.0;    // cents
 voice.breathiness = 0.08;     // sine-noise under voiced sounds
 voice.taperCeiling = true;    // fade partials before Nyquist (default)
 
+// Parameter-domain transposition: no audio post-processing.
+formant::Voice higher = formant::shiftPitch(voice, 300.0);   // cents
+formant::Voice wider = formant::scaleFormants(voice, 1.15);  // resonances
+formant::Voice character = formant::transposeVoice(voice, -200.0, 1.10);
+
 const auto samples = formant::synthesizeText("Hello, world.", voice, 44100);
 formant::writeWav("hello.wav", samples, 44100);
 ```
