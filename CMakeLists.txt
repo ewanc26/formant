@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.19.0
+  VERSION 0.20.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -23,6 +23,7 @@ option(FORMANT_INSTALL "Install the library and CLI" ON)
 add_library(formant_core STATIC
     src/voice.cpp
     src/voice_file.cpp
+    src/hash.cpp
     src/transpose.cpp
     src/phoneme.cpp
     src/language.cpp
@@ -58,9 +59,12 @@ configure_file(
     @ONLY
 )
 
-add_executable(formant src/cli/main.cpp)
+add_executable(formant src/cli/main.cpp benchmark/benchmark.cpp)
 target_link_libraries(formant PRIVATE formant_core)
-target_include_directories(formant PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_include_directories(formant PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
 
 if(FORMANT_BUILD_TESTS)
     include(CTest)
@@ -90,6 +94,12 @@ if(FORMANT_BUILD_TESTS)
             -DFORMANT_EXPECTED_VERSION=${PROJECT_VERSION}
             -DFORMANT_EXAMPLES_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_smoke.cmake)
+
+        add_test(NAME formant_benchmark COMMAND
+            ${CMAKE_COMMAND}
+            -DFORMANT_CLI=$<TARGET_FILE:formant>
+            -DFORMANT_REPORT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-report.tsv
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmark_smoke.cmake)
     endif()
 endif()
 

@@ -112,6 +112,46 @@ inline double formantResponse(double frequency,
     return std::min(total, 2.0);
 }
 
+// The synthesizer evaluates the same four resonances for every harmonic and
+// every noise partial of a sample. Precomputing the scale-dependent centre and
+// width once per sample hoists sixteen multiplications out of those loops. The
+// response keeps the original operation order, so every result is bit-for-bit
+// identical to formantResponse(frequency, bands, scale).
+struct FormantEnvelope {
+    std::array<double, 4> centre{};
+    std::array<double, 4> width{};
+    std::array<double, 4> amplitude{};
+    std::array<bool, 4> active{};
+};
+
+inline FormantEnvelope
+makeFormantEnvelope(const std::array<FormantBand, 4> &bands, double scale) {
+    FormantEnvelope envelope;
+    const double minimumScale = std::max(0.7, scale);
+    for (std::size_t i = 0; i < bands.size(); ++i) {
+        envelope.centre[i] = bands[i].frequency * scale;
+        envelope.width[i] = bands[i].bandwidth * minimumScale;
+        envelope.amplitude[i] = bands[i].amplitude;
+        envelope.active[i] =
+            bands[i].amplitude > 0.0 && bands[i].frequency > 0.0;
+    }
+    return envelope;
+}
+
+inline double formantResponse(double frequency,
+                              const FormantEnvelope &envelope) {
+    double total = 0.0;
+    for (std::size_t i = 0; i < envelope.centre.size(); ++i) {
+        if (!envelope.active[i]) {
+            continue;
+        }
+        const double distance =
+            (frequency - envelope.centre[i]) / envelope.width[i];
+        total += envelope.amplitude[i] / (1.0 + distance * distance);
+    }
+    return std::min(total, 2.0);
+}
+
 inline int transitionSamples(const Voice &voice, int sampleRate) {
     return std::max(
         1, static_cast<int>(std::round(0.035 * sampleRate / voice.rate)));
@@ -120,15 +160,16 @@ inline int transitionSamples(const Voice &voice, int sampleRate) {
 // Intended formant bands at one sample of a segment. `from` is the band set
 // inherited from the previous segment; a diphthong additionally glides from
 // `bands` to `endBands` over its own span.
+// Same crossfade as bandsAt(), but accepts a precomputed transition length so
+// the renderer can hoist transitionSamples() out of its per-sample loop.
 inline std::array<FormantBand, 4>
-bandsAt(const Phoneme &phoneme, const std::array<FormantBand, 4> &from,
-        int sample, int segmentStart, int segmentEnd, const Voice &voice,
-        int sampleRate) {
+bandsAtWithTransition(const Phoneme &phoneme,
+                      const std::array<FormantBand, 4> &from, int sample,
+                      int segmentStart, int segmentEnd, int transition) {
     const double elapsed = static_cast<double>(sample - segmentStart);
     const double length =
         static_cast<double>(std::max(1, segmentEnd - segmentStart));
-    const double mix = smooth(
-        elapsed / static_cast<double>(transitionSamples(voice, sampleRate)));
+    const double mix = smooth(elapsed / static_cast<double>(transition));
     const double progress = smooth(elapsed / length);
     const std::array<FormantBand, 4> &target =
         phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
@@ -139,6 +180,15 @@ bandsAt(const Phoneme &phoneme, const std::array<FormantBand, 4> &from,
         bands[band] = blendBand(bands[band], target[band], progress);
     }
     return bands;
+}
+
+inline std::array<FormantBand, 4>
+bandsAt(const Phoneme &phoneme, const std::array<FormantBand, 4> &from,
+        int sample, int segmentStart, int segmentEnd, const Voice &voice,
+        int sampleRate) {
+    return bandsAtWithTransition(phoneme, from, sample, segmentStart,
+                                 segmentEnd,
+                                 transitionSamples(voice, sampleRate));
 }
 
 // Intended fundamental at one sample. This includes declination, the

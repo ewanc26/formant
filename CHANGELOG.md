@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-23
+
+### Added
+
+- A performance benchmark harness and documented real-time-factor budget via `--benchmark`, `--benchmark-repeats`, `--benchmark-report` and `--benchmark-expected`. A fixed six-voice corpus reports RTF, samples/second and per-voice F0/harmonic/noise-partial complexity, with SHA-256 PCM checksums checked against checked-in expectations in `benchmark/expected.txt`. CI compares runs with `benchmark/rtf-baseline.txt` and reports relative regressions without failing on runner noise. Documented in `docs/performance.md`.
+
+### Changed
+
+- Two byte-identical hot-path optimizations: `transitionSamples()` is hoisted out of the per-sample loop, and the four formant centres/widths are precomputed once per sample in a `FormantEnvelope` instead of inside every harmonic and noise-partial evaluation. All default PCM output remains bit-for-bit unchanged. The SHA-256 helper is now shared between voice packages and the benchmark harness.
+
 ## [0.19.0] - 2026-11-23
 
 ### Added

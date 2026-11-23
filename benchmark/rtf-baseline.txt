@@ -1,0 +1,17 @@
+# Reference real-time-factor baseline for the built-in benchmark corpus.
+# RTF is audio seconds divided by CPU seconds; larger is faster.
+#
+# Recorded with the Release build of formant 0.20.0 on an Apple M-series
+# machine (macOS arm64, single-threaded CLI). These are provisional reference
+# numbers: the CI job compares each subsequent run against them with a relative
+# threshold and reports drift rather than failing on runner noise. Recalibrate
+# this file on the ubuntu-latest reference runner after changing the corpus,
+# the compiler flags or the measurement method.
+#
+# case	rtf
+neutral	84.6
+alto	80.4
+bass	91.4
+child	102.0
+robot	222.6
+whisper	273.3

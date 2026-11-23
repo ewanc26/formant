@@ -143,15 +143,22 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
 
         const double voicedTarget = phoneme.voiced ? 1.0 : 0.0;
         const double noiseTarget = phoneme.voiced ? voice.breathiness : 1.0;
+        // Both the segment crossfade and bandsAt() need the same transition
+        // length. It depends only on the voice and sample rate, so computing it
+        // once per segment avoids two round() calls per sample.
+        const int crossfadeSamples =
+            detail::transitionSamples(voice, sampleRate);
 
         for (int s = segment.start; s < segment.end; ++s) {
             const double elapsed = static_cast<double>(s - segment.start);
-            const double mix = detail::smooth(
-                elapsed / static_cast<double>(
-                              detail::transitionSamples(voice, sampleRate)));
+            const double mix =
+                detail::smooth(elapsed / static_cast<double>(crossfadeSamples));
             const std::array<FormantBand, 4> bands =
-                detail::bandsAt(phoneme, segment.from, s, segment.start,
-                                segment.end, voice, sampleRate);
+                detail::bandsAtWithTransition(phoneme, segment.from, s,
+                                              segment.start, segment.end,
+                                              crossfadeSamples);
+            const detail::FormantEnvelope formants =
+                detail::makeFormantEnvelope(bands, voice.formantScale);
 
             const double voicedMix =
                 segment.wasVoiced + (voicedTarget - segment.wasVoiced) * mix;
@@ -194,8 +201,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                     if (gain <= 0.0) {
                         continue;
                     }
-                    voiced += detail::formantResponse(frequency, bands,
-                                                      voice.formantScale) /
+                    voiced += detail::formantResponse(frequency, formants) /
                               static_cast<double>(h) * gain *
                               std::sin(static_cast<double>(h) * draft.phase);
                 }
@@ -208,8 +214,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                 double sum = 0.0;
                 for (const NoisePartial &partial : partials) {
                     sum +=
-                        detail::formantResponse(partial.frequency, bands,
-                                                voice.formantScale) *
+                        detail::formantResponse(partial.frequency, formants) *
                         std::sin(2.0 * detail::kPi * partial.frequency * time +
                                  partial.phase);
                 }

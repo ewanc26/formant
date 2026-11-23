@@ -338,7 +338,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

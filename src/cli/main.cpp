@@ -16,6 +16,8 @@
 #include <string_view>
 #include <vector>
 
+#include "benchmark/benchmark.h"
+
 #include "formant/formant.h"
 #include "formant/version.h"
 
@@ -71,6 +73,10 @@ Options:
   --list-phonemes         List available phonemes and exit
   --list-ipa              List recognised IPA symbols and exit
   --list-languages        List available text languages and exit
+  --benchmark             Benchmark the built-in corpus and exit
+  --benchmark-repeats N   Timed renders per benchmark case (default: 5)
+  --benchmark-report FILE Write a machine-readable benchmark report (TSV)
+  --benchmark-expected FILE Write the checked-in expected-results data file
   --output FILE           Audio output path, or - for stdout (default: output.wav)
   --format NAME           wav16 (default), wav24, wav32f, raw16, raw24, raw32f
   --dither SEED           Deterministic TPDF dither for 16/24-bit integers
@@ -274,6 +280,10 @@ struct Options {
     std::string pairSpec;
     std::string labDir = "lab";
     std::string labIndex;
+    bool benchmark = false;
+    int benchmarkRepeats = 5;
+    std::string benchmarkReport;
+    std::string benchmarkExpected;
     std::string output = "output.wav";
     formant::AudioFormat format = formant::AudioFormat::Pcm16;
     formant::AudioWriteOptions audioOptions;
@@ -386,6 +396,29 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--trace") {
             options.trace = true;
+            continue;
+        }
+        if (arg == "--benchmark") {
+            options.benchmark = true;
+            continue;
+        }
+        if (arg == "--benchmark-repeats" ||
+            arg.rfind("--benchmark-repeats=", 0) == 0) {
+            options.benchmarkRepeats =
+                integer("--benchmark-repeats",
+                        takeValue(i, argc, argv, "--benchmark-repeats"));
+            continue;
+        }
+        if (arg == "--benchmark-report" ||
+            arg.rfind("--benchmark-report=", 0) == 0) {
+            options.benchmarkReport =
+                takeValue(i, argc, argv, "--benchmark-report");
+            continue;
+        }
+        if (arg == "--benchmark-expected" ||
+            arg.rfind("--benchmark-expected=", 0) == 0) {
+            options.benchmarkExpected =
+                takeValue(i, argc, argv, "--benchmark-expected");
             continue;
         }
 
@@ -857,6 +890,41 @@ int main(int argc, char **argv) {
         // message (including traces) goes to stderr in that mode.
         const bool audioToStdout = options.output == "-";
         std::ostream &status = audioToStdout ? std::cerr : std::cout;
+
+        if (!options.benchmarkExpected.empty()) {
+            writeTextFile(options.benchmarkExpected,
+                          formant::benchmarkExpectedReport());
+            return 0;
+        }
+        if (options.benchmark) {
+            if (options.benchmarkRepeats < 1) {
+                throw std::invalid_argument(
+                    "--benchmark-repeats must be positive");
+            }
+            bool allOk = true;
+            std::string report = formant::benchmarkReportHeader();
+            for (const formant::BenchmarkCase &testCase :
+                 formant::benchmarkCorpus()) {
+                const formant::BenchmarkResult result =
+                    formant::runBenchmark(testCase, options.benchmarkRepeats);
+                report += formant::benchmarkReportLine(result);
+                status << testCase.name << "\tRTF " << result.realTimeFactor
+                       << "\t" << result.samplesPerSecond << " samples/s\tF0 "
+                       << result.f0Hz << " Hz\t" << result.harmonics
+                       << " harmonics\t" << result.noisePartials
+                       << " noise partials\t"
+                       << (result.checksumOk ? "ok" : "FAIL") << "\n";
+                allOk = allOk && result.checksumOk;
+            }
+            if (!options.benchmarkReport.empty()) {
+                writeTextFile(options.benchmarkReport, report);
+            }
+            if (!allOk) {
+                status << "benchmark checksum mismatch\n";
+                return 1;
+            }
+            return 0;
+        }
 
         if (options.audioOptions.dither &&
             formant::isFloatAudioFormat(options.format)) {
