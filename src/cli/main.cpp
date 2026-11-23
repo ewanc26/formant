@@ -16,6 +16,8 @@ namespace {
 
 constexpr const char *kVersion = FORMANT_VERSION;
 
+using formant::Language;
+using formant::languageFromTag;
 using formant::Voice;
 using formant::voicePreset;
 using formant::voicePresetNames;
@@ -32,10 +34,12 @@ Options:
   --phonemes "[h ee l o]" Speak a bracketed phoneme sequence instead of text
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
+  --lang TAG              Text language: en (English), es (Spanish)
   --voice NAME            Built-in voice: neutral, alto, bass, child, robot, whisper
   --list-voices           List available voices and exit
   --list-phonemes         List available phonemes and exit
   --list-ipa              List recognised IPA symbols and exit
+  --list-languages        List available text languages and exit
   --output FILE           WAV output path (default: output.wav)
   --sample-rate HZ        PCM sample rate (default: 44100, minimum: 8000)
   --pitch HZ              Fundamental frequency; 0 disables voicing
@@ -65,6 +69,13 @@ void listVoices() {
         const Voice voice = voicePreset(name);
         std::cout << name << "\t" << voice.pitch << " Hz\tformants x"
                   << voice.formantScale << "\n";
+    }
+}
+
+void listLanguages() {
+    for (const std::string &tag : formant::languageTags()) {
+        const Language language = languageFromTag(tag);
+        std::cout << tag << "\t" << formant::languageName(language) << "\n";
     }
 }
 
@@ -114,6 +125,7 @@ int integer(const std::string &flag, const std::string &value) {
 
 struct Options {
     Voice voice = voicePreset("neutral");
+    Language language = Language::English;
     std::string text = "Hello, world.";
     std::string phonemes;
     std::string ipa;
@@ -124,6 +136,7 @@ struct Options {
     bool useIpa = false;
     bool useXsampa = false;
     bool useStdin = false;
+    bool useLanguage = false;
 };
 
 // Accepts both "--flag value" and "--flag=value".
@@ -174,6 +187,10 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-ipa") {
             listIpa();
+            std::exit(0);
+        }
+        if (arg == "--list-languages") {
+            listLanguages();
             std::exit(0);
         }
         if (arg == "--stdin") {
@@ -231,6 +248,10 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--xsampa" || arg.rfind("--xsampa=", 0) == 0) {
             options.xsampa = takeValue(i, argc, argv, "--xsampa");
             options.useXsampa = true;
+        } else if (arg == "--lang" || arg.rfind("--lang=", 0) == 0) {
+            options.language =
+                languageFromTag(takeValue(i, argc, argv, "--lang"));
+            options.useLanguage = true;
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
@@ -271,6 +292,11 @@ int main(int argc, char **argv) {
                                         "--xsampa (each overrides --text and "
                                         "--stdin)");
         }
+        if (options.useLanguage && inputModes > 0) {
+            throw std::invalid_argument(
+                "--lang only applies to text input; --phonemes, --ipa and "
+                "--xsampa are language-independent");
+        }
 
         // A transcription mode replaces the text source, so never wait on
         // stdin in that case even if --stdin was also supplied.
@@ -291,7 +317,7 @@ int main(int argc, char **argv) {
             options.usePhonemes ? formant::parsePhonemes(options.phonemes)
             : options.useIpa    ? formant::parseIpa(options.ipa)
             : options.useXsampa ? formant::parseXsampa(options.xsampa)
-                                : formant::phonemize(text);
+                                : formant::phonemize(text, options.language);
         const std::vector<float> samples =
             formant::Synthesizer(options.voice)
                 .render(phonemes, options.sampleRate);

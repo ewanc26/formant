@@ -37,8 +37,27 @@ IPA input adds per-segment `amplitude`, `pitchStart` and `pitchEnd`. Primary and
 
 IPA and X-SAMPA are parallel *front ends*, not a second synthesis path. `src/ipa.cpp` decodes UTF-8, maps each base letter to articulatory features (manner, place, height, backness, rounding), applies diacritics and suprasegmentals, then emits the same `Phoneme` struct used by the English lexicon. Vowel height maps inversely to F1; frontness maps to F2; rounding lowers F2. Consonants take four place-specific resonance centres and a manner-specific amplitude profile. This keeps the "formant data in the phoneme table" rule: the synthesiser still only sees four bands.
 
+## Languages
+
+Language coverage belongs in the front end. The synthesiser consumes a `Phoneme` sequence and knows nothing about orthography, so a new language changes how text becomes phonemes, not how sound is produced.
+
+The layers are:
+
+1. **Text normalisation and tokenisation** — UTF-8 is decoded explicitly, so accented letters and non-ASCII punctuation never depend on the process locale.
+2. **G2P module** — a language tag selects rules, an optional lexicon and a stress model. Each module returns the same `Phoneme` struct used by the IPA front end.
+3. **Shared inventory and prosody** — vowel formants come from articulatory height/backness/rounding; consonants from place and manner. Stress, length and intonation are data on the segment.
+4. **Language-independent synthesis** — one additive engine renders every language.
+
+This mirrors the split used by eSpeak NG (language rules and phoneme tables feeding a shared synthesiser), MaryTTS (a language-specific `Phonemiser` in front of a shared voice) and Rhasspy's IPA-first inventory. Keeping the inventory IPA-based also means a language module can be tested by comparing phoneme names, without rendering audio.
+
+English uses a small lexicon plus letter rules. Spanish uses Castilian rules: `c`/`z` become /θ/, `g` before a front vowel becomes /x/, `gu`/`qu` keep a silent `u`, `b` and `v` merge, `ll` becomes /ʝ/ and `ñ` /ɲ/. Word-initial and post-nasal or post-lateral `r` is a trill while intervocalic `r` is a tap, and `i`/`u` become glides inside diphthongs. Stress comes from a written acute accent, otherwise from the penultimate/final rule. Inverted `¿`/`¡` are separators; a closing `?` still marks the utterance-final rise.
+
+Adding another language means implementing a tokeniser and a G2P module, adding a tag to the registry and adding test vectors. No synthesis code changes. Known limits: no allophonic rules ([β ð ɣ]), no dialect selection (seseo/distinción), no automatic language detection, and Spanish has no lexicon yet.
+
 ## Possible extensions
 
+- More language front ends (French, German, Italian) behind the same registry.
+- Language detection and per-span tags for mixed-language text.
 - A larger English lexicon or an external pronunciation file.
 - Stereo and streaming output.
 - Real-time playback adapters (Core Audio, PipeWire, SDL).

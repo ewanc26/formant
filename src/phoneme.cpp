@@ -1,5 +1,7 @@
 #include "formant/phoneme.h"
 
+#include "language_internal.h"
+
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
@@ -980,7 +982,7 @@ const Phoneme *findPhoneme(std::string_view name) {
     return nullptr;
 }
 
-std::vector<Phoneme> phonemize(std::string_view text) {
+std::vector<Phoneme> phonemizeEnglish(std::string_view text) {
     std::vector<Phoneme> result;
     std::string word;
 

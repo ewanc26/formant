@@ -28,4 +28,9 @@ class Synthesizer {
 std::vector<float> synthesizeText(std::string_view text, const Voice &voice,
                                   int sampleRate = 44100);
 
+// Language-aware convenience overload. The language only selects the text
+// front end; rendering is identical for every language.
+std::vector<float> synthesizeText(std::string_view text, Language language,
+                                  const Voice &voice, int sampleRate = 44100);
+
 } // namespace formant
