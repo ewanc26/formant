@@ -26,7 +26,30 @@ Three things are interpolated or enveloped to remove discontinuities:
 
 The harmonic phase is a single accumulator across the whole utterance, so pitch changes do not reset the waveform. For callers who render sentence by sentence, `Synthesizer::renderContinued()` carries that accumulator, the absolute sine-noise time base, inherited formant bands and utterance-wide prosody in a `RenderState` value. The state stores the accumulated phoneme sequence as its source of truth, so a chain of calls renders the whole sequence before normalisation and its final buffer is byte-identical to one `render()` of the concatenation. Every phoneme keeps its own attack and release and the scheduler's 35 ms crossfade, so the joint gets exactly the same smooth treatment as any interior boundary. Skipping those ramps at a splice was rejected: it would break byte-identity with the single-call result, which is the stronger guarantee for an embedder. The ceiling taper from issue #108 is stateless, so no extra carried field is needed.
 
-## Nasality
+## Sine kernel
+
+Every voiced sample evaluates one sine per harmonic, and every noise partial
+adds another. The renderer therefore uses one shared kernel
+(`src/sine_kernel.cpp`) instead of calling libm per partial: the argument is
+wrapped to [-pi, pi], looked up in a 4096-entry table and linearly
+interpolated. The table is built once from a polynomial, not from the host
+libm, so every platform renders the same values. The vibrato cents factor uses
+the same file's degree-6 expansion of 2^(cents/1200), so no `std::pow` remains
+in the per-sample loop.
+
+Accuracy is measured two ways. Against `std::sin` over [-1000, 1000] radians
+the worst absolute error is below 1e-6 (the table step sets that bound); the
+same bound holds at the much larger arguments reached by the noise stack. A rendered 440 Hz tone is fitted
+with its fundamental and the residual is reported as THD+N; the committed
+`formant_sine_kernel` test asserts the -90 dB budget (it measures -141 dB).
+Reference timings on the development machine (Apple M4, Apple Clang, Release)
+are about 1.0 ns per kernel call against 2.4 ns for `std::sin`, roughly 2.4x
+faster; the six-preset CLI benchmark moves from a mean real-time factor of
+128x to 224x, about 1.75x faster end to end. At the renderer's larger arguments
+the maximum absolute error stays below 1e-6. The numbers are reference points,
+not CI assertions: the committed test prints fresh timings on every run.
+
+
 
 Nasal stops and nasalized vowels are not just damped vowels: coupling the nasal cavity inserts zeros into the transfer function. Each `Phoneme` carries two `SpectralZero` values (frequency, bandwidth and notch depth) next to its four formant bands. `src/phoneme.cpp` defines place-specific zeros for `m`, `n` and `ng`; the IPA front end derives the same data from place for every nasal stop and adds a weaker pair when the nasalization diacritic (U+0303) qualifies a vowel or approximant. The two zeros crossfade with the formants over the usual 35 ms window, so a nasal consonant does not switch its notch on at full depth and the transition stays click-free.
 

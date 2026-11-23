@@ -40,6 +40,7 @@ add_library(formant_core STATIC
     src/timing.cpp
     src/wav.cpp
     src/metrics.cpp
+    src/sine_kernel.cpp
 )
 add_library(formant::formant ALIAS formant_core)
 target_include_directories(formant_core PUBLIC
@@ -96,6 +97,12 @@ if(FORMANT_BUILD_TESTS)
 
         add_test(NAME formant_metrics_regression
             COMMAND formant_formant_verification --regression-check)
+
+        add_executable(formant_sine_kernel tests/formant_sine_kernel.cpp)
+        target_link_libraries(formant_sine_kernel PRIVATE formant_core)
+        target_include_directories(formant_sine_kernel PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        add_test(NAME formant_sine_kernel COMMAND formant_sine_kernel)
 
         add_test(NAME formant_cli_help COMMAND formant --help)
         add_test(NAME formant_cli_voices COMMAND formant --list-voices)

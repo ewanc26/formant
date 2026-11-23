@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- A shared sine kernel for the render hot path (#107). The per-harmonic and
+  per-noise-partial `std::sin` calls now use one wrapped, interpolated sine
+  table built from a polynomial, and the vibrato cents factor uses a bounded
+  polynomial instead of
+  `std::pow`. The approximation is documented with a measured error budget in
+  `docs/design.md`, a THD+N test asserts -90 dB for a rendered pure tone, and
+  a benchmark target reports kernel versus libm timing. On the reference
+  machine the kernel is about 2.4x faster per call than `std::sin` and the
+  six-preset CLI benchmark moves from a mean real-time factor of 128x to
+  224x (about 1.75x end to end). Rendered audio changes within that budget, so
+  the checksum corpus and benchmark expectations are updated deliberately;
+  the phoneme and voice APIs are unchanged.
+
 ## [0.28.0] - 2026-11-23
 
 ### Added

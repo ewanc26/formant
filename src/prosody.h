@@ -8,6 +8,7 @@
 
 #include "formant/phoneme.h"
 #include "formant/voice.h"
+#include "sine_kernel.h"
 
 #include <algorithm>
 #include <array>
@@ -301,9 +302,9 @@ inline double fundamentalAt(const Voice &voice, const Phoneme &phoneme,
     if (voice.vibratoRate > 0.0 && voice.vibratoDepth > 0.0) {
         const double time =
             static_cast<double>(sample) / static_cast<double>(sampleRate);
-        const double cents =
-            voice.vibratoDepth * std::sin(2.0 * kPi * voice.vibratoRate * time);
-        fundamental *= std::pow(2.0, cents / 1200.0);
+        const double cents = voice.vibratoDepth *
+                             sine(2.0 * kPi * voice.vibratoRate * time);
+        fundamental *= centsToRatioFast(cents);
     }
     return std::max(0.0, fundamental);
 }
