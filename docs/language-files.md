@@ -31,6 +31,10 @@ directive  = "name" text
            | "tag" tag
            | "strict"
            | "lenient"
+           | "tone" ("none" | "simple" | "complex")
+           | "stress" ("none" | "fixed" | "free")
+           | "rhythm" ("stress" | "syllable" | "mora")
+           | "rate" number
            | "phoneme" ipa { override }
            | "grapheme" grapheme [ ipa ]
            | "word" word [ ipa ]
@@ -51,7 +55,8 @@ key        = "duration-scale"
 
 - `name` is required and may contain spaces.
 - `tag` is an optional BCP-47-style identifier, such as `x-velta`.
-- `strict` rejects text that cannot be pronounced completely. `lenient` is the default and skips unknown graphemes.
+- `strict` rejects text that cannot be pronounced completely. `lenient` is the default and skips unknown graphemes; a phoneme outside the declared inventory is replaced by its nearest declared neighbour (see [Inventory fallback](#inventory-fallback)).
+- `tone`, `stress`, `rhythm` and `rate` set language-level defaults; see [Typology defaults](#typology-defaults).
 - `phoneme` declares an IPA symbol. The optional overrides change how that symbol is realized. A declaration with no overrides is still useful in strict mode because it adds the symbol to the inventory.
 - `grapheme` maps a spelling to IPA. The IPA is the rest of the line and may contain several phonemes. Omitting it makes the grapheme silent.
 - `word` maps a whole word to IPA. Word entries take precedence over grapheme mappings and may carry stress marks.
@@ -151,9 +156,13 @@ phoneme ʃ duration-scale=1.10
 
 These are deliberate approximations. They do not change the universal IPA definition, so another language or a plain `--ipa` render is unaffected.
 
-## Strict inventories
+## Inventory fallback and strictness
 
-`strict` makes the inventory a contract: any phoneme produced after rewrite rules must have a `phoneme` declaration. This catches both a romanisation that accidentally emits a sound outside the planned inventory and an allophone whose replacement was not added to the inventory.
+`strict` makes the inventory a contract: any phoneme produced after rewrite rules must have a `phoneme` declaration. This catches both a romanisation that accidentally emits a sound outside the planned inventory and an allophone whose replacement was not added to the inventory. The error names the closest declared phoneme:
+
+```text
+formant: phoneme "z" is not declared in the Strict Example inventory (nearest declared phoneme: "s")
+```
 
 ```text
 name Strict Example
@@ -166,13 +175,45 @@ grapheme t t
 phoneme-rule t > ɾ / V _ V
 ```
 
-Without `strict`, undeclared IPA symbols use their universal articulatory realisation. This is the graceful fallback for borrowed words and for files that only want to override a few sounds.
+In `lenient` mode an undeclared phoneme is replaced by the **nearest declared phoneme**, judged by the articulatory/acoustic features Formant already carries (segment kind, voicing, F1–F4 and duration). The CLI prints a warning:
+
+```text
+warning: phoneme "z" is outside the Thalen inventory; using nearest declared phoneme "s"
+```
+
+The match is deterministic: declarations are considered in sorted symbol order and a strict improvement is required, so ties resolve identically on every platform. The replacement copies the declared phoneme's realization but keeps the original's stress, tone and lexical pitch. If no declaration can be parsed into a usable phoneme, the universal realization is kept. Embedders can collect the warnings through the optional `warnings` vector on `phonemize()`.
+
+`--list-phonemes` reflects the active definition: with `--lang-file` it prints the declared symbols, sorted, instead of the universal inventory (see [`examples/thalen.lang`](../examples/thalen.lang)).
+
+## Typology defaults
+
+A conlang file can set language-level defaults as data:
+
+```text
+name Thalen
+lenient
+tone none
+stress fixed
+rhythm syllable
+rate 0.95
+```
+
+| Directive | Values | Effect |
+|-----------|--------|--------|
+| `tone` | `none`, `simple`, `complex` | Recorded as language metadata. |
+| `stress` | `none`, `fixed`, `free` | `fixed` gives the first vowel of every word a default pitch onset and amplitude lift. |
+| `rhythm` | `stress`, `syllable`, `mora` | Recorded as language metadata. |
+| `rate` | positive number | Multiplies every segment's duration. |
+
+`tone` and `rhythm` are deliberately declarative today: they are parsed, validated and available to embedders through `LanguageDefinition::typology`, but they do not yet impose F0 or durational targets. `stress=fixed` and `rate` change the rendered phonemes immediately. All four values are exposed so a conlang file alone can carry the language's typological profile without code changes, and future prosody layers can consume them without a format change.
+
+The defaults are applied after rewrite rules and realization overrides, and after inventory fallback, so a substituted phoneme keeps the language's rate and stress.
 
 ## What this format does not do
 
 - It does not implement SCA category substitution, metathesis, optional environment elements, wildcard contexts, rule exceptions or nonce bracket classes. Classes are literal sets; replacements are literal sequences.
 - Rule environments do not cross word boundaries or pauses.
-- There is no automatic stress or tone assignment. Write stress in the IPA of a word entry, or map a grapheme to an IPA sequence containing stress. An allophone replacement uses the universal realization of the replacement; unchanged phonemes keep their original prosody.
+- There is no automatic tone assignment or free-stress placement. Write tone/stress in the IPA of a word entry, map a grapheme to an IPA sequence containing them, or use `stress=fixed` for a default initial stress. An allophone replacement uses the universal realization of the replacement; unchanged phonemes keep their original prosody.
 - There is no number expansion or per-feature override. Seeded phonotactic word generation lives in a separate `--gibberish` front end (see [docs/gibberish.md](gibberish.md)); it can draw its C/V/N inventories from this file's `class` directives or phoneme inventory.
 - Rule lines cannot carry trailing `#` comments, because `#` is the boundary token.
 - An unsupported tag, malformed line or unknown override fails loudly with a line number instead of being ignored.

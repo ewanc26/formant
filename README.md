@@ -236,11 +236,12 @@ The language module only decides how text becomes phonemes. Formant tables, IPA 
 
 #### Conlangs and user languages
 
-A language definition file supplies a language as data: grapheme-to-IPA mappings, a word lexicon, an optional inventory, per-phoneme realization overrides and ordered context-sensitive rewrite rules. No C++ or rebuild is needed.
+A language definition file supplies a language as data: grapheme-to-IPA mappings, a word lexicon, an optional inventory, per-phoneme realization overrides, language-level typology defaults and ordered context-sensitive rewrite rules. No C++ or rebuild is needed.
 
 ```sh
 build/formant --lang-file examples/velta.lang --text "Velta tata, celta, toran'." --output velta.wav
 build/formant --lang-file examples/velta.lang --trace --text "tata" --output tata.wav
+build/formant --lang-file examples/thalen.lang --list-phonemes   # prints the conlang inventory
 ```
 
 ```cpp
@@ -250,7 +251,9 @@ const auto phonemes = formant::phonemize("Velta shael.", velta);
 
 Rewrite rules use SCA-style `pattern > replacement / environment` bodies, class sets for vowels, consonants or arbitrary categories, `#` word edges, and `0` for deletion. Grapheme rules run before lookup; phoneme rules run after mapping and before realization overrides. `--trace` reports every application.
 
-See [docs/language-files.md](docs/language-files.md) for the grammar, rule matching, trace output and override semantics. [`examples/velta.lang`](examples/velta.lang) is a complete example.
+A `strict` inventory rejects undeclared phonemes and names the nearest declaration; in `lenient` mode an undeclared phoneme falls back to its nearest declared neighbour with a warning. `tone`, `stress`, `rhythm` and `rate` carry language-level typology as data (`rate` scales durations, `stress=fixed` gives each word a default initial stress). `--list-phonemes` reports the active conlang's inventory.
+
+See [docs/language-files.md](docs/language-files.md) for the grammar, rule matching, trace output, fallback and override semantics. [`examples/velta.lang`](examples/velta.lang) and [`examples/thalen.lang`](examples/thalen.lang) are complete examples.
 
 #### User lexicons
 
@@ -362,7 +365,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 ## Limitations
 
 - The English text layer is a small lexicon plus letter rules (including `-tion`, `-sion`, `-ing` and common contractions), not a full G2P model. The Spanish layer is a rule-based Castilian front end without a lexicon; dialect variation and allophonic realisations such as [β ð ɣ] are not modelled. IPA and X-SAMPA input avoid the text layer entirely.
-- User-defined language files cover grapheme maps, word lexicons, inventories and per-phoneme realization overrides. Ordered rewrite rules are supported; automatic stress/tone selection remains unimplemented. Seeded phonotactic word generation is available separately via `--gibberish` (see [docs/gibberish.md](docs/gibberish.md)).
+- User-defined language files cover grapheme maps, word lexicons, inventories, per-phoneme realization overrides, nearest-feature inventory fallback and language-level typology defaults (`rate`, `stress=fixed`; `tone`/`rhythm` are recorded metadata). Ordered rewrite rules are supported; free tone/stress assignment remains unimplemented. Seeded phonotactic word generation is available separately via `--gibberish` (see [docs/gibberish.md](docs/gibberish.md)).
 - Only English and Spanish text front ends are built in. The IPA and X-SAMPA front ends remain language-independent.
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.

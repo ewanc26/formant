@@ -176,7 +176,21 @@ void listLanguages() {
     }
 }
 
-void listPhonemes() {
+void listPhonemes(const formant::LanguageDefinition *language = nullptr) {
+    if (language != nullptr) {
+        // A conlang's inventory is its phoneme declarations. Print the
+        // symbols in sorted order so the listing is byte-stable.
+        std::vector<std::string> names;
+        names.reserve(language->phonemes.size());
+        for (const auto &entry : language->phonemes) {
+            names.push_back(entry.first);
+        }
+        std::sort(names.begin(), names.end());
+        for (const std::string &name : names) {
+            std::cout << name << "\n";
+        }
+        return;
+    }
     for (const std::string &name : formant::phonemeNames()) {
         std::cout << name << "\n";
     }
@@ -314,6 +328,7 @@ struct Options {
     bool useSsml = false;
     bool useProsody = false;
     bool trace = false;
+    bool listPhonemes = false;
 };
 
 // Accepts both "--flag value" and "--flag=value".
@@ -393,8 +408,10 @@ Options parseOptions(int argc, char **argv) {
             std::exit(0);
         }
         if (arg == "--list-phonemes") {
-            listPhonemes();
-            std::exit(0);
+            // Deferred: a --lang-file later on the command line must be able
+            // to supply the inventory that this listing reports.
+            options.listPhonemes = true;
+            continue;
         }
         if (arg == "--list-ipa") {
             listIpa();
@@ -1113,6 +1130,12 @@ int main(int argc, char **argv) {
             }
         }
 
+        if (options.listPhonemes) {
+            listPhonemes(options.useLanguageFile ? &languageDefinition
+                                                 : nullptr);
+            return 0;
+        }
+
         formant::PronunciationLexicon pronunciationLexicon;
         if (options.useLexicon) {
             std::ifstream file(options.lexiconFile);
@@ -1167,6 +1190,12 @@ int main(int argc, char **argv) {
         }
 
         std::vector<std::string> trace;
+        std::vector<std::string> conlangWarnings;
+        const auto printConlangWarnings = [&]() {
+            for (const std::string &line : conlangWarnings) {
+                status << "warning: " << line << "\n";
+            }
+        };
         std::vector<formant::Phoneme> phonemes;
         std::string generatedTranscript;
         if (options.useGibberish) {
@@ -1221,13 +1250,13 @@ int main(int argc, char **argv) {
                     frontEnd = [&](std::string_view run) {
                         return formant::phonemize(
                             run, languageDefinition, pronunciationLexicon,
-                            options.trace ? &trace : nullptr);
+                            options.trace ? &trace : nullptr, &conlangWarnings);
                     };
                 } else {
                     frontEnd = [&](std::string_view run) {
-                        return formant::phonemize(run, languageDefinition,
-                                                  options.trace ? &trace
-                                                                : nullptr);
+                        return formant::phonemize(
+                            run, languageDefinition,
+                            options.trace ? &trace : nullptr, &conlangWarnings);
                     };
                 }
             } else if (options.useLexicon) {
@@ -1245,6 +1274,7 @@ int main(int argc, char **argv) {
             for (const std::string &line : trace) {
                 status << "trace: " << line << "\n";
             }
+            printConlangWarnings();
         } else if (options.usePhonemes) {
             phonemes = formant::parsePhonemes(options.phonemes);
         } else if (options.useIpa) {
@@ -1253,16 +1283,18 @@ int main(int argc, char **argv) {
             phonemes = formant::parseXsampa(options.xsampa);
         } else if (options.useLanguageFile) {
             if (options.useLexicon) {
-                phonemes = formant::phonemize(text, languageDefinition,
-                                              pronunciationLexicon,
-                                              options.trace ? &trace : nullptr);
+                phonemes = formant::phonemize(
+                    text, languageDefinition, pronunciationLexicon,
+                    options.trace ? &trace : nullptr, &conlangWarnings);
             } else {
                 phonemes = formant::phonemize(text, languageDefinition,
-                                              options.trace ? &trace : nullptr);
+                                              options.trace ? &trace : nullptr,
+                                              &conlangWarnings);
             }
             for (const std::string &line : trace) {
                 status << "trace: " << line << "\n";
             }
+            printConlangWarnings();
         } else if (options.useLexicon) {
             phonemes =
                 formant::phonemize(text, options.language, pronunciationLexicon,

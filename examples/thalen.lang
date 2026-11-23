@@ -1,0 +1,56 @@
+# Thalen: a second original example conlang for Formant.
+# Lenient mode with typology defaults and nearest-feature inventory fallback.
+#
+#   formant --lang-file examples/thalen.lang --list-phonemes
+#   formant --lang-file examples/thalen.lang --trace --text "thalen emi zar"
+#   formant --lang-file examples/thalen.lang --text "zar"  # warns: z -> s
+
+name Thalen
+tag x-thalen
+lenient
+
+# Language-level defaults. Rate scales every segment duration; fixed stress
+# places a default stress on the first vowel of each word. Tone and rhythm are
+# recorded as language metadata for tooling.
+tone none
+stress fixed
+rhythm syllable
+rate 0.95
+
+phoneme a duration-scale=1.05
+phoneme e
+phoneme i
+phoneme o
+phoneme u
+phoneme t
+phoneme k
+phoneme m
+phoneme n
+phoneme s
+phoneme l
+phoneme ɾ duration-scale=1.10
+phoneme ʃ
+
+grapheme a a
+grapheme e e
+grapheme i i
+grapheme o o
+grapheme u u
+grapheme t t
+grapheme k k
+grapheme m m
+grapheme n n
+grapheme s s
+grapheme l l
+grapheme r ɾ
+grapheme sh ʃ
+grapheme z z
+
+class V a e i o u
+class C t k m n s l ɾ ʃ
+
+# Intervocalic t softens to a tap, matching the inventory's r.
+phoneme-rule t > ɾ / V _ V
+
+word thalen ˈtalen
+word emi ˈemi

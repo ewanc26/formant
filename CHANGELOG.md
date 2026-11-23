@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-23
+
+### Added
+
+- Conlang inventory and typology support for language files (#112, remaining increment). `--list-phonemes` now prints the active `--lang-file` inventory instead of the universal list (independent of flag order). Lenient definitions replace a phoneme outside the declared inventory with the nearest declared neighbour using articulatory/acoustic feature distance, with a deterministic CLI warning; strict definitions reject it with the nearest candidate named in the error. Language files accept `tone`, `stress`, `rhythm` and `rate` typology directives: `rate` scales durations and `stress=fixed` gives each word a default initial stress, while `tone`/`rhythm` are validated and exposed to embedders as metadata. Added `examples/thalen.lang` and expanded `docs/language-files.md`. Default CLI output and the canonical WAV hash are unchanged.
+
 ## [0.26.0] - 2026-11-23
 
 ### Added
