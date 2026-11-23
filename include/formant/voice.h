@@ -21,6 +21,11 @@ struct Voice {
     double attack = 0.012;     // seconds
     double release = 0.02;     // seconds
     double gain = 0.85;        // output level before normalisation
+
+    // Fade the last 4% of the usable band before the Nyquist break. Keep this
+    // enabled for normal rendering; it is a data-driven switch so callers can
+    // A/B the anti-click fade and tests can prove the regression it prevents.
+    bool taperCeiling = true;
 };
 
 // Returns a copy of a built-in voice. Throws std::invalid_argument for an

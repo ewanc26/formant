@@ -18,6 +18,48 @@ namespace detail {
 
 inline constexpr double kPi = 3.14159265358979323846;
 
+// Voiced partials stop at 0.49 * sampleRate. The safety cap on the partial
+// count is shared by the renderer and the analyzer target tracks.
+inline constexpr double kHarmonicCeiling = 0.49;
+inline constexpr int kMaxHarmonics = 4096;
+
+// Raised-cosine fade over the top 4% of the usable band. A partial loses all
+// amplitude before the hard Nyquist break removes it, so a gliding F0 cannot
+// pop a harmonic in or out. Below the window the gain is exactly 1, which
+// keeps ordinary renders byte-identical.
+inline constexpr double kCeilingTaper = 0.04;
+
+inline double ceilingGain(double frequency, int sampleRate) {
+    const double ceiling = kHarmonicCeiling * static_cast<double>(sampleRate);
+    const double start = ceiling * (1.0 - kCeilingTaper);
+    if (frequency <= start) {
+        return 1.0;
+    }
+    if (frequency >= ceiling) {
+        return 0.0;
+    }
+    const double t = (frequency - start) / (ceiling - start);
+    return 0.5 * (1.0 + std::cos(kPi * t));
+}
+
+// The count cap is a second bound for subsonic voices that never reach
+// Nyquist. Fade the same way so the cap is inaudible too; it only engages
+// when the caller asked for more partials than the hard limit.
+inline constexpr double kCapTaper = 0.04;
+
+inline double capGain(int harmonic) {
+    const double start = static_cast<double>(kMaxHarmonics) * (1.0 - kCapTaper);
+    if (harmonic <= start) {
+        return 1.0;
+    }
+    const double t = (static_cast<double>(harmonic) - start) /
+                     (static_cast<double>(kMaxHarmonics) - start);
+    if (t >= 1.0) {
+        return 0.0;
+    }
+    return 0.5 * (1.0 + std::cos(kPi * t));
+}
+
 inline double clamp01(double value) {
     return std::max(0.0, std::min(1.0, value));
 }

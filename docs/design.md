@@ -22,6 +22,7 @@ Three things are interpolated or enveloped to remove discontinuities:
 2. **Voicing** — the voiced/unvoiced mix crossfades over the same window.
 3. **Diphthongs** — `ay`, `oy`, `ow`, `oi` and `eye` store a second band set and glide from it across the phoneme, rather than holding one static vowel.
 4. **Amplitude** — per-phoneme attack and release, with shorter values for plosives.
+5. **Nyquist ceiling** — the top 4% of the usable band uses a raised-cosine fade, so a gliding fundamental removes a partial before the hard break.
 
 The harmonic phase is a single accumulator across the whole utterance, so pitch changes do not reset the waveform.
 
@@ -65,6 +66,8 @@ Because durations are assigned to phonemes before synthesis, timing is not a pos
 All renderers produce the same floating-point buffer before an output writer touches it. `src/wav.cpp` owns one chunked encoder for 16-bit PCM, packed 24-bit PCM and 32-bit IEEE float, with WAV and raw variants. The original `writeWav()` call delegates to that encoder with the original options, so its bytes are unchanged. Optional triangular dither is seeded explicitly and belongs only to integer quantization; it never feeds back into synthesis. WAV headers use the canonical 44-byte layout and derive byte rate and block align from the selected format. Raw stdout output routes status text to stderr, keeping the byte stream usable by a pipe. See [docs/audio-output.md](audio-output.md) for the format table and examples.
 
 The voiced Nyquist ceiling is `0.49 * sampleRate`, and the deterministic sine partials used for fricatives stop at `0.45 * sampleRate`. Both come from the caller's rate rather than a stored constant, so changing `--sample-rate` scales the spectrum and the number of admissible partials together. `tests/formant_verification.cpp` measures F1 and F2 with a Hann-windowed Goertzel filter at five rates, including a harmonic count that reaches past Nyquist at 22.05 kHz.
+
+Partials entering the top 4% of that band are attenuated by a raised-cosine window, `0.5 * (1 + cos(pi * t))` with `t` running from 0 at `0.4704 * sampleRate` to 1 at `0.49 * sampleRate`. The window reaches exactly zero at the ceiling, so the hard `break` that removes the partial is inaudible; below the window the gain is exactly 1, so ordinary renders are bit-for-bit unchanged. Additive synthesis is already alias-free while partials stay below Nyquist, so the only remaining risk is an amplitude step when a gliding fundamental pushes a partial across the bound. A smooth ramp is the standard cure for such a step. The same window fades the last 4% of the hard 4096-partial count cap, which otherwise only binds for subsonic voices. `Voice::taperCeiling` exposes the fade as data so callers can A/B it; the anti-click fade is on by default and `expectedEnvelope()` shares the identical helper. The glide regression fixture renders a rising fundamental with a strong F4 at the ceiling and asserts that its high-frequency envelope stays within an envelope-derived per-sample bound; with `taperCeiling = false` the same bound is violated.
 
 ## Objective metrics
 

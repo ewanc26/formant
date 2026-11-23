@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-23
+
+### Added
+
+- `Voice::taperCeiling` (on by default) fades the last 4% of the usable band before the Nyquist break and the last 4% of the 4096-partial safety cap, so a gliding fundamental cannot pop a harmonic in or out. The raised-cosine window and its rationale are documented in `docs/design.md`; renders whose partials stay below the band remain byte-identical.
+
+### Fixed
+
+- Voiced partials no longer disappear at full amplitude when a pitch contour, declination, question rise or vibrato pushes them across the sample-rate-derived ceiling. A regression fixture renders a rising fundamental with a strong F4 at the ceiling and fails when the fade is disabled.
+
 ## [0.11.0] - 2026-11-23
 
 ### Added
