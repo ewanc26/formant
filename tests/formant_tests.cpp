@@ -2493,6 +2493,131 @@ int main() {
         }
     }
 
+    // Issue #102: a minimal SSML subset, parsed into the shared Phoneme
+    // sequence. Bare text and <speak> wrappers produce exactly the same
+    // phonemes as the ordinary text front end.
+    {
+        const std::vector<Phoneme> expected = phonemize("Hello, world.");
+        CHECK(names(phonemizeSsml("Hello, world.")) == names(expected));
+        CHECK(names(phonemizeSsml("<speak>Hello, world.</speak>")) ==
+              names(expected));
+        CHECK(names(phonemizeSsml("<?xml version=\"1.0\"?>\n<!-- c -->"
+                                  "<speak>Hello, world.</speak>")) ==
+              names(expected));
+        CHECK(names(phonemizeSsml("<speak>Hello,&#32;world.</speak>")) ==
+              names(expected));
+        CHECK(names(phonemizeSsml("<speak>Hello, &amp; goodbye.</speak>")) ==
+              names(phonemizeSsml("<speak>Hello, & goodbye.</speak>")));
+
+        // Explicit breaks become silence phonemes of the requested duration.
+        const auto timed =
+            phonemizeSsml("<speak>a<break time=\"300ms\"/>b</speak>");
+        CHECK(std::any_of(timed.begin(), timed.end(), [](const Phoneme &p) {
+            return p.kind == PhonemeKind::Silence &&
+                   std::abs(p.duration - 0.3) < 1e-9;
+        }));
+        const auto strength =
+            phonemizeSsml("<speak>a<break strength=\"strong\"/>b</speak>");
+        CHECK(
+            std::any_of(strength.begin(), strength.end(), [](const Phoneme &p) {
+                return p.kind == PhonemeKind::Silence &&
+                       std::abs(p.duration - 0.5) < 1e-9;
+            }));
+
+        // Inline IPA and say-as expansions flow through the same table.
+        const auto inlineIpa = phonemizeSsml(
+            "<speak><phoneme alphabet=\"ipa\" ph=\"ˈhəˈloʊ\"/></speak>");
+        CHECK(names(inlineIpa) == names(parseIpa("ˈhəˈloʊ")));
+        const auto inlineX = phonemizeSsml(
+            "<speak><phoneme alphabet=\"x-sampa\" ph=\"h@loU\"/></speak>");
+        CHECK(names(inlineX) == names(parseXsampa("h@loU")));
+        const auto digits = phonemizeSsml(
+            "<speak><say-as interpret-as=\"digits\">123</say-as></speak>");
+        CHECK(names(digits) == names(phonemize("one two three")));
+        const auto number = phonemizeSsml(
+            "<speak><say-as interpret-as=\"number\">123</say-as></speak>");
+        CHECK(names(number) == names(phonemize("one hundred twenty three")));
+
+        // Prosody composes over nested spans: rate shortens duration, pitch
+        // scales the F0 contour and volume scales amplitude.
+        const auto plain = phonemize("hello");
+        const auto flat = phonemizeSsml("<speak>hello</speak>");
+        CHECK(names(plain) == names(flat));
+        const auto fast =
+            phonemizeSsml("<speak><prosody rate=\"2\">hello</prosody></speak>");
+        CHECK(fast.size() == flat.size());
+        for (std::size_t i = 0; i < fast.size(); ++i) {
+            CHECK(std::abs(fast[i].duration * 2.0 - flat[i].duration) < 1e-9);
+        }
+        const auto loud = phonemizeSsml("<speak><prosody pitch=\"+12st\" "
+                                        "volume=\"1.5\">a</prosody></speak>");
+        const auto plainA = phonemizeSsml("<speak>a</speak>");
+        CHECK(loud.size() == plainA.size());
+        for (std::size_t i = 0; i < loud.size(); ++i) {
+            CHECK(std::abs(loud[i].pitchStart / plainA[i].pitchStart - 2.0) <
+                  1e-9);
+            CHECK(std::abs(loud[i].amplitude / plainA[i].amplitude - 1.5) <
+                  1e-9);
+        }
+        const auto nested =
+            phonemizeSsml("<speak><prosody rate=\"2\"><prosody rate=\"2\">a"
+                          "</prosody></prosody></speak>");
+        const auto single = phonemizeSsml("<speak>a</speak>");
+        CHECK(nested.size() == single.size());
+        for (std::size_t i = 0; i < nested.size(); ++i) {
+            CHECK(std::abs(nested[i].duration * 4.0 - single[i].duration) <
+                  1e-9);
+        }
+
+        // Sentence and paragraph structure inserts defined pauses.
+        const auto structured =
+            phonemizeSsml("<speak><p>One.<s>Two.</s></p></speak>");
+        CHECK(std::count_if(structured.begin(), structured.end(),
+                            [](const Phoneme &p) {
+                                return p.kind == PhonemeKind::Silence;
+                            }) >= 2);
+
+        // Determinism: identical markup renders byte-identically.
+        const Voice voice = voicePreset("neutral");
+        const std::vector<float> first = Synthesizer(voice).render(
+            phonemizeSsml("<speak><prosody pitch=\"+2st\">hello</prosody>"
+                          "<break time=\"200ms\"/>world</speak>"));
+        const std::vector<float> second = Synthesizer(voice).render(
+            phonemizeSsml("<speak><prosody pitch=\"+2st\">hello</prosody>"
+                          "<break time=\"200ms\"/>world</speak>"));
+        CHECK(first == second);
+
+        // Malformed markup fails loudly with the element name and byte offset.
+        auto expectError = [](std::string_view markup,
+                              std::string_view needle) {
+            bool rejected = false;
+            try {
+                (void)phonemizeSsml(markup);
+            } catch (const std::invalid_argument &error) {
+                rejected =
+                    std::string(error.what()).find(needle) != std::string::npos;
+            }
+            CHECK(rejected);
+        };
+        expectError("<speak><b>bold</b></speak>", "unsupported element <b>");
+        expectError("<speak><break/></speak>", "SSML at byte");
+        expectError("<speak><phoneme alphabet=\"ipa\"/></speak>",
+                    "ph attribute");
+        expectError("<speak><phoneme alphabet=\"klingon\" ph=\"a\"/></speak>",
+                    "unsupported phoneme alphabet");
+        expectError("<speak><say-as interpret-as=\"time\">now</say-as></speak>",
+                    "unsupported say-as interpretation");
+        expectError("<speak>unclosed", "unclosed <speak>");
+        expectError("<speak><prosody rate=\"0\">a</prosody></speak>",
+                    "rate must be positive");
+        expectError("<speak><break time=\"5\"/></speak>", "break time");
+        expectError("<speak><break strength=\"loud\"/></speak>",
+                    "break strength");
+        expectError("<speak><prosody pitch=\"150Hz\">a</prosody></speak>",
+                    "pitch must use a relative unit");
+        expectError("</speak>", "unexpected </speak>");
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 

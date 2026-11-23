@@ -36,6 +36,7 @@ Usage:
 Options:
   --text "words"          Text to speak (default: "Hello, world.")
   --stdin                 Read the text to speak from standard input
+  --ssml-file FILE        Speak an SSML document (a supported subset)
   --phonemes "[h ee l o]" Speak a bracketed phoneme sequence instead of text
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
@@ -191,6 +192,7 @@ struct Options {
     std::string xsampa;
     std::string languageFile;
     std::string lexiconFile;
+    std::string ssmlFile;
     std::string output = "output.wav";
     formant::AudioFormat format = formant::AudioFormat::Pcm16;
     formant::AudioWriteOptions audioOptions;
@@ -204,6 +206,7 @@ struct Options {
     bool useLanguage = false;
     bool useLanguageFile = false;
     bool useLexicon = false;
+    bool useSsml = false;
     bool trace = false;
 };
 
@@ -351,6 +354,9 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--lexicon" || arg.rfind("--lexicon=", 0) == 0) {
             options.lexiconFile = takeValue(i, argc, argv, "--lexicon");
             options.useLexicon = true;
+        } else if (arg == "--ssml-file" || arg.rfind("--ssml-file=", 0) == 0) {
+            options.ssmlFile = takeValue(i, argc, argv, "--ssml-file");
+            options.useSsml = true;
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
@@ -464,6 +470,15 @@ int main(int argc, char **argv) {
                                         "--xsampa (each overrides --text and "
                                         "--stdin)");
         }
+        if (options.useSsml && inputModes > 0) {
+            throw std::invalid_argument(
+                "--ssml-file cannot be combined with --phonemes, --ipa or "
+                "--xsampa");
+        }
+        if (options.useSsml && options.useStdin) {
+            throw std::invalid_argument(
+                "--ssml-file cannot be combined with --stdin");
+        }
         if (options.useLanguage && inputModes > 0) {
             throw std::invalid_argument(
                 "--lang only applies to text input; --phonemes, --ipa and "
@@ -537,6 +552,22 @@ int main(int argc, char **argv) {
             }
         }
 
+        std::string ssmlSource;
+        if (options.useSsml) {
+            std::ifstream file(options.ssmlFile);
+            if (!file) {
+                throw std::runtime_error("cannot open SSML file: " +
+                                         options.ssmlFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read SSML file: " +
+                                         options.ssmlFile);
+            }
+            ssmlSource = source.str();
+        }
+
         // A transcription mode replaces the text source, so never wait on
         // stdin in that case even if --stdin was also supplied.
         std::string text = options.text;
@@ -554,7 +585,41 @@ int main(int argc, char **argv) {
 
         std::vector<std::string> trace;
         std::vector<formant::Phoneme> phonemes;
-        if (options.usePhonemes) {
+        if (options.useSsml) {
+            // SSML composes with the selected text layer: the same front end
+            // that converts --text drives its text runs, while <phoneme> maps
+            // straight to IPA. Precedence is documented in docs/ssml.md.
+            formant::SsmlTextFrontEnd frontEnd;
+            if (options.useLanguageFile) {
+                if (options.useLexicon) {
+                    frontEnd = [&](std::string_view run) {
+                        return formant::phonemize(
+                            run, languageDefinition, pronunciationLexicon,
+                            options.trace ? &trace : nullptr);
+                    };
+                } else {
+                    frontEnd = [&](std::string_view run) {
+                        return formant::phonemize(run, languageDefinition,
+                                                  options.trace ? &trace
+                                                                : nullptr);
+                    };
+                }
+            } else if (options.useLexicon) {
+                frontEnd = [&](std::string_view run) {
+                    return formant::phonemize(run, options.language,
+                                              pronunciationLexicon,
+                                              options.trace ? &trace : nullptr);
+                };
+            } else {
+                frontEnd = [&](std::string_view run) {
+                    return formant::phonemize(run, options.language);
+                };
+            }
+            phonemes = formant::phonemizeSsml(ssmlSource, frontEnd);
+            for (const std::string &line : trace) {
+                status << "trace: " << line << "\n";
+            }
+        } else if (options.usePhonemes) {
             phonemes = formant::parsePhonemes(options.phonemes);
         } else if (options.useIpa) {
             phonemes = formant::parseIpa(options.ipa);
@@ -602,8 +667,9 @@ int main(int argc, char **argv) {
             // deterministic phoneme-derived labels. The same scheduler drives
             // the plan and render(), so these boundaries describe this WAV.
             const std::vector<std::string> wordLabels =
-                inputModes == 0 ? formant::splitWordsForTiming(text)
-                                : std::vector<std::string>{};
+                inputModes == 0 && !options.useSsml
+                    ? formant::splitWordsForTiming(text)
+                    : std::vector<std::string>{};
             const formant::TimingPlan plan = formant::planTiming(
                 phonemes, options.voice, options.sampleRate, wordLabels);
             if (plan.totalSamples != static_cast<int>(samples.size())) {
