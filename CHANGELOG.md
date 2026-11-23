@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.43] - 2026-11-22
+
+### Fixed
+
+- English plural and third-person `-s` endings now voice from the base's final sound instead of always emitting /s/: `dogs` -> `[d o g z]`, `cats` -> `[k a t s]`, `cars` -> `[k aa r z]`, `books` -> `[b oo k s]`. A sibilant base takes a syllabic /ɪz/ (`boxes`, `watches`, `wishes`), consonant + `y` becomes `-ies` with /z/ (`cities`), and silent-e plurals spell their base first so `lines`, `cakes` and `pages` get the correct ending.
+- Words ending in `-ss`, `-us` or `-is` keep a voiceless final /s/ (`class`, `bus`, `status`, `analysis`), and common irregular `-s` forms have entries: `says`, `goes`, `toes`, `shoes`, `heroes`, `news`, `series`, `species`, `always` and `his`.
+- Plurals of silent-letter words now voice the suffix too: `bombs` -> `[b o m z]`, `hymns` -> `[h i m z]`, `signs` -> `[s i n z]`, and `listens` / `whistles` end in /z/.
+
 ## [0.4.42] - 2026-11-22
 
 ### Fixed

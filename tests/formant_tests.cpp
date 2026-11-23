@@ -159,6 +159,43 @@ int main() {
         CHECK(names(phonemize("dogs'")) == names(phonemize("dogs")));
     }
 
+    // Plural and third-person -s voice from the base's final sound. The base
+    // used to keep a voiceless /s/ after every voiced sound, and -es was
+    // spelled as a separate vowel plus /s/.
+    CHECK(names(phonemize("cats")) ==
+          std::vector<std::string>({"k", "a", "t", "s"}));
+    CHECK(names(phonemize("dogs")) ==
+          std::vector<std::string>({"d", "o", "g", "z"}));
+    CHECK(names(phonemize("books")) ==
+          std::vector<std::string>({"b", "oo", "k", "s"}));
+    CHECK(names(phonemize("cars")) ==
+          std::vector<std::string>({"k", "aa", "r", "z"}));
+    CHECK(names(phonemize("boxes")) ==
+          std::vector<std::string>({"b", "o", "k", "s", "uh", "z"}));
+    CHECK(names(phonemize("watches")) ==
+          std::vector<std::string>({"w", "a", "ch", "uh", "z"}));
+    CHECK(names(phonemize("wishes")) ==
+          std::vector<std::string>({"w", "i", "sh", "uh", "z"}));
+    CHECK(names(phonemize("cities")) ==
+          std::vector<std::string>({"s", "i", "t", "ee", "z"}));
+    CHECK(names(phonemize("lines")) ==
+          std::vector<std::string>({"l", "i", "n", "z"}));
+    CHECK(names(phonemize("cakes")) ==
+          std::vector<std::string>({"k", "a", "k", "s"}));
+    CHECK(names(phonemize("says")) ==
+          std::vector<std::string>({"s", "e", "z"}));
+    CHECK(names(phonemize("goes")) ==
+          std::vector<std::string>({"g", "ow", "z"}));
+    // Singular -s words keep a voiceless final /s/.
+    CHECK(names(phonemize("bus")) ==
+          std::vector<std::string>({"b", "uh", "s"}));
+    CHECK(names(phonemize("status")) ==
+          std::vector<std::string>({"s", "t", "a", "t", "uh", "s"}));
+    CHECK(names(phonemize("class")) ==
+          std::vector<std::string>({"k", "l", "a", "s", "s"}));
+    CHECK(names(phonemize("news")).back() == "z");
+    CHECK(names(phonemize("series")).back() == "z");
+
     // Suffix rules apply to words outside the small lexicon.
     const std::vector<std::string> nation = names(phonemize("nation"));
     CHECK(contains(nation, "sh"));
@@ -224,7 +261,7 @@ int main() {
           std::vector<std::string>({"th", "uh", "m"}));
     CHECK(names(phonemize("lamb")).back() == "m");
     CHECK(names(phonemize("bombs")) ==
-          std::vector<std::string>({"b", "o", "m", "s"}));
+          std::vector<std::string>({"b", "o", "m", "z"}));
     // A medial mb cluster keeps its /b/ (number, timber, combat).
     CHECK(contains(names(phonemize("number")), "b"));
     CHECK(contains(names(phonemize("timber")), "b"));
@@ -246,9 +283,9 @@ int main() {
     CHECK(names(phonemize("condemn")) ==
           std::vector<std::string>({"k", "o", "n", "d", "e", "m"}));
     CHECK(names(phonemize("hymns")) ==
-          std::vector<std::string>({"h", "i", "m", "s"}));
-    CHECK(names(phonemize("autumns")).back() == "s");
-    CHECK(names(phonemize("columns")).back() == "s");
+          std::vector<std::string>({"h", "i", "m", "z"}));
+    CHECK(names(phonemize("autumns")).back() == "z");
+    CHECK(names(phonemize("columns")).back() == "z");
     // A medial mn cluster keeps both /m/ and /n/ when a vowel follows (hymnal,
     // autumnal, damnation, hymnody). Word-initially the m is silent instead
     // (mnemonic), while the n at the end of hymn is silent.
@@ -279,9 +316,9 @@ int main() {
     CHECK(names(phonemize("glisten")).back() == "n");
     CHECK(!contains(names(phonemize("glisten")), "t"));
     CHECK(names(phonemize("listens")) ==
-          std::vector<std::string>({"l", "i", "s", "uh", "n", "s"}));
+          std::vector<std::string>({"l", "i", "s", "uh", "n", "z"}));
     CHECK(names(phonemize("whistles")) ==
-          std::vector<std::string>({"w", "i", "s", "uh", "l", "s"}));
+          std::vector<std::string>({"w", "i", "s", "uh", "l", "z"}));
     CHECK(names(phonemize("tungsten")) ==
           std::vector<std::string>({"t", "uh", "ng", "s", "t", "e", "n"}));
     // Medial clusters followed by a vowel keep their /t/.
@@ -407,10 +444,10 @@ int main() {
     CHECK(names(phonemize("sign")) ==
           std::vector<std::string>({"s", "i", "n"}));
     CHECK(names(phonemize("signs")) ==
-          std::vector<std::string>({"s", "i", "n", "s"}));
+          std::vector<std::string>({"s", "i", "n", "z"}));
     CHECK(names(phonemize("design")).back() == "n");
     CHECK(names(phonemize("campaign")).back() == "n");
-    CHECK(names(phonemize("campaigns")).back() == "s");
+    CHECK(names(phonemize("campaigns")).back() == "z");
     CHECK(names(phonemize("signal")) ==
           std::vector<std::string>({"s", "i", "g", "n", "a", "l"}));
     CHECK(names(phonemize("magnet"))[2] == "g");
