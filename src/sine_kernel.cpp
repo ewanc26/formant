@@ -11,6 +11,8 @@ constexpr double kTwoPi = 6.28318530717958647692;
 constexpr double kTwoOverPi = 0.63661977236758134308;
 constexpr double kHalfPi = 1.57079632679489661923;
 constexpr double kLn2Over1200 = 0.00057762265046662111;
+constexpr double kLn2 = 0.69314718055994530942;
+constexpr double kLog2e = 1.44269504088896340736;
 constexpr std::size_t kTableSize = 4096;
 constexpr double kIndexScale =
     static_cast<double>(kTableSize) / kTwoPi;
@@ -107,6 +109,49 @@ double centsToRatioFast(double cents) {
                      x * (1.0 / 6.0 +
                           x * (1.0 / 24.0 +
                                x * (1.0 / 120.0 + x * (1.0 / 720.0))))));
+}
+
+double log2Approx(double x) {
+    // Range-reduce with frexp, then use the atanh series for ln(mantissa).
+    // frexp is exact, and with the mantissa in [0.5, 1) the series argument is
+    // at most 1/3, where the first omitted term is below 1e-7 after scaling by
+    // log2(e). No libm logarithm is called, so the blend is platform-stable.
+    int exponent = 0;
+    const double mantissa = std::frexp(x, &exponent);
+    const double z = (mantissa - 1.0) / (mantissa + 1.0);
+    const double z2 = z * z;
+    const double series =
+        2.0 * z *
+        (1.0 + z2 * (1.0 / 3.0 +
+                     z2 * (1.0 / 5.0 +
+                           z2 * (1.0 / 7.0 +
+                                 z2 * (1.0 / 9.0 +
+                                       z2 * (1.0 / 11.0))))));
+    return static_cast<double>(exponent) + series * kLog2e;
+}
+
+double exp2Approx(double x) {
+    // Split the integer and fractional powers. The degree-8 Taylor series for
+    // exp(f * ln 2) on f in [0, 1) is accurate to about 1e-7 relative, and
+    // ldexp applies the integer power exactly.
+    if (x < -60.0) {
+        x = -60.0;
+    } else if (x > 60.0) {
+        x = 60.0;
+    }
+    const double whole = std::floor(x);
+    const double t = (x - whole) * kLn2;
+    const double polynomial =
+        1.0 +
+        t * (1.0 +
+             t * (0.5 +
+                  t * (1.0 / 6.0 +
+                       t * (1.0 / 24.0 +
+                            t * (1.0 / 120.0 +
+                                 t * (1.0 / 720.0 +
+                                      t * (1.0 / 5040.0 +
+                                           t * (1.0 / 40320.0))))))));
+    return std::ldexp(polynomial, static_cast<int>(whole));
 }
 
 } // namespace formant::detail

@@ -20,6 +20,7 @@ struct Segment {
     int start = 0;
     int end = 0;
     std::array<FormantBand, 4> from{};
+    detail::BandBlendPlan blendPlan{};
     std::array<SpectralZero, 2> fromZeros{};
     bool wasVoiced = false;
     double wasNoise = 0.0;
@@ -104,6 +105,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
         segment.start = spans[i].start;
         segment.end = spans[i].end;
         segment.from = previousBands;
+        segment.blendPlan = detail::makeBandBlendPlan(phoneme, previousBands);
         segment.fromZeros = previousZeros;
         segment.wasVoiced = previousVoiced;
         segment.wasNoise = previousNoise;
@@ -146,6 +148,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                                      sampleRate / rate)),
             length * 0.5);
 
+        const bool plosive = phoneme.kind == PhonemeKind::Plosive;
         const double voicedTarget = phoneme.voiced ? 1.0 : 0.0;
         const double noiseTarget = phoneme.voiced ? voice.breathiness : 1.0;
         // Both the segment crossfade and bandsAt() need the same transition
@@ -158,10 +161,9 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
             const double elapsed = static_cast<double>(s - segment.start);
             const double mix =
                 detail::smooth(elapsed / static_cast<double>(crossfadeSamples));
-            const std::array<FormantBand, 4> bands =
-                detail::bandsAtWithTransition(phoneme, segment.from, s,
-                                              segment.start, segment.end,
-                                              crossfadeSamples);
+            const std::array<FormantBand, 4> bands = detail::bandsAtWithPlan(
+                phoneme, segment.blendPlan, segment.from, s, segment.start,
+                segment.end, crossfadeSamples);
             const std::array<SpectralZero, 2> zeros =
                 detail::zerosAtWithTransition(phoneme, segment.fromZeros, s,
                                               segment.start, crossfadeSamples);
@@ -173,9 +175,8 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                 segment.wasVoiced + (voicedTarget - segment.wasVoiced) * mix;
             const double noiseMix =
                 segment.wasNoise + (noiseTarget - segment.wasNoise) * mix;
-            const double envelope =
-                std::min({1.0, elapsed / attack,
-                          static_cast<double>(segment.end - s) / release});
+            const double envelope = detail::amplitudeEnvelope(
+                s - segment.start, length, attack, release, plosive);
 
             const double fundamental = detail::fundamentalAt(
                 voice, phoneme, s, segment.start, segment.end,

@@ -70,6 +70,27 @@ inline double smooth(double t) {
     return t * t * (3.0 - 2.0 * t);
 }
 
+// Shared amplitude envelope for one segment. Non-plosive ramps use the same
+// smoothstep as the crossfade, so the segment joins the sustain with matching
+// value and zero slope. Plosives keep their short linear 3/4 ms bursts: that
+// abruptness is the sound, and the exception is documented in design.md.
+inline double amplitudeEnvelope(int offset, int length, double attack,
+                                double release, bool plosive) {
+    const double elapsed = static_cast<double>(offset);
+    const double remaining = static_cast<double>(length - offset);
+    if (plosive) {
+        return std::min({1.0, elapsed / attack, remaining / release});
+    }
+    // Most of a segment is sustain; skip the polynomial on both sides when
+    // the ramp has already reached 1. The comparisons return exactly the same
+    // values as smooth() at and beyond the endpoints.
+    const double attackGain =
+        elapsed >= attack ? 1.0 : smooth(elapsed / attack);
+    const double releaseGain =
+        remaining >= release ? 1.0 : smooth(remaining / release);
+    return std::min({1.0, attackGain, releaseGain});
+}
+
 inline bool utteranceRises(const std::vector<Phoneme> &phonemes) {
     for (auto it = phonemes.rbegin(); it != phonemes.rend(); ++it) {
         if (it->pitchRise) {
@@ -88,9 +109,23 @@ inline std::array<FormantBand, 4> zeroBands() {
     return {zeroBand(), zeroBand(), zeroBand(), zeroBand()};
 }
 
+inline double blendFrequency(double from, double to, double mix) {
+    // Formant spacing is perceived on a log-frequency scale, so frequencies
+    // glide geometrically while amplitudes and bandwidths stay linear. A zero
+    // frequency (the initial inherited band) has no logarithm; those fades
+    // remain linear so the first segment still starts from silence correctly.
+    if (mix <= 0.0 || from <= 0.0 || to <= 0.0 || from == to) {
+        return from + (to - from) * mix;
+    }
+    if (mix >= 1.0) {
+        return to;
+    }
+    return from * exp2Approx((log2Approx(to) - log2Approx(from)) * mix);
+}
+
 inline FormantBand blendBand(const FormantBand &from, const FormantBand &to,
                              double mix) {
-    return {from.frequency + (to.frequency - from.frequency) * mix,
+    return {blendFrequency(from.frequency, to.frequency, mix),
             from.amplitude + (to.amplitude - from.amplitude) * mix,
             from.bandwidth + (to.bandwidth - from.bandwidth) * mix};
 }
@@ -100,6 +135,22 @@ inline SpectralZero blendZero(const SpectralZero &from, const SpectralZero &to,
     return {from.frequency + (to.frequency - from.frequency) * mix,
             from.bandwidth + (to.bandwidth - from.bandwidth) * mix,
             from.depth + (to.depth - from.depth) * mix};
+}
+
+// The resonance total used to be hard-clamped with std::min(total, 2.0),
+// which leaves a C0 corner in the amplitude weighting. The rational knee is
+// exactly linear below 2.0 and has slope 1 at the corner, then saturates
+// smoothly toward 2.25 instead of stopping dead.
+inline constexpr double kResonanceClamp = 2.0;
+inline constexpr double kResonanceKneeHeadroom = 0.25;
+
+inline double softResonanceLimit(double total) {
+    if (total <= kResonanceClamp) {
+        return total;
+    }
+    const double over = total - kResonanceClamp;
+    return kResonanceClamp +
+           kResonanceKneeHeadroom * over / (kResonanceKneeHeadroom + over);
 }
 
 // Four sine-shaped resonances, each with a Lorentzian response. This is the
@@ -117,7 +168,7 @@ inline double formantResponse(double frequency,
         const double distance = (frequency - centre) / width;
         total += band.amplitude / (1.0 + distance * distance);
     }
-    return std::min(total, 2.0);
+    return softResonanceLimit(total);
 }
 
 // The synthesizer evaluates the same four resonances for every harmonic and
@@ -179,7 +230,7 @@ inline double formantResponse(double frequency,
             (frequency - envelope.centre[i]) / envelope.width[i];
         total += envelope.amplitude[i] / (1.0 + distance * distance);
     }
-    total = std::min(total, 2.0);
+    total = softResonanceLimit(total);
 
     // Anti-formants are the mirror of the resonances: a Lorentzian notch
     // subtracts a fraction of the envelope at its centre. With no active zero
@@ -207,12 +258,41 @@ inline int transitionSamples(const Voice &voice, int sampleRate) {
 // Intended formant bands at one sample of a segment. `from` is the band set
 // inherited from the previous segment; a diphthong additionally glides from
 // `bands` to `endBands` over its own span.
-// Same crossfade as bandsAt(), but accepts a precomputed transition length so
-// the renderer can hoist transitionSamples() out of its per-sample loop.
+//
+// A crossfade has three fixed log-frequency anchors (previous band, phoneme
+// band, final target). Computing their logarithms once per segment removes
+// two log2 calls per band from every render sample; the per-sample work is one
+// lerp in log space and one exp2. `bandsAtWithTransition()` below builds the
+// same plan on the fly, so metrics and audio still call identical arithmetic.
+struct BandBlendPlan {
+    std::array<double, 4> fromLog{};
+    std::array<double, 4> phonemeLog{};
+    std::array<double, 4> targetLog{};
+    std::array<bool, 4> logarithmic{};
+};
+
+inline BandBlendPlan makeBandBlendPlan(const Phoneme &phoneme,
+                                       const std::array<FormantBand, 4> &from) {
+    const std::array<FormantBand, 4> &target =
+        phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
+    BandBlendPlan plan;
+    for (std::size_t band = 0; band < plan.fromLog.size(); ++band) {
+        plan.logarithmic[band] = from[band].frequency > 0.0 &&
+                                 phoneme.bands[band].frequency > 0.0 &&
+                                 target[band].frequency > 0.0;
+        if (plan.logarithmic[band]) {
+            plan.fromLog[band] = log2Approx(from[band].frequency);
+            plan.phonemeLog[band] = log2Approx(phoneme.bands[band].frequency);
+            plan.targetLog[band] = log2Approx(target[band].frequency);
+        }
+    }
+    return plan;
+}
+
 inline std::array<FormantBand, 4>
-bandsAtWithTransition(const Phoneme &phoneme,
-                      const std::array<FormantBand, 4> &from, int sample,
-                      int segmentStart, int segmentEnd, int transition) {
+bandsAtWithPlan(const Phoneme &phoneme, const BandBlendPlan &plan,
+                const std::array<FormantBand, 4> &from, int sample,
+                int segmentStart, int segmentEnd, int transition) {
     const double elapsed = static_cast<double>(sample - segmentStart);
     const double length =
         static_cast<double>(std::max(1, segmentEnd - segmentStart));
@@ -222,11 +302,49 @@ bandsAtWithTransition(const Phoneme &phoneme,
         phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
 
     std::array<FormantBand, 4> bands{};
-    for (size_t band = 0; band < bands.size(); ++band) {
-        bands[band] = blendBand(from[band], phoneme.bands[band], mix);
-        bands[band] = blendBand(bands[band], target[band], progress);
+    for (std::size_t band = 0; band < bands.size(); ++band) {
+        double frequency;
+        if (plan.logarithmic[band]) {
+            if (plan.fromLog[band] == plan.phonemeLog[band] &&
+                plan.phonemeLog[band] == plan.targetLog[band]) {
+                // Nothing moves; keep the exact anchor instead of a log2 /
+                // exp2 round trip. This also preserves steady-state renders.
+                frequency = from[band].frequency;
+            } else {
+                const double first =
+                    plan.fromLog[band] +
+                    (plan.phonemeLog[band] - plan.fromLog[band]) * mix;
+                frequency = exp2Approx(first + (plan.targetLog[band] - first) *
+                                                   progress);
+            }
+        } else {
+            // A zero inherited band cannot be logged, but the second stage
+            // can: reproduce the old per-stage blend exactly rather than
+            // forcing the whole fade to be linear.
+            const double first =
+                from[band].frequency +
+                (phoneme.bands[band].frequency - from[band].frequency) * mix;
+            frequency = blendFrequency(first, target[band].frequency, progress);
+        }
+        double amplitude =
+            from[band].amplitude +
+            (phoneme.bands[band].amplitude - from[band].amplitude) * mix;
+        amplitude += (target[band].amplitude - amplitude) * progress;
+        double bandwidth =
+            from[band].bandwidth +
+            (phoneme.bands[band].bandwidth - from[band].bandwidth) * mix;
+        bandwidth += (target[band].bandwidth - bandwidth) * progress;
+        bands[band] = {frequency, amplitude, bandwidth};
     }
     return bands;
+}
+
+inline std::array<FormantBand, 4>
+bandsAtWithTransition(const Phoneme &phoneme,
+                      const std::array<FormantBand, 4> &from, int sample,
+                      int segmentStart, int segmentEnd, int transition) {
+    return bandsAtWithPlan(phoneme, makeBandBlendPlan(phoneme, from), from,
+                           sample, segmentStart, segmentEnd, transition);
 }
 
 inline std::array<FormantBand, 4>
@@ -302,8 +420,8 @@ inline double fundamentalAt(const Voice &voice, const Phoneme &phoneme,
     if (voice.vibratoRate > 0.0 && voice.vibratoDepth > 0.0) {
         const double time =
             static_cast<double>(sample) / static_cast<double>(sampleRate);
-        const double cents = voice.vibratoDepth *
-                             sine(2.0 * kPi * voice.vibratoRate * time);
+        const double cents =
+            voice.vibratoDepth * sine(2.0 * kPi * voice.vibratoRate * time);
         fundamental *= centsToRatioFast(cents);
     }
     return std::max(0.0, fundamental);

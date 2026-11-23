@@ -125,6 +125,26 @@ int main() {
     std::cout << "cents ratio max relative error " << maxRatioError << "\n";
     CHECK(maxRatioError < 1e-6);
 
+    // The log-domain formant blend needs deterministic log2 and exp2. Both
+    // are checked against libm over the frequency ratios the tables can
+    // produce (0.01x to 100x) and the resulting exponent range.
+    double maxLog2Error = 0.0;
+    for (double x = 0.01; x <= 100.0; x *= 1.001) {
+        maxLog2Error = std::max(
+            maxLog2Error,
+            std::abs(formant::detail::log2Approx(x) - std::log2(x)));
+    }
+    double maxExp2Error = 0.0;
+    for (double x = -10.0; x <= 10.0; x += 0.001) {
+        maxExp2Error = std::max(
+            maxExp2Error,
+            std::abs(formant::detail::exp2Approx(x) / std::exp2(x) - 1.0));
+    }
+    std::cout << "log2 max absolute error " << maxLog2Error
+              << ", exp2 max relative error " << maxExp2Error << "\n";
+    CHECK(maxLog2Error < 1e-6);
+    CHECK(maxExp2Error < 1e-6);
+
     // Reference timing, printed for docs/design.md. Equal work per call keeps
     // the comparison honest: both sides evaluate one phase argument.
     // Take the best of five runs: the median is still sensitive to a single

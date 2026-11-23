@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Smoother transitions (#109). Formant frequencies now crossfade in log2
+  space, so equal intervals glide equally at F1 and F4; the shared
+  deterministic `log2`/`exp2` kernel keeps the blend platform-stable, and a
+  zero inherited band still fades in linearly. The resonance total uses a C1
+  rational soft knee (identity below 2.0, slope 1 at 2.0, saturating toward
+  2.25) in place of the hard clamp, removing the amplitude-weighting corner
+  while bands slide. Non-plosive attack and release ramps use smoothstep;
+  plosives keep the documented 3 ms/4 ms linear burst. Rendered audio changes
+  deliberately, so the checksum corpus, benchmark expectations and trajectory
+  golden fixture are regenerated; the public API is unchanged.
+
 ## [0.29.0] - 2026-11-23
 
 ### Added
