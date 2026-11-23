@@ -31,6 +31,22 @@ Phoneme phone(std::string name, PhonemeKind kind, bool voiced, double duration,
     return result;
 }
 
+std::array<SpectralZero, 2> zeros(double firstFrequency, double firstBandwidth,
+                                  double firstDepth, double secondFrequency,
+                                  double secondBandwidth, double secondDepth) {
+    return {SpectralZero{firstFrequency, firstBandwidth, firstDepth},
+            SpectralZero{secondFrequency, secondBandwidth, secondDepth}};
+}
+
+Phoneme nasalPhone(std::string name, double duration,
+                   std::array<FormantBand, 4> bands,
+                   std::array<SpectralZero, 2> spectralZeros) {
+    Phoneme result =
+        phone(std::move(name), PhonemeKind::Nasal, true, duration, bands);
+    result.zeros = spectralZeros;
+    return result;
+}
+
 Phoneme diphthong(std::string name, double duration,
                   std::array<FormantBand, 4> from,
                   std::array<FormantBand, 4> to) {
@@ -911,15 +927,18 @@ const std::vector<Phoneme> &phonemeTable() {
         phone("h", PhonemeKind::Fricative, false, 0.06,
               {band(500, 0.5, 200), band(1500, 0.4, 300), band(2500, 0.2, 400),
                band(3500, 0.1, 500)}),
-        phone("m", PhonemeKind::Nasal, true, 0.08,
-              {band(250, 1.0, 100), band(1100, 0.25, 200), band(2200, 0.1, 300),
-               band(3000, 0.05, 400)}),
-        phone("n", PhonemeKind::Nasal, true, 0.07,
-              {band(250, 1.0, 100), band(1500, 0.30, 200), band(2500, 0.1, 300),
-               band(3000, 0.05, 400)}),
-        phone("ng", PhonemeKind::Nasal, true, 0.09,
-              {band(250, 1.0, 100), band(2000, 0.30, 200), band(3000, 0.1, 300),
-               band(3600, 0.05, 400)}),
+        nasalPhone("m", 0.08,
+                   {band(250, 1.0, 100), band(1100, 0.25, 200),
+                    band(2200, 0.1, 300), band(3000, 0.05, 400)},
+                   zeros(1000, 240, 0.70, 2500, 450, 0.35)),
+        nasalPhone("n", 0.07,
+                   {band(250, 1.0, 100), band(1500, 0.30, 200),
+                    band(2500, 0.1, 300), band(3000, 0.05, 400)},
+                   zeros(1600, 280, 0.70, 2700, 450, 0.30)),
+        nasalPhone("ng", 0.09,
+                   {band(250, 1.0, 100), band(2000, 0.30, 200),
+                    band(3000, 0.1, 300), band(3600, 0.05, 400)},
+                   zeros(2300, 350, 0.65, 3400, 500, 0.25)),
         phone("f", PhonemeKind::Fricative, false, 0.08,
               {band(400, 0.2, 300), band(1800, 0.5, 500), band(3000, 0.8, 600),
                band(4500, 0.5, 700)}),

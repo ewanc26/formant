@@ -60,7 +60,7 @@ preset     = "neutral" | "alto" | "bass" | "child" | "robot" | "whisper" ;
 boolean    = "true" | "false" | "1" | "0" ;
 parameter  = "pitch" | "declination" | "rate" | "formant-scale"
            | "vibrato-rate" | "vibrato-depth" | "breathiness"
-           | "harmonics" | "attack" | "release" | "gain" ;
+           | "nasality" | "harmonics" | "attack" | "release" | "gain" ;
 ```
 
 A minimal definition changes just one knob:
@@ -115,6 +115,7 @@ Start at a preset and move one axis at a time through the safe band.
 | `vibrato-rate` | 0 | 20 | 3 | 8 | Hz; `0` disables vibrato. |
 | `vibrato-depth` | 0 | 200 | 0 | 40 | Cents; large depths sound like a siren. |
 | `breathiness` | 0 | 1 | 0 | 0.15 | Deterministic sine-noise under voicing. The `whisper` preset deliberately uses `1`. |
+| `nasality` | 0 | 1 | 0 | 0.35 | Pervasive nasal twang: a fixed 1000 Hz anti-formant applied to every phoneme. Per-phoneme zeros for `m`, `n`, `ng` and nasalized vowels are table data and are independent of it. |
 | `harmonics` | 0 | 512 | 12 | 80 | Sine partials in the glottal source. Higher counts mainly cost time near Nyquist. |
 | `attack` | 0 | 1 | 0.002 | 0.05 | Seconds; very slow attacks soften plosives. |
 | `release` | 0 | 2 | 0.002 | 0.1 | Seconds; long releases blur word boundaries. |
@@ -199,4 +200,5 @@ Voice files contain data only: no samples, random seeds, clocks or global
 state. A sweep or pair render uses the same `Synthesizer` as a normal render,
 which is why the index can safely record sample counts and why comparing two
 files byte-for-byte is meaningful. The default path without these flags is
-bit-for-bit unchanged from previous releases.
+bit-for-bit unchanged from previous releases for oral phonemes; the nasal
+anti-formants added in 0.28.0 deliberately change nasal renders.

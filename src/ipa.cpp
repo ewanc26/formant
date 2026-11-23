@@ -264,6 +264,24 @@ std::array<FormantBand, 4> consonantBands(const Sound &sound) {
     return bands;
 }
 
+std::array<SpectralZero, 2> nasalZeros(Place place) {
+    static const std::unordered_map<Place, double> firstZero = {
+        {Place::Bilabial, 1000.0},      {Place::Labiodental, 1200.0},
+        {Place::Dental, 1500.0},        {Place::Alveolar, 1600.0},
+        {Place::Postalveolar, 1800.0},  {Place::Retroflex, 1700.0},
+        {Place::Palatal, 2200.0},       {Place::Velar, 2500.0},
+        {Place::Uvular, 2200.0},        {Place::Pharyngeal, 1200.0},
+        {Place::Glottal, 1500.0},       {Place::LabialVelar, 1100.0},
+        {Place::LabialPalatal, 2000.0}, {Place::Alveolopalatal, 1900.0},
+        {Place::Epiglottal, 1200.0},
+    };
+    const auto found = firstZero.find(place);
+    const double first = found == firstZero.end() ? 1500.0 : found->second;
+    // The upper zero is weaker and moves with the same place-dependent scale.
+    return {SpectralZero{first, 280.0, 0.70},
+            SpectralZero{std::min(6000.0, first * 1.8), 450.0, 0.30}};
+}
+
 std::array<FormantBand, 4> vowelBands(const Sound &sound) {
     static const double f1[] = {300, 450, 550, 600, 700, 800, 850};
     static const double frontF2[] = {2300, 2000, 1900, 1800, 1800, 1700, 1600};
@@ -323,6 +341,9 @@ Phoneme makePhoneme(const Sound &sound, const std::string &name,
     result.kind = kindOf(sound.manner);
     result.bands = sound.manner == Manner::Vowel ? vowelBands(sound)
                                                  : consonantBands(sound);
+    if (sound.manner == Manner::Nasal) {
+        result.zeros = nasalZeros(sound.place);
+    }
     result.duration = sound.duration * prosody.duration;
     result.voiced = sound.voiced;
     result.amplitude = prosody.amplitude;
@@ -336,6 +357,12 @@ Phoneme makePhoneme(const Sound &sound, const std::string &name,
         result.bands[1].amplitude *= 0.65;
         result.bands[2].amplitude *= 0.60;
         result.bands[0].bandwidth += 40.0;
+        if (sound.manner != Manner::Nasal) {
+            // The diacritic couples a real zero into the tract, but weaker
+            // than a full nasal stop so the vowel stays intelligible.
+            result.zeros[0] = {1000.0, 250.0, 0.55};
+            result.zeros[1] = {2400.0, 500.0, 0.25};
+        }
     }
     if (prosody.breathy) {
         result.bands[3].amplitude *= 1.20;

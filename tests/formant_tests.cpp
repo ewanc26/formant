@@ -3024,7 +3024,7 @@ int main() {
     {
         const std::vector<formant::VoiceParameter> parameters =
             formant::voiceParameters();
-        CHECK(parameters.size() == 11);
+        CHECK(parameters.size() == 12);
         for (std::size_t i = 0; i < parameters.size(); ++i) {
             CHECK(!parameters[i].name.empty());
             CHECK(parameters[i].minimum <= parameters[i].safeMinimum);
@@ -3104,6 +3104,7 @@ int main() {
             CHECK(actual.vibratoRate == expected.vibratoRate);
             CHECK(actual.vibratoDepth == expected.vibratoDepth);
             CHECK(actual.breathiness == expected.breathiness);
+            CHECK(actual.nasality == expected.nasality);
             CHECK(actual.harmonics == expected.harmonics);
             CHECK(actual.attack == expected.attack);
             CHECK(actual.release == expected.release);
@@ -3522,6 +3523,61 @@ int main() {
         CHECK(std::filesystem::exists(dir / "mrt_001_e01_initial_went.wav"));
         CHECK(std::filesystem::exists(dir / "mrt_300_e50_initial_nun.wav"));
         std::filesystem::remove_all(dir);
+    }
+
+    // #100: nasal phonemes carry spectral zeros (anti-formants) beside their
+    // formants, and the IPA nasalization diacritic reaches the renderer.
+    {
+        for (const char *name : {"m", "n", "ng"}) {
+            const Phoneme *nasal = findPhoneme(name);
+            CHECK(nasal != nullptr);
+            if (nasal != nullptr) {
+                CHECK(nasal->zeros[0].frequency > 0.0);
+                CHECK(nasal->zeros[0].bandwidth > 0.0);
+                CHECK(nasal->zeros[0].depth > 0.0);
+                CHECK(nasal->zeros[1].depth > 0.0);
+            }
+        }
+        CHECK(findPhoneme("a")->zeros[0].depth == 0.0);
+
+        const Phoneme oral = parseIpa("a").front();
+        const Phoneme nasalized = parseIpa("a\u0303").front();
+        CHECK(oral.zeros[0].depth == 0.0);
+        CHECK(nasalized.zeros[0].depth > 0.0);
+        CHECK(nasalized.zeros[0].depth <= 0.95);
+        CHECK(parseIpa("\u014B").front().zeros[0].depth > 0.0);
+
+        // The zero is a notch in the same response the synthesiser evaluates.
+        const detail::FormantEnvelope oralEnvelope =
+            detail::makeFormantEnvelope(oral.bands, oral.zeros, 1.0);
+        const detail::FormantEnvelope nasalEnvelope =
+            detail::makeFormantEnvelope(nasalized.bands, nasalized.zeros, 1.0);
+        const double zeroFrequency = nasalized.zeros[0].frequency;
+        CHECK(detail::formantResponse(zeroFrequency, nasalEnvelope) <
+              detail::formantResponse(zeroFrequency, oralEnvelope));
+
+        // Removing the table data must change the rendered m.
+        Voice flat = voicePreset("robot");
+        flat.vibratoDepth = 0.0;
+        flat.breathiness = 0.0;
+        const Phoneme nasal = *findPhoneme("m");
+        Phoneme oralStop = nasal;
+        oralStop.zeros = {};
+        const std::vector<float> notched =
+            Synthesizer(flat).render({nasal}, 22050);
+        const std::vector<float> unnotched =
+            Synthesizer(flat).render({oralStop}, 22050);
+        CHECK(notched != unnotched);
+
+        // Voice-wide nasality is a separate, opt-in notch.
+        Voice twang = flat;
+        twang.nasality = 0.4;
+        CHECK(Synthesizer(twang).render({oral}, 22050) !=
+              Synthesizer(flat).render({oral}, 22050));
+        Voice zeroNasality = flat;
+        zeroNasality.nasality = 0.0;
+        CHECK(Synthesizer(zeroNasality).render({oral}, 22050) ==
+              Synthesizer(flat).render({oral}, 22050));
     }
 
     // The English paths remain byte-for-byte unchanged.

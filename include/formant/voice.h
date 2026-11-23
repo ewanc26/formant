@@ -26,6 +26,10 @@ struct Voice {
     // enabled for normal rendering; it is a data-driven switch so callers can
     // A/B the anti-click fade and tests can prove the regression it prevents.
     bool taperCeiling = true;
+
+    // Pervasive nasal twang, 0..1. Kept last so existing positional aggregate
+    // initialisers keep their meaning. Added in 0.28.0; defaults to off.
+    double nasality = 0.0;
 };
 
 // Returns a copy of a built-in voice. Throws std::invalid_argument for an

@@ -51,7 +51,7 @@ RMSE captures local pitch error; correlation captures whether the contour moves 
 
 ## Spectral envelope and MCD
 
-`estimateEnvelope()` measures each harmonic of the tracker's F0 with a Hann-windowed Goertzel filter, dividing by the window gain to recover amplitude. `expectedEnvelope()` evaluates the same formant response at those harmonic frequencies, applying the renderer's `1/h` source tilt and per-phoneme amplitude. Both tracks resample the harmonic log power to a 32-point mel grid between 80 Hz and `min(8000 Hz, 0.45 * sampleRate, maxHarmonic * F0)`, then apply an orthonormal DCT-II to produce 14 mel-cepstral coefficients (`c0 … c13`).
+`estimateEnvelope()` measures each harmonic of the tracker's F0 with a Hann-windowed Goertzel filter, dividing by the window gain to recover amplitude. `expectedEnvelope()` evaluates the same formant response at those harmonic frequencies, applying the renderer's `1/h` source tilt and per-phoneme amplitude. It also applies the same interpolated spectral zeros and `Voice::nasality` notch as the renderer, so nasal cases are measured against their intended anti-formants rather than a peak-only envelope. Both tracks resample the harmonic log power to a 32-point mel grid between 80 Hz and `min(8000 Hz, 0.45 * sampleRate, maxHarmonic * F0)`, then apply an orthonormal DCT-II to produce 14 mel-cepstral coefficients (`c0 … c13`).
 
 `compareEnvelope()` ignores frames where either track is silent and reports:
 
