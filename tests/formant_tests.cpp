@@ -2759,6 +2759,195 @@ int main() {
         CHECK(timeRejected);
     }
 
+    // Issue #145: symbolic ToBI intonation. Inventories and tunes are pure
+    // data, selectors are strict, and unselected phonemes stay byte-identical.
+    {
+        CHECK(intonationTuneNames(Language::English).size() == 5);
+        CHECK(intonationTuneNames(Language::Spanish).size() == 5);
+        for (const std::string &name : intonationTuneNames(Language::English)) {
+            CHECK(findIntonationTune(Language::English, name) != nullptr);
+        }
+        CHECK(findIntonationTune(Language::English, "missing") == nullptr);
+
+        ToneInventory inventory = defaultToneInventory();
+        CHECK(inventory.accents.count("H*") == 1);
+        CHECK(inventory.boundaries.count("L-H%") == 1);
+        CHECK(inventory.downstep > 0.0 && inventory.downstep < 1.0);
+        // Inventories and tunes are editable data, not code.
+        inventory.accents["H*"] = {2.0, 2.0};
+        inventory.boundaries["L-H%"] = {0.5, 1.5};
+        inventory.breakTiers[2] = 0.42;
+        inventory.downstep = 0.5;
+        CHECK(defaultToneInventory().accents.at("H*").start == 1.30);
+        CHECK(languageToneInventory(Language::Spanish).downstep !=
+              languageToneInventory(Language::English).downstep);
+
+        const IntonationFile empty = parseIntonationFile("\n# none\n  \n");
+        CHECK(empty.empty());
+        auto untouched = parseIpa("h ə l oʊ");
+        const auto beforeIntonation = untouched;
+        applyIntonation(untouched, Language::English, empty);
+        CHECK(untouched == beforeIntonation);
+
+        // Accent shapes replace the local contour; leading '!' applies one
+        // downstep factor per operator.
+        auto accented = parseIpa("h ə l oʊ");
+        // Vowel nuclei are kind==Voiced: indices 1, 3 and 4 here. The
+        // approximant 'l' at index 2 is voiced but not a syllable nucleus.
+        applyIntonation(
+            accented, Language::English,
+            parseIntonationFile("accent vowel:1 L+H*\naccent vowel:2 !!!H*\n"));
+        CHECK(std::abs(accented[3].pitchStart - 0.85) < 1e-12);
+        CHECK(std::abs(accented[3].pitchEnd - 1.35) < 1e-12);
+        CHECK(std::abs(accented[4].pitchStart -
+                       1.30 * std::pow(defaultToneInventory().downstep, 3)) <
+              1e-12);
+        CHECK(accented[0] == beforeIntonation[0]);
+        CHECK(accented[2] == beforeIntonation[2]);
+
+        // Absolute and score-time selectors, plus a boundary tone on the
+        // final vowel. Vowel selectors count voiced phonemes only.
+        auto selected = parseIpa("h ə l oʊ");
+        applyIntonation(selected, Language::English,
+                        parseIntonationFile("accent 0 L*\naccent @0.20s H*\n"
+                                            "boundary L-H%\n"));
+        CHECK(std::abs(selected[0].pitchStart - 0.75) < 1e-12);
+        CHECK(std::abs(selected[1].pitchStart - 1.30) < 1e-12);
+        // The boundary tone lands on the final vowel (index 4), not the
+        // voiced approximant.
+        CHECK(std::abs(selected[4].pitchEnd - 1.32) < 1e-12);
+
+        // AllVowels with an explicit custom inventory.
+        auto each = parseIpa("h ə l oʊ");
+        applyIntonation(each, Language::English,
+                        parseIntonationFile("accent vowels H*\n"), inventory);
+        for (const Phoneme &phoneme : each) {
+            if (phoneme.kind == PhonemeKind::Voiced) {
+                CHECK(std::abs(phoneme.pitchStart - 2.0) < 1e-12);
+            }
+        }
+
+        // A named tune expands its events; short utterances skip missing
+        // tune targets instead of failing, while explicit events stay strict.
+        auto tune = parseIpa("h ə l oʊ");
+        applyIntonation(tune, Language::English,
+                        parseIntonationFile("tune statement\n"));
+        CHECK(tune[0].pitchStart == 1.30 || tune[1].pitchStart == 1.30);
+        auto shortTune = parseIpa("ee");
+        const std::size_t shortCount = shortTune.size();
+        applyIntonation(shortTune, Language::English,
+                        parseIntonationFile("tune list\n"));
+        CHECK(shortTune.size() ==
+              shortCount); // missing tune targets are skipped
+
+        // Break indices insert silence phonemes from the pause tier table.
+        auto broken = parseIpa("h ə l oʊ");
+        const std::size_t count = broken.size();
+        applyIntonation(broken, Language::English,
+                        parseIntonationFile("break 1 2\n"), inventory);
+        CHECK(broken.size() == count + 1);
+        CHECK(broken[2].kind == PhonemeKind::Silence);
+        CHECK(std::abs(broken[2].duration - 0.42) < 1e-12);
+        // Index 0 inserts nothing.
+        auto noBreak = parseIpa("h ə l oʊ");
+        applyIntonation(noBreak, Language::English,
+                        parseIntonationFile("break 0 0\n"));
+        CHECK(noBreak.size() == count);
+
+        // Precedence: an absolute prosody-direct contour wins over an
+        // expanded symbol because fundamentalAt() prefers the Hz target.
+        auto layered = parseIpa("h ə l oʊ");
+        applyIntonation(layered, Language::English,
+                        parseIntonationFile("accent vowel:0 H*\n"));
+        applyProsodyFile(layered, parseProsodyFile("f0 1 200\n"));
+        CHECK(layered[1].f0StartHz == 200.0);
+        // The symbol remains on the phoneme, but fundamentalAt() gives the
+        // absolute Hz target precedence, so the rendered contour is 200 Hz.
+        const Voice robot = voicePreset("robot");
+        const double actual = detail::fundamentalAt(robot, layered[1], 22050, 0,
+                                                    44100, 44100, 44100, false);
+        CHECK(std::abs(actual - 200.0) < 1e-9);
+
+        // Determinism and phase continuation hold for expanded contours.
+        const Voice voice = voicePreset("neutral");
+        const auto expanded = [&] {
+            auto result = parseIpa("h ə l oʊ");
+            applyIntonation(result, Language::English,
+                            parseIntonationFile("tune yesno\n"));
+            return result;
+        };
+        CHECK(Synthesizer(voice).render(expanded(), 44100) ==
+              Synthesizer(voice).render(expanded(), 44100));
+        const std::vector<Phoneme> whole = expanded();
+        const std::vector<Phoneme> head(whole.begin(), whole.begin() + 2);
+        const std::vector<Phoneme> tail(whole.begin() + 2, whole.end());
+        const auto expected = Synthesizer(voice).render(whole, 44100);
+        const RenderResult part1 =
+            Synthesizer(voice).renderContinued(head, 44100, {});
+        const RenderResult part2 =
+            Synthesizer(voice).renderContinued(tail, 44100, part1.state);
+        CHECK(part2.samples == expected);
+
+        auto expectError = [](std::string_view text, std::string_view needle) {
+            bool rejected = false;
+            try {
+                (void)parseIntonationFile(text);
+            } catch (const std::invalid_argument &error) {
+                rejected =
+                    std::string(error.what()).find(needle) != std::string::npos;
+            }
+            CHECK(rejected);
+        };
+        expectError("wobble 0 1", "unsupported directive");
+        expectError("accent 0", "selector and a label");
+        expectError("accent x H*", "segment index");
+        expectError("accent vowel:x H*", "vowel index");
+        expectError("accent @-1s H*", "time must be between");
+        expectError("accent 0 !", "tone name");
+        expectError("accent 0 !!!!!!!!!H*", "too many downstep");
+        expectError("break 0 9", "break index");
+        expectError("break 0 x", "break index");
+        expectError("boundary", "boundary needs a label");
+        expectError("tune", "tune needs a name");
+        expectError("accent 0 H* extra", "unexpected extra value");
+
+        bool labelRejected = false;
+        try {
+            auto bad = parseIpa("ee");
+            applyIntonation(bad, Language::English,
+                            parseIntonationFile("accent 0 Q*\n"));
+        } catch (const std::invalid_argument &error) {
+            labelRejected =
+                std::string(error.what())
+                    .find("intonation line 1: unknown accent label") !=
+                std::string::npos;
+        }
+        CHECK(labelRejected);
+
+        bool tuneRejected = false;
+        try {
+            auto bad = parseIpa("ee");
+            applyIntonation(bad, Language::English,
+                            parseIntonationFile("tune nope\n"));
+        } catch (const std::invalid_argument &error) {
+            tuneRejected = std::string(error.what()).find("unknown tune") !=
+                           std::string::npos;
+        }
+        CHECK(tuneRejected);
+
+        bool rangeRejectedIntonation = false;
+        try {
+            auto bad = parseIpa("ee");
+            applyIntonation(bad, Language::English,
+                            parseIntonationFile("accent 9 H*\n"));
+        } catch (const std::invalid_argument &error) {
+            rangeRejectedIntonation =
+                std::string(error.what()).find("matches no segment") !=
+                std::string::npos;
+        }
+        CHECK(rangeRejectedIntonation);
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 

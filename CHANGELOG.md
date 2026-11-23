@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-23
+
+### Added
+
+- Symbolic ToBI-style intonation via `--intonation-file` and `--intonation-tune`, plus the `parseIntonationFile()` / `applyIntonation()` API. Data-driven `ToneInventory` label tables (pitch accents, boundary tones, break-index pause tiers, downstep factor), five overridable named tunes per shipping language, and selectors by phoneme index, score time or vowel nucleus. Events expand into the shared phoneme contour in the parameter domain: unselected segments stay byte-identical, explicit prosody-direct contours win inside a phrase, and rendering stays deterministic and phase-continuation safe. Documented in `docs/intonation.md`, with unit, measured-F0 and CLI smoke coverage.
+
 ## [0.16.0] - 2026-11-23
 
 ### Added

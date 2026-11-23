@@ -14,6 +14,7 @@
 #include "formant/synthesizer.h"
 #include "formant/ssml.h"
 #include "formant/prosody_file.h"
+#include "formant/intonation.h"
 #include "formant/timing.h"
 #include "formant/transpose.h"
 #include "formant/voice.h"

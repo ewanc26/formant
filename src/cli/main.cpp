@@ -38,6 +38,8 @@ Options:
   --stdin                 Read the text to speak from standard input
   --ssml-file FILE        Speak an SSML document (a supported subset)
   --prosody-file FILE     Layer exact F0, duration and amplitude overrides
+  --intonation-file FILE  Expand symbolic ToBI tones into F0 contours
+  --intonation-tune NAME  Built-in tune: statement, yesno, wh, list, exclamation
   --phonemes "[h ee l o]" Speak a bracketed phoneme sequence instead of text
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
@@ -195,6 +197,8 @@ struct Options {
     std::string lexiconFile;
     std::string ssmlFile;
     std::string prosodyFile;
+    std::string intonationFile;
+    std::string intonationTune;
     std::string output = "output.wav";
     formant::AudioFormat format = formant::AudioFormat::Pcm16;
     formant::AudioWriteOptions audioOptions;
@@ -364,6 +368,14 @@ Options parseOptions(int argc, char **argv) {
                    arg.rfind("--prosody-file=", 0) == 0) {
             options.prosodyFile = takeValue(i, argc, argv, "--prosody-file");
             options.useProsody = true;
+        } else if (arg == "--intonation-file" ||
+                   arg.rfind("--intonation-file=", 0) == 0) {
+            options.intonationFile =
+                takeValue(i, argc, argv, "--intonation-file");
+        } else if (arg == "--intonation-tune" ||
+                   arg.rfind("--intonation-tune=", 0) == 0) {
+            options.intonationTune =
+                takeValue(i, argc, argv, "--intonation-tune");
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
@@ -653,6 +665,24 @@ int main(int argc, char **argv) {
             }
         } else {
             phonemes = formant::phonemize(text, options.language);
+        }
+
+        if (!options.intonationFile.empty() ||
+            !options.intonationTune.empty()) {
+            // Symbolic tones expand in the parameter domain after the front
+            // end, then prosody-direct runs below so exact Hz targets win.
+            formant::IntonationFile intonation;
+            if (!options.intonationFile.empty()) {
+                intonation =
+                    formant::loadIntonationFile(options.intonationFile);
+            }
+            if (!options.intonationTune.empty()) {
+                intonation.tune = options.intonationTune;
+            }
+            formant::applyIntonation(
+                phonemes, options.language, intonation,
+                formant::languageToneInventory(options.language));
+            status << "Expanded symbolic intonation\n";
         }
 
         if (options.useProsody) {
