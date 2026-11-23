@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.25.0
+  VERSION 0.26.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -75,6 +75,15 @@ if(FORMANT_BUILD_TESTS)
         add_executable(formant_tests tests/formant_tests.cpp)
         target_link_libraries(formant_tests PRIVATE formant_core)
         add_test(NAME formant_unit_tests COMMAND formant_tests)
+
+        # #98: PHOIBLE conformance. Reads the committed segment table and
+        # coverage summary; PHOIBLE itself is a development-time data source.
+        add_executable(formant_phoible_tests tests/formant_phoible_tests.cpp)
+        target_link_libraries(formant_phoible_tests PRIVATE formant_core)
+        target_compile_definitions(formant_phoible_tests PRIVATE
+            FORMANT_PHOIBLE_TABLE="${CMAKE_CURRENT_SOURCE_DIR}/data/phoible/segments.tsv"
+            FORMANT_PHOIBLE_COVERAGE="${CMAKE_CURRENT_SOURCE_DIR}/data/phoible/coverage.txt")
+        add_test(NAME formant_phoible_conformance COMMAND formant_phoible_tests)
 
         add_executable(formant_formant_verification
             tests/formant_verification.cpp)
@@ -160,4 +169,5 @@ if(FORMANT_INSTALL)
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )
     install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(DIRECTORY data/phoible/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/phoible)
 endif()

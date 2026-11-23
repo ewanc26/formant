@@ -149,6 +149,14 @@ derived from it, so spectra scale safely up to 192 kHz and beyond. See
 [docs/audio-output.md](docs/audio-output.md) for the format table, WAV tags,
 dither semantics and library API.
 
+### IPA coverage conformance
+
+The full PHOIBLE 2.0 segment inventory is checked mechanically: all 2,162
+documented symbols must parse and render non-silence, with a committed
+per-category coverage table and a documented approximation policy for the
+symbols the sine-only model does not support natively. See
+[docs/phoible.md](docs/phoible.md).
+
 ### Objective metrics
 
 The verification harness measures F0 error, gain-independent mel-envelope
@@ -359,6 +367,8 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
+
+See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
 See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 

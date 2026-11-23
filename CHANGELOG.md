@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-23
+
+### Added
+
+- A PHOIBLE 2.0 conformance test (`formant_phoible_conformance`) with a committed per-segment table and per-category coverage summary. Every one of the 2,162 documented segment symbols must parse and render non-silence; symbols not natively supported are covered by an explicit, documented approximation policy, and a regression on a previously covered symbol fails CI. PHOIBLE is a development-time data source only, with provenance and licence in `data/phoible/PROVENANCE.md` and an offline generator in `scripts/generate_phoible_table.py`.
+
 ## [0.25.0] - 2026-11-23
 
 ### Added
