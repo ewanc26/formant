@@ -23,6 +23,10 @@ build/formant --text "Hello, world." \
 build/formant --text "Hello, world." --pair "neutral,alto" --lab-dir lab
 ```
 
+For sharing voices, the versioned distribution format adds attribution and a
+checksum on top of these definitions; see
+[voice-ecosystem.md](voice-ecosystem.md) and `examples/voices/`.
+
 The C++ API mirrors the file API:
 
 ```cpp

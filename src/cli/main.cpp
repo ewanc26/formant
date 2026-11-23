@@ -57,6 +57,13 @@ Options:
   --list-voices           List available voices and exit
   --list-voice-parameters List tunable parameters, safe ranges and exit
   --dump-voice NAME       Print a voice definition for a preset or voice file
+  --inspect-voice FILE    Print a package's metadata, schema and checksum status
+  --package-voice NAME    Print a distributable schema 2 package (preset or file)
+  --voice-name TEXT       Name for --package-voice (default: source name)
+  --voice-author TEXT     Author metadata for --package-voice
+  --voice-description TEXT Description metadata for --package-voice
+  --voice-license TEXT    License metadata for --package-voice
+  --voice-version TEXT    Package version for --package-voice
   --sweep SPEC            Parameter lab: param=start:end:steps[,param=...]
   --pair "A,B"            Render A/B voices on identical text for comparison
   --lab-dir DIR           Output directory for sweeps and pairs (default: lab)
@@ -115,6 +122,37 @@ void listVoiceParameters() {
                   << (parameter.integer ? "integer" : "real") << '\t'
                   << parameter.description << "\n";
     }
+}
+
+void inspectVoice(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open voice file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    const std::string text = source.str();
+    const formant::VoiceDefinition definition =
+        formant::parseVoiceDefinition(text, false);
+    const std::string expected = formant::voiceFileChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << definition.schema << "\n"
+              << "name\t" << definition.name << "\n"
+              << "base\t" << definition.base << "\n"
+              << "author\t" << definition.author << "\n"
+              << "description\t" << definition.description << "\n"
+              << "license\t" << definition.license << "\n"
+              << "version\t" << definition.version << "\n"
+              << "parameters\t" << definition.values.size() << "\n"
+              << "checksum\t"
+              << (definition.checksum ? *definition.checksum : "none") << "\n"
+              << "computed\t" << expected << "\n"
+              << "status\t"
+              << (!definition.checksum
+                      ? "unsigned"
+                      : (*definition.checksum == expected ? "valid"
+                                                          : "invalid"))
+              << "\n";
 }
 
 void listLanguages() {
@@ -226,6 +264,12 @@ struct Options {
     std::string voiceFile;
     formant::VoiceDefinition voiceDefinition;
     bool useVoiceFile = false;
+    std::string packageVoice;
+    std::string packageName;
+    std::string packageAuthor = "Formant contributors";
+    std::string packageDescription = "A Formant voice package.";
+    std::string packageLicense = "AGPL-3.0-or-later";
+    std::string packageVersion = "1.0.0";
     std::string sweepSpec;
     std::string pairSpec;
     std::string labDir = "lab";
@@ -318,6 +362,10 @@ Options parseOptions(int argc, char **argv) {
                     ? voicePreset(name)
                     : formant::resolveVoice(formant::loadVoiceDefinition(name));
             std::cout << formant::writeVoiceDefinition(voice);
+            std::exit(0);
+        }
+        if (arg == "--inspect-voice" || arg.rfind("--inspect-voice=", 0) == 0) {
+            inspectVoice(takeValue(i, argc, argv, "--inspect-voice"));
             std::exit(0);
         }
         if (arg == "--list-phonemes") {
@@ -427,6 +475,27 @@ Options parseOptions(int argc, char **argv) {
                    arg.rfind("--intonation-tune=", 0) == 0) {
             options.intonationTune =
                 takeValue(i, argc, argv, "--intonation-tune");
+        } else if (arg == "--package-voice" ||
+                   arg.rfind("--package-voice=", 0) == 0) {
+            options.packageVoice = takeValue(i, argc, argv, "--package-voice");
+        } else if (arg == "--voice-name" ||
+                   arg.rfind("--voice-name=", 0) == 0) {
+            options.packageName = takeValue(i, argc, argv, "--voice-name");
+        } else if (arg == "--voice-author" ||
+                   arg.rfind("--voice-author=", 0) == 0) {
+            options.packageAuthor = takeValue(i, argc, argv, "--voice-author");
+        } else if (arg == "--voice-description" ||
+                   arg.rfind("--voice-description=", 0) == 0) {
+            options.packageDescription =
+                takeValue(i, argc, argv, "--voice-description");
+        } else if (arg == "--voice-license" ||
+                   arg.rfind("--voice-license=", 0) == 0) {
+            options.packageLicense =
+                takeValue(i, argc, argv, "--voice-license");
+        } else if (arg == "--voice-version" ||
+                   arg.rfind("--voice-version=", 0) == 0) {
+            options.packageVersion =
+                takeValue(i, argc, argv, "--voice-version");
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
             options.useVoiceFile = false;
@@ -475,6 +544,26 @@ Options parseOptions(int argc, char **argv) {
     options.voice = baseVoice;
     for (const auto &apply : overrides) {
         apply(options.voice);
+    }
+    if (!options.packageVoice.empty()) {
+        bool preset = false;
+        for (const std::string &known : voicePresetNames()) {
+            if (known == options.packageVoice) {
+                preset = true;
+                break;
+            }
+        }
+        const Voice voice =
+            preset ? voicePreset(options.packageVoice)
+                   : formant::resolveVoice(
+                         formant::loadVoiceDefinition(options.packageVoice));
+        const std::string name = options.packageName.empty()
+                                     ? options.packageVoice
+                                     : options.packageName;
+        std::cout << formant::writeVoicePackage(
+            voice, {name, options.packageAuthor, options.packageDescription,
+                    options.packageLicense, options.packageVersion});
+        std::exit(0);
     }
     return options;
 }

@@ -118,6 +118,24 @@ randomness, so byte comparisons between cells are meaningful. Lab modes write
 multiple files and therefore reject stdout audio and single-render exports
 before doing any work.
 
+## Voice packages
+
+Schema 2 packages extend the definition format with distribution concerns:
+`name`, `author`, `description`, `license` and `version` are required, and a
+trailing `checksum` line holds the SHA-256 of the file with that line removed
+(CRLF normalised, one LF per line). The hash is computed by a small in-tree
+implementation so the library stays dependency-free. Verification happens in
+the loader before a renderer or output file exists; `--inspect-voice` uses the
+same parser with verification disabled so it can display `valid`, `invalid` or
+`unsigned` status for any file. Schema 1 remains readable, so files written for
+the parameter lab still work unchanged.
+
+The gallery under `examples/voices/` is both teaching material and a fixture
+set: six packages round-trip the built-in presets (smoke tests compare their
+renders byte-for-byte against the compiled voices) and two are original
+samples. Licensing guidance for shared voices is in
+[voice-ecosystem.md](voice-ecosystem.md).
+
 ## Possible extensions
 
 - More language front ends (French, German, Italian) behind the same registry.

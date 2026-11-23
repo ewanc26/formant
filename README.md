@@ -89,6 +89,10 @@ build/formant --text "Hello, world." --prosody-file script.prosody --output exac
 
 # Load a shareable voice definition and sweep or compare voice parameters
 build/formant --text "Hello, world." --voice-file examples/warm.voice --output warm.wav
+# Inspect a distributed package and create one from a preset
+build/formant --inspect-voice examples/voices/warm-narrator.voice
+build/formant --package-voice alto --voice-author "Your Name" \
+  --voice-description "Warm alto" --voice-license CC0-1.0 --voice-version 1.0.0 > my-alto.voice
 build/formant --text "Hello, world." \
   --sweep "pitch=120:200:5,breathiness=0:0.08:3" --lab-dir lab
 build/formant --text "Hello, world." --pair "neutral,alto" --lab-dir ab
@@ -165,8 +169,14 @@ is caught mechanically. The analyzer API is also public through
 A voice can also be a file layered over one of these presets, and the lab can
 sweep parameters or render A/B pairs on identical text. See
 [docs/voice-files.md](docs/voice-files.md) for the schema, safe ranges and a
-tuning cookbook. `--list-voice-parameters` prints the same table as data, and
-`--dump-voice NAME` exports a preset as a byte-identical round-trippable file.
+tuning cookbook, and [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for
+shareable schema 2 packages with attribution and checksums. Eight ready-to-use
+packages live in [examples/voices](examples/voices); the six preset packages
+render byte-identically to their compiled counterparts.
+`--list-voice-parameters` prints the same table as data, `--dump-voice NAME`
+exports a preset as a byte-identical round-trippable file, `--package-voice`
+adds attribution and a checksum for sharing, and `--inspect-voice` verifies a
+received package without rendering.
 
 ### Languages
 
@@ -328,7 +338,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

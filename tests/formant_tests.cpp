@@ -2992,7 +2992,7 @@ int main() {
             return false;
         };
         CHECK(voiceRejected("name x\npitch 100\n", "requires 'schema 1'"));
-        CHECK(voiceRejected("schema 2\npitch 100\n", "voice line 1"));
+        CHECK(voiceRejected("schema 3\npitch 100\n", "voice line 1"));
         CHECK(voiceRejected("schema 1\nwobble 1\n", "unknown parameter"));
         CHECK(
             voiceRejected("schema 1\npitch 3000\n", "invalid value for pitch"));
@@ -3043,6 +3043,102 @@ int main() {
         }
         CHECK(formant::writeVoiceDefinition(formant::voicePreset("bass"))
                   .find("base bass\n") != std::string::npos);
+    }
+
+    // Issue #134: distributable voice packages carry attribution metadata and
+    // a SHA-256 checksum, while schema 1 files stay loadable unchanged.
+    {
+        // checksumSource hashes each line with a trailing LF; these vectors
+        // match `printf '...\n' | shasum -a 256`.
+        CHECK(
+            formant::voiceFileChecksum("") ==
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        CHECK(
+            formant::voiceFileChecksum("abc") ==
+            "edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb");
+        CHECK(
+            formant::voiceFileChecksum("hello world") ==
+            "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447");
+
+        const std::vector<formant::Phoneme> packageSource =
+            formant::parseIpa("ˈhəˈloʊ");
+        const formant::VoicePackageMetadata metadata = {
+            "Warm Alto", "Ewan", "A warm alto", "CC0-1.0", "1.2.3"};
+        const formant::Voice alto = formant::voicePreset("alto");
+        const std::string package = formant::writeVoicePackage(alto, metadata);
+        CHECK(package.find("schema 2\n") != std::string::npos);
+        CHECK(package.find("author Ewan\n") != std::string::npos);
+        CHECK(package.find("license CC0-1.0\n") != std::string::npos);
+        CHECK(package.find("version 1.2.3\n") != std::string::npos);
+        CHECK(package.find("checksum ") != std::string::npos);
+
+        const formant::VoiceDefinition packaged =
+            formant::parseVoiceDefinition(package);
+        CHECK(packaged.schema == formant::kCurrentVoiceSchema);
+        CHECK(packaged.name == "Warm Alto");
+        CHECK(packaged.author == "Ewan");
+        CHECK(packaged.description == "A warm alto");
+        CHECK(packaged.license == "CC0-1.0");
+        CHECK(packaged.version == "1.2.3");
+        CHECK(packaged.checksum.has_value());
+        CHECK(*packaged.checksum == formant::voiceFileChecksum(package));
+        const formant::Voice resolved = formant::resolveVoice(packaged);
+        CHECK(resolved.pitch == alto.pitch);
+        CHECK(formant::Synthesizer(resolved).render(packageSource, 8000) ==
+              formant::Synthesizer(alto).render(packageSource, 8000));
+
+        // Inspection parses with verification disabled so a bad checksum can
+        // be reported rather than thrown.
+        const formant::VoiceDefinition inspected =
+            formant::parseVoiceDefinition(package, false);
+        CHECK(inspected.checksum.has_value());
+
+        auto packageRejected = [](std::string_view text,
+                                  std::string_view fragment) {
+            try {
+                formant::parseVoiceDefinition(text);
+            } catch (const std::invalid_argument &error) {
+                return std::string(error.what()).find(fragment) !=
+                       std::string::npos;
+            }
+            return false;
+        };
+        CHECK(packageRejected("schema 3\n", "voice line 1"));
+        CHECK(packageRejected(
+            "schema 2\nname x\nauthor y\ndescription z\nlicense l\n"
+            "version 1\n",
+            "requires a checksum"));
+        CHECK(packageRejected(
+            "schema 2\nname x\nauthor y\ndescription z\nlicense l\n"
+            "version 1\nchecksum abc\n",
+            "64 hexadecimal digits"));
+        std::string tampered = package;
+        const std::size_t pos = tampered.find("pitch ");
+        tampered.replace(pos, std::string("pitch ").size(), "pitch 1");
+        CHECK(packageRejected(tampered, "checksum mismatch"));
+
+        bool missingMetadataRejected = false;
+        try {
+            formant::writeVoicePackage(
+                alto, {"", "Ewan", "A warm alto", "CC0-1.0", "1.2.3"});
+        } catch (const std::invalid_argument &) {
+            missingMetadataRejected = true;
+        }
+        CHECK(missingMetadataRejected);
+
+        // A CRLF package hashes like its LF form, so Windows-authored files
+        // verify without regenerating the checksum.
+        std::string crlf;
+        for (char c : package) {
+            if (c == '\n') {
+                crlf += "\r\n";
+            } else {
+                crlf += c;
+            }
+        }
+        CHECK(formant::voiceFileChecksum(crlf) ==
+              formant::voiceFileChecksum(package));
+        CHECK(formant::parseVoiceDefinition(crlf).version == "1.2.3");
     }
 
     // The English paths remain byte-for-byte unchanged.

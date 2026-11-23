@@ -906,6 +906,154 @@ if(no_schema_result EQUAL 0 OR NOT no_schema_error MATCHES "requires 'schema 1'"
     message(FATAL_ERROR "unversioned voice file was accepted: ${no_schema_error}")
 endif()
 
+# Issue #134: distributable voice packages carry attribution and a checksum,
+# and the shipped gallery round-trips the built-in presets byte-for-byte.
+set(PACKAGE_DIR "${VOICE_LAB_DIR}/packages")
+file(MAKE_DIRECTORY "${PACKAGE_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --package-voice alto --voice-name "Renamed Alto"
+        --voice-author "Test Author" --voice-description "A test package"
+        --voice-license CC0-1.0 --voice-version 2.1.0
+    OUTPUT_VARIABLE package_text
+    RESULT_VARIABLE package_result
+    ERROR_VARIABLE package_error
+)
+if(NOT package_result EQUAL 0)
+    message(FATAL_ERROR "--package-voice failed: ${package_error}")
+endif()
+if(NOT package_text MATCHES "schema 2" OR NOT package_text MATCHES "name Renamed Alto"
+        OR NOT package_text MATCHES "author Test Author"
+        OR NOT package_text MATCHES "license CC0-1.0"
+        OR NOT package_text MATCHES "version 2.1.0"
+        OR NOT package_text MATCHES "checksum [0-9a-f][0-9a-f]")
+    message(FATAL_ERROR "voice package is incomplete: ${package_text}")
+endif()
+file(WRITE "${PACKAGE_DIR}/alto.voice" "${package_text}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-voice "${PACKAGE_DIR}/alto.voice"
+    OUTPUT_VARIABLE inspect_text
+    RESULT_VARIABLE inspect_result
+    ERROR_VARIABLE inspect_error
+)
+if(NOT inspect_result EQUAL 0)
+    message(FATAL_ERROR "--inspect-voice failed: ${inspect_error}")
+endif()
+if(NOT inspect_text MATCHES "schema\t2" OR NOT inspect_text MATCHES "author\tTest Author"
+        OR NOT inspect_text MATCHES "status\tvalid")
+    message(FATAL_ERROR "inspect did not report valid package metadata: ${inspect_text}")
+endif()
+file(SHA256 "${PACKAGE_DIR}/alto.voice" package_hash)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --voice-file "${PACKAGE_DIR}/alto.voice"
+        --output "${PACKAGE_DIR}/compiled.wav" --sample-rate 22050
+    RESULT_VARIABLE package_render_result
+    ERROR_VARIABLE package_render_error
+)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --voice alto
+        --output "${PACKAGE_DIR}/file.wav" --sample-rate 22050
+    RESULT_VARIABLE preset_render_result
+    ERROR_VARIABLE preset_render_error
+)
+if(NOT package_render_result EQUAL 0 OR NOT preset_render_result EQUAL 0)
+    message(FATAL_ERROR "package round-trip render failed: ${package_render_error} ${preset_render_error}")
+endif()
+file(SHA256 "${PACKAGE_DIR}/compiled.wav" package_render_hash)
+file(SHA256 "${PACKAGE_DIR}/file.wav" preset_render_hash)
+if(NOT package_render_hash STREQUAL preset_render_hash)
+    message(FATAL_ERROR "voice package did not reproduce the built-in preset")
+endif()
+
+# Tampering with a package is detected before any audio is written.
+file(READ "${PACKAGE_DIR}/alto.voice" tamper_text)
+string(REPLACE "A test package" "A changed package" tamper_text "${tamper_text}")
+file(WRITE "${PACKAGE_DIR}/tampered.voice" "${tamper_text}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --voice-file "${PACKAGE_DIR}/tampered.voice"
+        --output "${PACKAGE_DIR}/bad.wav"
+    RESULT_VARIABLE tamper_result
+    ERROR_VARIABLE tamper_error
+)
+if(tamper_result EQUAL 0 OR NOT tamper_error MATCHES "checksum mismatch")
+    message(FATAL_ERROR "tampered voice package was accepted: ${tamper_error}")
+endif()
+if(EXISTS "${PACKAGE_DIR}/bad.wav")
+    message(FATAL_ERROR "tampered package wrote audio before failing verification")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-voice "${PACKAGE_DIR}/tampered.voice"
+    OUTPUT_VARIABLE tamper_inspect_text
+    RESULT_VARIABLE tamper_inspect_result
+    ERROR_VARIABLE tamper_inspect_error
+)
+if(NOT tamper_inspect_result EQUAL 0 OR NOT tamper_inspect_text MATCHES "status\tinvalid")
+    message(FATAL_ERROR "--inspect-voice must report a bad checksum: ${tamper_inspect_error}")
+endif()
+
+# A package without a checksum is reported as unsigned by inspection but is
+# still rejected by the loader before any audio is written.
+file(WRITE "${PACKAGE_DIR}/unsigned.voice"
+    "schema 2\nname Unsigned\nauthor Test Author\ndescription No checksum\nlicense CC0-1.0\nversion 1.0.0\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-voice "${PACKAGE_DIR}/unsigned.voice"
+    OUTPUT_VARIABLE unsigned_inspect_text
+    RESULT_VARIABLE unsigned_inspect_result
+    ERROR_VARIABLE unsigned_inspect_error
+)
+if(NOT unsigned_inspect_result EQUAL 0 OR NOT unsigned_inspect_text MATCHES "status\tunsigned")
+    message(FATAL_ERROR "--inspect-voice must report an unsigned package: ${unsigned_inspect_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --voice-file "${PACKAGE_DIR}/unsigned.voice"
+        --output "${PACKAGE_DIR}/bad.wav"
+    RESULT_VARIABLE unsigned_load_result
+    ERROR_VARIABLE unsigned_load_error
+)
+if(unsigned_load_result EQUAL 0 OR NOT unsigned_load_error MATCHES "requires a checksum")
+    message(FATAL_ERROR "unsigned voice package was accepted: ${unsigned_load_error}")
+endif()
+
+# Every shipped gallery voice is a valid package and the preset round-trips
+# render exactly like their compiled counterparts.
+if(DEFINED FORMANT_EXAMPLES_DIR)
+    file(GLOB gallery_files "${FORMANT_EXAMPLES_DIR}/voices/*.voice")
+    list(LENGTH gallery_files gallery_count)
+    if(gallery_count LESS 5)
+        message(FATAL_ERROR "expected at least five example voices, found ${gallery_count}")
+    endif()
+    foreach(gallery_file ${gallery_files})
+        execute_process(
+            COMMAND "${FORMANT_CLI}" --inspect-voice "${gallery_file}"
+            OUTPUT_VARIABLE gallery_inspect
+            RESULT_VARIABLE gallery_result
+            ERROR_VARIABLE gallery_error
+        )
+        if(NOT gallery_result EQUAL 0 OR NOT gallery_inspect MATCHES "status\tvalid")
+            message(FATAL_ERROR "invalid gallery voice ${gallery_file}: ${gallery_error}")
+        endif()
+    endforeach()
+    foreach(preset neutral alto bass child robot whisper)
+        execute_process(
+            COMMAND "${FORMANT_CLI}" --ipa "a" --voice "${preset}"
+                --sample-rate 22050 --output "${PACKAGE_DIR}/gallery-preset.wav"
+            RESULT_VARIABLE gallery_preset_result
+        )
+        execute_process(
+            COMMAND "${FORMANT_CLI}" --ipa "a" --voice-file "${FORMANT_EXAMPLES_DIR}/voices/${preset}.voice"
+                --sample-rate 22050 --output "${PACKAGE_DIR}/gallery-file.wav"
+            RESULT_VARIABLE gallery_file_result
+        )
+        if(NOT gallery_preset_result EQUAL 0 OR NOT gallery_file_result EQUAL 0)
+            message(FATAL_ERROR "gallery render failed for ${preset}")
+        endif()
+        file(SHA256 "${PACKAGE_DIR}/gallery-preset.wav" gallery_preset_hash)
+        file(SHA256 "${PACKAGE_DIR}/gallery-file.wav" gallery_file_hash)
+        if(NOT gallery_preset_hash STREQUAL gallery_file_hash)
+            message(FATAL_ERROR "gallery voice ${preset} is not byte-identical to the preset")
+        endif()
+    endforeach()
+endif()
+
 # One- and two-parameter sweeps write labeled renders and a deterministic
 # machine-readable index mapping each file to its parameter values.
 set(SWEEP_DIR "${VOICE_LAB_DIR}/sweep")

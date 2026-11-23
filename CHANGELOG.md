@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-23
+
+### Added
+
+- Distributable voice packages (schema 2) with required attribution metadata and a SHA-256 integrity checksum, exposed through `--package-voice` / `--inspect-voice` (with `--voice-name`, `--voice-author`, `--voice-description`, `--voice-license` and `--voice-version` metadata flags) and the `writeVoicePackage()` / `voiceFileChecksum()` API; schema 1 definitions remain fully supported. A gallery of eight verified example voices ships in `examples/voices/`, including all six presets as byte-identical round trips. Documented in `docs/voice-ecosystem.md` with publishing and licensing guidance, and covered by unit, CLI smoke and gallery byte-identity tests.
+
 ## [0.18.0] - 2026-11-23
 
 ### Added
