@@ -66,6 +66,12 @@ All renderers produce the same floating-point buffer before an output writer tou
 
 The voiced Nyquist ceiling is `0.49 * sampleRate`, and the deterministic sine partials used for fricatives stop at `0.45 * sampleRate`. Both come from the caller's rate rather than a stored constant, so changing `--sample-rate` scales the spectrum and the number of admissible partials together. `tests/formant_verification.cpp` measures F1 and F2 with a Hann-windowed Goertzel filter at five rates, including a harmonic count that reaches past Nyquist at 22.05 kHz.
 
+## Objective metrics
+
+Synthesis and analysis must not drift apart, so both consume the same model: `src/prosody.h` owns F0 contours, formant interpolation and the shared resonance response, and `src/schedule.cpp` owns sample boundaries. The renderer uses these helpers to generate audio; the metric analyzers sample the identical functions to produce the target F0 and harmonic-envelope tracks. A regression in either path therefore shows up as a real difference between signal and intent, not as an artifact of a separately maintained reference.
+
+The dependency-free analyzers live in `formant/src/metrics.cpp` and are exposed through `formant/metrics.h`. They measure F0 by normalised autocorrelation, the spectral envelope by harmonic Goertzel amplitudes mapped to a mel/cepstral representation, and formant position by peak-versus-guard energy on the harmonic grid. `compareF0()`, `compareEnvelope()` and `compareFormants()` are pure functions returning compact metric structs. The harness renders a fixed corpus, checks absolute quality thresholds and drift from checked-in baselines, and verifies that a deliberately mistuned render is rejected. Full definitions and limits are in [docs/metrics.md](metrics.md).
+
 ## Possible extensions
 
 - More language front ends (French, German, Italian) behind the same registry.

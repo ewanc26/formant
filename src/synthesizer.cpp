@@ -1,5 +1,6 @@
 #include "formant/synthesizer.h"
 
+#include "prosody.h"
 #include "schedule.h"
 
 #include <algorithm>
@@ -13,7 +14,6 @@
 namespace formant {
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
 constexpr double kHarmonicCeiling = 0.49; // fraction of the sample rate
 // Hard cap on voiced partials. The Nyquist break normally stops the harmonic
 // loop much earlier, but a near-zero fundamental never reaches it; without a
@@ -35,54 +35,6 @@ struct NoisePartial {
     double phase = 0.0;
 };
 
-FormantBand zeroBand() { return {0.0, 0.0, 1.0}; }
-
-std::array<FormantBand, 4> zeroBands() {
-    return {zeroBand(), zeroBand(), zeroBand(), zeroBand()};
-}
-
-double clamp(double value, double low, double high) {
-    return std::max(low, std::min(high, value));
-}
-
-double smooth(double t) {
-    t = clamp(t, 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
-}
-
-// A final rise belongs to the end of the utterance, not to any question mark
-// inside it. Scan back past trailing pauses (a bare '?' is itself a silence
-// phoneme) and stop at the first non-silence segment: "Hello?" rises, while
-// "Hello? I am here." ends on a statement and must not.
-bool endsWithRise(const std::vector<Phoneme> &phonemes) {
-    for (auto it = phonemes.rbegin(); it != phonemes.rend(); ++it) {
-        if (it->pitchRise) {
-            return true;
-        }
-        if (it->kind != PhonemeKind::Silence) {
-            return false;
-        }
-    }
-    return false;
-}
-
-// Four sine-shaped resonances, each with a Lorentzian response. This is the
-// only "filter" in the engine: no IIR filters, noise buffers or samples.
-double resonance(double frequency, const std::array<FormantBand, 4> &bands,
-                 double scale) {
-    double total = 0.0;
-    for (const FormantBand &band : bands) {
-        if (band.amplitude <= 0.0 || band.frequency <= 0.0) {
-            continue;
-        }
-        const double centre = band.frequency * scale;
-        const double width = band.bandwidth * std::max(0.7, scale);
-        const double distance = (frequency - centre) / width;
-        total += band.amplitude / (1.0 + distance * distance);
-    }
-    return std::min(total, 2.0);
-}
-
 std::vector<NoisePartial> makeNoisePartials(int sampleRate) {
     std::vector<NoisePartial> partials;
     partials.reserve(12);
@@ -99,19 +51,10 @@ std::vector<NoisePartial> makeNoisePartials(int sampleRate) {
         NoisePartial partial;
         partial.frequency = std::min(1200.0 + spread, ceiling);
         partial.phase =
-            (static_cast<double>(next() % 10000) / 10000.0) * 2.0 * kPi;
+            (static_cast<double>(next() % 10000) / 10000.0) * 2.0 * detail::kPi;
         partials.push_back(partial);
     }
     return partials;
-}
-
-FormantBand blendBand(const FormantBand &from, const FormantBand &to,
-                      double mix) {
-    return {
-        from.frequency + (to.frequency - from.frequency) * mix,
-        from.amplitude + (to.amplitude - from.amplitude) * mix,
-        from.bandwidth + (to.bandwidth - from.bandwidth) * mix,
-    };
 }
 
 } // namespace
@@ -135,13 +78,13 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     // slower audio. The shared scheduler applies that cumulative-boundary
     // rule, so timing reports use exactly the spans rendered here.
     const double rate = voice_.rate;
-    const bool rising = endsWithRise(phonemes);
+    const bool rising = detail::utteranceRises(phonemes);
     const std::vector<detail::ScheduledSpan> spans =
         detail::schedulePhonemes(phonemes, rate, sampleRate);
 
     std::vector<Segment> segments;
     segments.reserve(phonemes.size());
-    std::array<FormantBand, 4> previousBands = zeroBands();
+    std::array<FormantBand, 4> previousBands = detail::zeroBands();
     bool previousVoiced = false;
     double previousNoise = 0.0;
 
@@ -171,8 +114,6 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
     // and NaN samples after the inf * 0 scaling step.
     std::vector<double> raw(static_cast<size_t>(totalSamples), 0.0);
     const std::vector<NoisePartial> partials = makeNoisePartials(sampleRate);
-    const double transition =
-        std::max(1.0, std::round(0.035 * sampleRate / rate));
 
     double phase = 0.0;
     for (const Segment &segment : segments) {
@@ -197,21 +138,15 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
 
         const double voicedTarget = phoneme.voiced ? 1.0 : 0.0;
         const double noiseTarget = phoneme.voiced ? voice_.breathiness : 1.0;
-        const double riseStart = static_cast<double>(
-            totalSamples - std::min(totalSamples, sampleRate / 2));
 
         for (int s = segment.start; s < segment.end; ++s) {
             const double elapsed = static_cast<double>(s - segment.start);
-            const double mix = smooth(elapsed / transition);
-            const double vowelProgress =
-                smooth(elapsed / static_cast<double>(length));
-            const std::array<FormantBand, 4> &targetBands =
-                phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
-            std::array<FormantBand, 4> bands{};
-            for (size_t b = 0; b < bands.size(); ++b) {
-                bands[b] = blendBand(segment.from[b], phoneme.bands[b], mix);
-                bands[b] = blendBand(bands[b], targetBands[b], vowelProgress);
-            }
+            const double mix = detail::smooth(
+                elapsed / static_cast<double>(
+                              detail::transitionSamples(voice_, sampleRate)));
+            const std::array<FormantBand, 4> bands =
+                detail::bandsAt(phoneme, segment.from, s, segment.start,
+                                segment.end, voice_, sampleRate);
 
             const double voicedMix =
                 segment.wasVoiced + (voicedTarget - segment.wasVoiced) * mix;
@@ -221,32 +156,12 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                 std::min({1.0, elapsed / attack,
                           static_cast<double>(segment.end - s) / release});
 
-            const double progress =
-                static_cast<double>(s) / static_cast<double>(totalSamples);
-            double fundamental =
-                voice_.pitch * (1.0 - voice_.declination * progress) *
-                (phoneme.pitchStart + (phoneme.pitchEnd - phoneme.pitchStart) *
-                                          (static_cast<double>(elapsed) /
-                                           static_cast<double>(length)));
-            if (rising && s >= riseStart) {
-                const double riseProgress =
-                    static_cast<double>(s - riseStart) /
-                    std::max(1.0,
-                             static_cast<double>(totalSamples - riseStart));
-                fundamental *= 1.0 + 0.35 * smooth(riseProgress);
-            }
-            if (voice_.vibratoRate > 0.0 && voice_.vibratoDepth > 0.0) {
-                const double time =
-                    static_cast<double>(s) / static_cast<double>(sampleRate);
-                const double cents =
-                    voice_.vibratoDepth *
-                    std::sin(2.0 * kPi * voice_.vibratoRate * time);
-                fundamental *= std::pow(2.0, cents / 1200.0);
-            }
-            fundamental = std::max(0.0, fundamental);
-            phase = std::fmod(phase + 2.0 * kPi * fundamental /
+            const double fundamental = detail::fundamentalAt(
+                voice_, phoneme, s, segment.start, segment.end, totalSamples,
+                sampleRate, rising);
+            phase = std::fmod(phase + 2.0 * detail::kPi * fundamental /
                                           static_cast<double>(sampleRate),
-                              2.0 * kPi);
+                              2.0 * detail::kPi);
 
             double voiced = 0.0;
             if (fundamental > 0.0 && voice_.harmonics > 0) {
@@ -260,7 +175,8 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                     if (frequency > sampleRate * kHarmonicCeiling) {
                         break;
                     }
-                    voiced += resonance(frequency, bands, voice_.formantScale) /
+                    voiced += detail::formantResponse(frequency, bands,
+                                                      voice_.formantScale) /
                               static_cast<double>(h) *
                               std::sin(static_cast<double>(h) * phase);
                 }
@@ -272,10 +188,11 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                     static_cast<double>(s) / static_cast<double>(sampleRate);
                 double sum = 0.0;
                 for (const NoisePartial &partial : partials) {
-                    sum += resonance(partial.frequency, bands,
-                                     voice_.formantScale) *
-                           std::sin(2.0 * kPi * partial.frequency * time +
-                                    partial.phase);
+                    sum +=
+                        detail::formantResponse(partial.frequency, bands,
+                                                voice_.formantScale) *
+                        std::sin(2.0 * detail::kPi * partial.frequency * time +
+                                 partial.phase);
                 }
                 noise = 0.6 * sum / static_cast<double>(partials.size());
             }

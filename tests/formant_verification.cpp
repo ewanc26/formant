@@ -1,23 +1,30 @@
-// Formant-position verification across supported sample rates.
+// Objective verification for Formant.
 //
-// The engine derives its Nyquist ceiling from the caller's sample rate. This
-// harness renders one steady vowel through a high harmonic count at five rates
-// and measures the spectrum with a Goertzel filter at the harmonic grid. It is
-// deliberately dependency-free: no FFT library, no recorded reference audio and
-// no tolerance based on a stored waveform. Each peak is compared with the
-// phoneme's own formant table, so changing a vowel target changes the
-// expectation automatically.
+// The first half renders one steady vowel at five sample rates and checks the
+// harmonic spectrum with a Goertzel filter. The second half measures F0,
+// spectral-envelope distance and formant position against the intended
+// parameter tracks, then compares the numbers with checked-in baselines. Every
+// analyzer lives in formant_core, so the report describes the same synthesis
+// path that callers use.
 
 #include "formant/formant.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
-#include <limits>
+#include <map>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
+
+#ifndef FORMANT_METRICS_BASELINE
+#define FORMANT_METRICS_BASELINE "tests/metrics_baseline.txt"
+#endif
 
 namespace {
 
@@ -32,119 +39,254 @@ int failures = 0;
         }                                                                      \
     } while (false)
 
-constexpr double kPi = 3.14159265358979323846;
+struct Thresholds {
+    double f0RmseHz = 5.0;
+    double f0Correlation = 0.95;
+    double envelopeDistance = 0.65;
+    double mcdDb = 20.0;
+    double formantErrorHz = 150.0;
+    double formantContrast = 1.50;
 
-// Hann-windowed Goertzel magnitude, normalised so a full-scale sinusoid at the
-// probe frequency reads about 0.5. Homogeneous scaling keeps peak-to-guard
-// ratios meaningful even though render() normalises the whole buffer to 0.9.
-double bandEnergy(const std::vector<float> &samples, double frequency,
-                  int sampleRate) {
-    if (samples.empty()) {
-        return 0.0;
-    }
-    const double coefficient =
-        2.0 * std::cos(2.0 * kPi * frequency / sampleRate);
-    double previous = 0.0;
-    double previous2 = 0.0;
-    double windowSum = 0.0;
-    for (size_t i = 0; i < samples.size(); ++i) {
-        const double phase = 2.0 * kPi * static_cast<double>(i) /
-                             static_cast<double>(samples.size() - 1);
-        const double window = 0.5 - 0.5 * std::cos(phase);
-        windowSum += window;
-        const double value = static_cast<double>(samples[i]) * window;
-        const double current = value + coefficient * previous - previous2;
-        previous2 = previous;
-        previous = current;
-    }
-    if (windowSum <= 0.0) {
-        return 0.0;
-    }
-    const double power = previous * previous + previous2 * previous2 -
-                         coefficient * previous * previous2;
-    return std::sqrt(std::max(0.0, power)) / (0.5 * windowSum);
-}
-
-struct Peak {
-    double frequency = 0.0;
-    double energy = 0.0;
+    double f0RmseDrift = 1.0;
+    double f0CorrelationDrift = 0.01;
+    double envelopeDrift = 0.08;
+    double mcdDrift = 2.0;
+    double formantDrift = 30.0;
 };
 
-// Scans only the harmonic grid the additive source can actually produce.
-Peak strongestHarmonic(const std::vector<float> &samples, int sampleRate,
-                       double fundamental, int harmonics, double low,
-                       double high) {
-    Peak best;
-    const int ceiling =
-        std::min(harmonics,
-                 static_cast<int>(std::floor(sampleRate * 0.49 / fundamental)));
-    for (int h = 1; h <= ceiling; ++h) {
-        const double frequency = fundamental * static_cast<double>(h);
-        if (frequency < low || frequency > high) {
+constexpr Thresholds kThresholds;
+
+struct Case {
+    std::string name;
+    std::string source;
+    std::vector<formant::Phoneme> phonemes;
+    formant::Voice voice;
+    int sampleRate = 44100;
+    std::array<double, 2> formants{};
+    bool checkFormants = false;
+};
+
+struct ReportRow {
+    std::string name;
+    formant::F0Metrics f0;
+    formant::EnvelopeMetrics envelope;
+    formant::FormantMetrics formants;
+    bool checkFormants = false;
+};
+
+std::string number(double value) {
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(6) << value;
+    return stream.str();
+}
+
+std::vector<Case> corpus() {
+    std::vector<Case> cases;
+
+    Case vowel;
+    vowel.name = "steady-vowel";
+    vowel.source = "phoneme ee, 100 Hz, 200 harmonics, 44.1 kHz";
+    vowel.voice = formant::Voice();
+    vowel.voice.name = "verification";
+    vowel.voice.pitch = 100.0;
+    vowel.voice.harmonics = 200;
+    vowel.voice.vibratoRate = 0.0;
+    vowel.voice.vibratoDepth = 0.0;
+    vowel.voice.breathiness = 0.0;
+    vowel.voice.declination = 0.0;
+    vowel.voice.attack = 0.002;
+    vowel.voice.release = 0.002;
+    vowel.voice.gain = 1.0;
+    const formant::Phoneme *ee = formant::findPhoneme("ee");
+    if (ee != nullptr) {
+        formant::Phoneme sustained = *ee;
+        sustained.duration = 1.0;
+        vowel.phonemes = {sustained};
+        vowel.formants = {ee->bands[0].frequency, ee->bands[1].frequency};
+        vowel.checkFormants = true;
+    }
+    cases.push_back(std::move(vowel));
+
+    Case hello;
+    hello.name = "hello-world";
+    hello.source = "text: Hello, world.";
+    hello.phonemes = formant::phonemize("Hello, world.");
+    hello.voice = formant::voicePreset("neutral");
+    cases.push_back(std::move(hello));
+
+    Case question;
+    question.name = "question";
+    question.source = "text: Are you there?";
+    question.phonemes = formant::phonemize("Are you there?");
+    question.voice = formant::voicePreset("neutral");
+    cases.push_back(std::move(question));
+
+    Case alto;
+    alto.name = "alto-vibrato";
+    alto.source = "text: Formant is a voice engine. (alto preset)";
+    alto.phonemes = formant::phonemize("Formant is a voice engine.");
+    alto.voice = formant::voicePreset("alto");
+    cases.push_back(std::move(alto));
+
+    Case bass;
+    bass.name = "bass-vowel";
+    bass.source = "phoneme ee, 95 Hz bass preset, 48 kHz";
+    bass.voice = formant::voicePreset("bass");
+    const formant::Phoneme *bassEe = formant::findPhoneme("ee");
+    if (bassEe != nullptr) {
+        formant::Phoneme sustained = *bassEe;
+        sustained.duration = 1.0;
+        bass.phonemes = {sustained};
+        bass.formants = {bassEe->bands[0].frequency * bass.voice.formantScale,
+                         bassEe->bands[1].frequency * bass.voice.formantScale};
+        bass.checkFormants = true;
+    }
+    bass.sampleRate = 48000;
+    cases.push_back(std::move(bass));
+
+    return cases;
+}
+
+double meanVoicedF0(const formant::F0Track &track, double fallback) {
+    double sum = 0.0;
+    std::size_t count = 0;
+    for (const formant::F0Frame &frame : track) {
+        if (frame.frequency > 0.0) {
+            sum += frame.frequency;
+            ++count;
+        }
+    }
+    return count > 0 ? sum / static_cast<double>(count) : fallback;
+}
+
+ReportRow analyze(const Case &item) {
+    formant::AnalyzerOptions options;
+    const std::vector<float> samples =
+        formant::Synthesizer(item.voice).render(item.phonemes, item.sampleRate);
+
+    ReportRow row;
+    row.name = item.name;
+    row.checkFormants = item.checkFormants;
+    row.f0 = formant::compareF0(
+        formant::estimateF0(samples, item.sampleRate, options),
+        formant::expectedF0(item.phonemes, item.voice, item.sampleRate,
+                            options));
+    row.envelope = formant::compareEnvelope(
+        formant::estimateEnvelope(samples, item.sampleRate, options),
+        formant::expectedEnvelope(item.phonemes, item.voice, item.sampleRate,
+                                  options));
+
+    if (item.checkFormants) {
+        const formant::F0Track expected = formant::expectedF0(
+            item.phonemes, item.voice, item.sampleRate, options);
+        const double fundamental = meanVoicedF0(expected, item.voice.pitch);
+        const auto peaks =
+            formant::estimateFormantPeaks(samples, item.sampleRate, fundamental,
+                                          item.voice.harmonics, item.formants);
+        row.formants = formant::compareFormants(peaks, item.formants);
+    }
+    return row;
+}
+
+std::map<std::string, ReportRow> readBaseline(const std::string &path) {
+    std::ifstream input(path);
+    if (!input) {
+        std::cerr << "FAIL cannot open baseline: " << path << "\n";
+        ++failures;
+        return {};
+    }
+
+    std::map<std::string, ReportRow> rows;
+    std::string line;
+    while (std::getline(input, line)) {
+        if (line.empty() || line[0] == '#') {
             continue;
         }
-        const double energy = bandEnergy(samples, frequency, sampleRate);
-        if (energy > best.energy) {
-            best = {frequency, energy};
+        std::istringstream fields(line);
+        ReportRow row;
+        double rmseCents = 0.0;
+        if (!(fields >> row.name >> row.f0.rmseHz >> rmseCents >>
+              row.f0.correlation >> row.envelope.logDistance >>
+              row.envelope.mcdDb >> row.formants.maxErrorHz >>
+              row.formants.minContrast)) {
+            std::cerr << "FAIL malformed baseline line: " << line << "\n";
+            ++failures;
+            continue;
+        }
+        row.f0.rmseCents = rmseCents;
+        rows[row.name] = row;
+    }
+    return rows;
+}
+
+void writeMetrics(std::ostream &output, const std::vector<ReportRow> &rows,
+                  const std::vector<Case> &cases) {
+    output << "# name f0_rmse_hz f0_rmse_cents f0_correlation "
+              "envelope_log_distance mcd_db formant_error_hz "
+              "formant_contrast\n";
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const ReportRow &row = rows[i];
+        output << row.name << ' ' << number(row.f0.rmseHz) << ' '
+               << number(row.f0.rmseCents) << ' ' << number(row.f0.correlation)
+               << ' ' << number(row.envelope.logDistance) << ' '
+               << number(row.envelope.mcdDb) << ' '
+               << number(row.formants.maxErrorHz) << ' '
+               << number(row.formants.minContrast) << " # " << cases[i].source
+               << "\n";
+    }
+}
+
+void verifyMetrics(const std::vector<ReportRow> &rows,
+                   const std::string &baselinePath) {
+    const std::map<std::string, ReportRow> baseline =
+        readBaseline(baselinePath);
+
+    for (const ReportRow &row : rows) {
+        const auto previous = baseline.find(row.name);
+        if (previous == baseline.end()) {
+            std::cerr << "FAIL no baseline for corpus case " << row.name
+                      << "\n";
+            ++failures;
+            continue;
+        }
+        const ReportRow &base = previous->second;
+        const bool qualityOkay =
+            row.f0.rmseHz <= kThresholds.f0RmseHz &&
+            row.f0.correlation >= kThresholds.f0Correlation &&
+            row.envelope.logDistance <= kThresholds.envelopeDistance &&
+            row.envelope.mcdDb <= kThresholds.mcdDb &&
+            (!row.checkFormants ||
+             (row.formants.maxErrorHz <= kThresholds.formantErrorHz &&
+              row.formants.minContrast >= kThresholds.formantContrast));
+        const bool baselineOkay =
+            row.f0.rmseHz <= base.f0.rmseHz + kThresholds.f0RmseDrift &&
+            row.f0.correlation >=
+                base.f0.correlation - kThresholds.f0CorrelationDrift &&
+            row.envelope.logDistance <=
+                base.envelope.logDistance + kThresholds.envelopeDrift &&
+            row.envelope.mcdDb <= base.envelope.mcdDb + kThresholds.mcdDrift &&
+            (!row.checkFormants ||
+             row.formants.maxErrorHz <=
+                 base.formants.maxErrorHz + kThresholds.formantDrift);
+
+        if (!qualityOkay) {
+            std::cerr << "FAIL metric threshold exceeded for " << row.name
+                      << "\n";
+            ++failures;
+        }
+        if (!baselineOkay) {
+            std::cerr << "FAIL baseline drift for " << row.name << "\n";
+            ++failures;
         }
     }
-    return best;
 }
 
-double guardEnergy(const std::vector<float> &samples, int sampleRate,
-                   double fundamental, int harmonics, double low, double high) {
-    Peak peak = strongestHarmonic(samples, sampleRate, fundamental, harmonics,
-                                  low, high);
-    return peak.energy;
-}
-
-void verifyRate(int sampleRate, const formant::Phoneme &vowel,
-                const formant::Voice &voice) {
-    const std::vector<float> samples =
-        formant::Synthesizer(voice).render({vowel}, sampleRate);
-    CHECK(samples.size() == static_cast<size_t>(sampleRate));
-    if (samples.size() != static_cast<size_t>(sampleRate)) {
-        return;
-    }
-
-    double previousPeak = 0.0;
-    for (size_t band = 0; band < 2; ++band) {
-        const double expected = vowel.bands[band].frequency;
-        const Peak peak =
-            strongestHarmonic(samples, sampleRate, voice.pitch, voice.harmonics,
-                              expected - 300.0, expected + 300.0);
-        CHECK(peak.energy > 0.0);
-        CHECK(std::abs(peak.frequency - expected) <= 250.0);
-
-        // A real formant peak must dominate nearby off-formant harmonics.
-        // This catches a spectrum that merely happens to contain a harmonic
-        // inside the search window without any resonance shaping it.
-        const double lowerGuard = guardEnergy(
-            samples, sampleRate, voice.pitch, voice.harmonics,
-            std::max(voice.pitch, expected - 600.0), expected - 400.0);
-        const double upperGuard =
-            guardEnergy(samples, sampleRate, voice.pitch, voice.harmonics,
-                        expected + 400.0, expected + 600.0);
-        const double guard = std::max(lowerGuard, upperGuard);
-        CHECK(peak.energy > guard * 1.5);
-        if (band == 1) {
-            CHECK(peak.energy > previousPeak * 0.01);
-        }
-        previousPeak = peak.energy;
-
-        std::cout << sampleRate << " Hz F" << (band + 1) << ": expected "
-                  << expected << " Hz, peak " << peak.frequency << " Hz, "
-                  << "energy " << peak.energy << ", guard " << guard << "\n";
-    }
-}
-
-} // namespace
-
-int main() {
+void verifySampleRates() {
     const formant::Phoneme *source = formant::findPhoneme("ee");
     if (source == nullptr) {
         std::cerr << "FAIL missing test vowel 'ee'\n";
-        return 1;
+        ++failures;
+        return;
     }
     formant::Phoneme vowel = *source;
     vowel.duration = 1.0;
@@ -160,14 +302,162 @@ int main() {
     voice.release = 0.002;
     voice.gain = 1.0;
 
+    const std::array<double, 2> expected = {source->bands[0].frequency,
+                                            source->bands[1].frequency};
     for (int sampleRate : {22050, 44100, 48000, 96000, 192000}) {
-        verifyRate(sampleRate, vowel, voice);
+        const std::vector<float> samples =
+            formant::Synthesizer(voice).render({vowel}, sampleRate);
+        CHECK(samples.size() == static_cast<std::size_t>(sampleRate));
+        if (samples.size() != static_cast<std::size_t>(sampleRate)) {
+            continue;
+        }
+        const formant::F0Track target =
+            formant::expectedF0({vowel}, voice, sampleRate);
+        const double fundamental = meanVoicedF0(target, voice.pitch);
+        const auto peaks = formant::estimateFormantPeaks(
+            samples, sampleRate, fundamental, voice.harmonics, expected);
+        const formant::FormantMetrics metrics =
+            formant::compareFormants(peaks, expected);
+
+        CHECK(peaks[0].energy > 0.0);
+        CHECK(peaks[1].energy > 0.0);
+        CHECK(metrics.maxErrorHz <= kThresholds.formantErrorHz);
+        CHECK(metrics.minContrast >= kThresholds.formantContrast);
+        std::cout << sampleRate << " Hz F1 error " << number(metrics.errorHz[0])
+                  << " Hz, F2 error " << number(metrics.errorHz[1])
+                  << " Hz, contrast " << number(metrics.minContrast) << "\n";
+    }
+}
+
+// Renders a deliberately wrong voice but scores it against the intended
+// tracks. A CI job passes only when the metrics reject the regression, which
+// demonstrates the thresholds are not vacuous.
+bool regressionIsDetected() {
+    const std::vector<Case> cases = corpus();
+    if (cases.empty() || cases[0].phonemes.empty()) {
+        return false;
+    }
+    const Case &item = cases[0];
+    formant::Voice broken = item.voice;
+    broken.pitch *= 1.25;
+    broken.formantScale *= 1.30;
+
+    formant::AnalyzerOptions options;
+    const std::vector<float> samples =
+        formant::Synthesizer(broken).render(item.phonemes, item.sampleRate);
+    const formant::F0Metrics f0 = formant::compareF0(
+        formant::estimateF0(samples, item.sampleRate, options),
+        formant::expectedF0(item.phonemes, item.voice, item.sampleRate,
+                            options));
+    const formant::EnvelopeMetrics envelope = formant::compareEnvelope(
+        formant::estimateEnvelope(samples, item.sampleRate, options),
+        formant::expectedEnvelope(item.phonemes, item.voice, item.sampleRate,
+                                  options));
+    const bool pitchDetected = f0.rmseHz > kThresholds.f0RmseHz ||
+                               f0.correlation < kThresholds.f0Correlation;
+    const bool spectralDetected =
+        envelope.mcdDb > kThresholds.mcdDb ||
+        envelope.logDistance > kThresholds.envelopeDistance;
+    std::cout << "deliberate regression: F0 RMSE " << number(f0.rmseHz)
+              << " Hz, correlation " << number(f0.correlation) << ", MCD "
+              << number(envelope.mcdDb) << " dB, envelope "
+              << number(envelope.logDistance) << "\n";
+    return pitchDetected && spectralDetected;
+}
+
+void printHelp() {
+    std::cout << "usage: formant_verification [options]\n"
+                 "  --baseline PATH      compare metrics with PATH\n"
+                 "  --report PATH        write a metric report\n"
+                 "  --update-baseline P  write new baselines and exit\n"
+                 "  --regression-check   verify a deliberate regression fails\n"
+                 "  --help               show this text\n";
+}
+
+} // namespace
+
+int main(int argc, char **argv) {
+    std::string baselinePath = FORMANT_METRICS_BASELINE;
+    std::string reportPath;
+    std::string updatePath;
+    bool regressionCheck = false;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string argument = argv[i];
+        auto value = [&](const char *flag) -> std::string {
+            if (i + 1 >= argc) {
+                std::cerr << "missing value for " << flag << "\n";
+                std::exit(2);
+            }
+            return argv[++i];
+        };
+        if (argument == "--baseline") {
+            baselinePath = value("--baseline");
+        } else if (argument == "--report") {
+            reportPath = value("--report");
+        } else if (argument == "--update-baseline") {
+            updatePath = value("--update-baseline");
+        } else if (argument == "--regression-check") {
+            regressionCheck = true;
+        } else if (argument == "--help") {
+            printHelp();
+            return 0;
+        } else {
+            std::cerr << "unknown option: " << argument << "\n";
+            printHelp();
+            return 2;
+        }
+    }
+
+    if (regressionCheck) {
+        if (!regressionIsDetected()) {
+            std::cerr
+                << "FAIL deliberate synthesis regression was not detected\n";
+            return 1;
+        }
+        std::cout << "deliberate regression detected by objective metrics\n";
+        return 0;
+    }
+
+    verifySampleRates();
+    const std::vector<Case> cases = corpus();
+    std::vector<ReportRow> rows;
+    rows.reserve(cases.size());
+    for (const Case &item : cases) {
+        rows.push_back(analyze(item));
+        const ReportRow &row = rows.back();
+        std::cout << row.name << ": F0 RMSE " << number(row.f0.rmseHz)
+                  << " Hz, correlation " << number(row.f0.correlation)
+                  << ", envelope " << number(row.envelope.logDistance)
+                  << ", MCD " << number(row.envelope.mcdDb) << " dB\n";
+    }
+
+    if (!updatePath.empty()) {
+        std::ofstream output(updatePath);
+        if (!output) {
+            std::cerr << "FAIL cannot write baseline: " << updatePath << "\n";
+            return 1;
+        }
+        writeMetrics(output, rows, cases);
+        std::cout << "wrote " << rows.size() << " baseline rows to "
+                  << updatePath << "\n";
+    } else {
+        verifyMetrics(rows, baselinePath);
+    }
+
+    if (!reportPath.empty()) {
+        std::ofstream output(reportPath);
+        if (!output) {
+            std::cerr << "FAIL cannot write report: " << reportPath << "\n";
+            return 1;
+        }
+        writeMetrics(output, rows, cases);
     }
 
     if (failures != 0) {
-        std::cerr << failures << " formant verification check(s) failed\n";
+        std::cerr << failures << " verification check(s) failed\n";
         return 1;
     }
-    std::cout << "formant verification passed at five sample rates\n";
+    std::cout << "formant and objective-metric verification passed\n";
     return 0;
 }
