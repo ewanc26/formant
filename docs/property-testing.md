@@ -59,8 +59,9 @@ validation tests.
 
 `tests/checksum_corpus.txt` stores a SHA-256 for one canonical render of every
 input kind: text, bracketed phonemes, IPA, X-SAMPA, gibberish, language tags,
-conlang files, voice files, intonation, alternate formats, sample rates and
-dither. The CTest hook renders each case and diffs the digest. A mismatch fails
+conlang files, voice files, intonation, SSML, prosody files, user lexicons,
+alternate formats, sample rates and dither. The CTest hook renders each case and
+diffs the digest. A mismatch fails
 the build the same way a benchmark checksum does, so an unintended acoustic
 change is caught even when all the unit tests still pass.
 
