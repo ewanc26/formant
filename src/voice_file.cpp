@@ -103,6 +103,8 @@ std::vector<VoiceParameter> voiceParameters() {
          "vibrato depth in cents"},
         {"breathiness", 0.0, 1.0, 0.0, 0.15, false,
          "amount of deterministic sine-noise under voiced sounds"},
+        {"nasality", 0.0, 1.0, 0.0, 0.35, false,
+         "pervasive nasal anti-formant depth applied to every phoneme"},
         {"harmonics", 0, 512, 12, 80, true,
          "number of sine partials in the glottal source"},
         {"attack", 0.0, 1.0, 0.002, 0.05, false,
@@ -139,6 +141,8 @@ void setVoiceParameter(Voice &voice, std::string_view name, double value) {
             voice.vibratoDepth = value;
         else if (name == "breathiness")
             voice.breathiness = value;
+        else if (name == "nasality")
+            voice.nasality = value;
         else if (name == "harmonics")
             voice.harmonics = static_cast<int>(value);
         else if (name == "attack")
@@ -168,6 +172,8 @@ double voiceParameter(const Voice &voice, std::string_view name) {
         return voice.vibratoDepth;
     if (name == "breathiness")
         return voice.breathiness;
+    if (name == "nasality")
+        return voice.nasality;
     if (name == "harmonics")
         return voice.harmonics;
     if (name == "attack")

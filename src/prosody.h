@@ -94,6 +94,13 @@ inline FormantBand blendBand(const FormantBand &from, const FormantBand &to,
             from.bandwidth + (to.bandwidth - from.bandwidth) * mix};
 }
 
+inline SpectralZero blendZero(const SpectralZero &from, const SpectralZero &to,
+                              double mix) {
+    return {from.frequency + (to.frequency - from.frequency) * mix,
+            from.bandwidth + (to.bandwidth - from.bandwidth) * mix,
+            from.depth + (to.depth - from.depth) * mix};
+}
+
 // Four sine-shaped resonances, each with a Lorentzian response. This is the
 // only "filter" in the engine: no IIR filters, noise buffers or samples.
 inline double formantResponse(double frequency,
@@ -122,10 +129,18 @@ struct FormantEnvelope {
     std::array<double, 4> width{};
     std::array<double, 4> amplitude{};
     std::array<bool, 4> active{};
+
+    // Two table-driven anti-formants plus one voice-wide nasality notch.
+    std::array<double, 3> zeroCentre{};
+    std::array<double, 3> zeroWidth{};
+    std::array<double, 3> zeroDepth{};
+    std::array<bool, 3> zeroActive{};
 };
 
 inline FormantEnvelope
-makeFormantEnvelope(const std::array<FormantBand, 4> &bands, double scale) {
+makeFormantEnvelope(const std::array<FormantBand, 4> &bands,
+                    const std::array<SpectralZero, 2> &zeros, double scale,
+                    double nasality = 0.0) {
     FormantEnvelope envelope;
     const double minimumScale = std::max(0.7, scale);
     for (std::size_t i = 0; i < bands.size(); ++i) {
@@ -135,6 +150,20 @@ makeFormantEnvelope(const std::array<FormantBand, 4> &bands, double scale) {
         envelope.active[i] =
             bands[i].amplitude > 0.0 && bands[i].frequency > 0.0;
     }
+    for (std::size_t i = 0; i < zeros.size(); ++i) {
+        envelope.zeroCentre[i] = zeros[i].frequency * scale;
+        envelope.zeroWidth[i] = zeros[i].bandwidth * minimumScale;
+        envelope.zeroDepth[i] = std::clamp(zeros[i].depth, 0.0, 0.95);
+        envelope.zeroActive[i] = envelope.zeroDepth[i] > 0.0 &&
+                                 zeros[i].frequency > 0.0 &&
+                                 zeros[i].bandwidth > 0.0;
+    }
+    // A pervasive nasal twang is one extra fixed zero, independent of the
+    // phoneme's own articulatory zeros.
+    envelope.zeroCentre[2] = 1000.0 * scale;
+    envelope.zeroWidth[2] = 300.0 * minimumScale;
+    envelope.zeroDepth[2] = std::clamp(0.45 * nasality, 0.0, 0.95);
+    envelope.zeroActive[2] = envelope.zeroDepth[2] > 0.0;
     return envelope;
 }
 
@@ -149,7 +178,24 @@ inline double formantResponse(double frequency,
             (frequency - envelope.centre[i]) / envelope.width[i];
         total += envelope.amplitude[i] / (1.0 + distance * distance);
     }
-    return std::min(total, 2.0);
+    total = std::min(total, 2.0);
+
+    // Anti-formants are the mirror of the resonances: a Lorentzian notch
+    // subtracts a fraction of the envelope at its centre. With no active zero
+    // the original value is returned untouched, keeping oral phonemes
+    // bit-for-bit identical to previous releases.
+    bool notched = false;
+    double notch = 1.0;
+    for (std::size_t i = 0; i < envelope.zeroCentre.size(); ++i) {
+        if (!envelope.zeroActive[i]) {
+            continue;
+        }
+        const double distance =
+            (frequency - envelope.zeroCentre[i]) / envelope.zeroWidth[i];
+        notch *= 1.0 - envelope.zeroDepth[i] / (1.0 + distance * distance);
+        notched = true;
+    }
+    return notched ? total * notch : total;
 }
 
 inline int transitionSamples(const Voice &voice, int sampleRate) {
@@ -188,6 +234,29 @@ bandsAt(const Phoneme &phoneme, const std::array<FormantBand, 4> &from,
         int sampleRate) {
     return bandsAtWithTransition(phoneme, from, sample, segmentStart,
                                  segmentEnd,
+                                 transitionSamples(voice, sampleRate));
+}
+
+// Anti-formants crossfade with the same 35 ms window as the formants, so a
+// nasal consonant entering a vowel does not switch its notch on at full depth.
+inline std::array<SpectralZero, 2>
+zerosAtWithTransition(const Phoneme &phoneme,
+                      const std::array<SpectralZero, 2> &from, int sample,
+                      int segmentStart, int transition) {
+    const double elapsed = static_cast<double>(sample - segmentStart);
+    const double mix =
+        smooth(elapsed / static_cast<double>(std::max(1, transition)));
+    std::array<SpectralZero, 2> zeros{};
+    for (std::size_t i = 0; i < zeros.size(); ++i) {
+        zeros[i] = blendZero(from[i], phoneme.zeros[i], mix);
+    }
+    return zeros;
+}
+
+inline std::array<SpectralZero, 2>
+zerosAt(const Phoneme &phoneme, const std::array<SpectralZero, 2> &from,
+        int sample, int segmentStart, const Voice &voice, int sampleRate) {
+    return zerosAtWithTransition(phoneme, from, sample, segmentStart,
                                  transitionSamples(voice, sampleRate));
 }
 

@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-23
+
+### Added
+
+- Nasal anti-formant (spectral zero) support (#100). `Phoneme` now carries two optional `SpectralZero` bands beside its four formants. The synthesiser applies each zero as a Lorentzian amplitude notch in the same harmonic weighting function, keeping the output a sum of sines, and the objective-metrics oracle interpolates and evaluates the identical zeros so target and signal cannot drift. The built-in `m`, `n` and `ng`, every IPA nasal stop, and the IPA nasalization diacritic (U+0303) now supply place-dependent zeros, crossfaded with the formant transition. A new `Voice::nasality` field (0–1), `--nasality`, and a `nasality` voice-file parameter add a pervasive nasal twang. Oral phonemes carry zero-depth zeros and render bit-for-bit unchanged; fixtures containing nasals were updated deliberately.
+
 ## [0.27.0] - 2026-11-23
 
 ### Added

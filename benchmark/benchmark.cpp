@@ -19,17 +19,17 @@ namespace {
 const std::map<std::string, std::string> &expectedChecksums() {
     static const std::map<std::string, std::string> values = {
         {"neutral",
-         "f8162e87e86c7520a9c7d8663110011289d3c2238a15af78bb0964b0029d5af3"},
+         "244cddba18ddfc22ccb5480ccfcca9c5ef4d783b2fb697d1371256ef0e32171c"},
         {"alto",
-         "5f6cb15b1a334cef6038d4f3d25573da31d322eb5bc4828b2cdcf651b60ba190"},
+         "f58c49311a4d54de1f8b30abc732ee6abc500e1439b0d1b110d459ecb2f1b918"},
         {"bass",
-         "c7289efa154a038a2729cba4a3cbe3139b313318bcac34002d0ee4489828028e"},
+         "2dd1536987832268844608ac71ab35f7df3e204ce5612c5332d8dae4205a45ef"},
         {"child",
-         "9dee0f51802d490bb62df844da93fd2d63bdeaa4397e3b7aa07e44518589929e"},
+         "7f6ee3fc98a2c5d0fb2fbf6af46ea5346a91d01986b088267ccd0a314a393852"},
         {"robot",
-         "6cc88ae19b59919455bd2ed261829f8d9ee6ce2fec6a7dcfe60b60b2220ee753"},
+         "5b8ada8640c69833153f24c81acd397edc320b1f452d67ee813233a670b5166d"},
         {"whisper",
-         "4adda038c58ae26cd777f7583017f294bf65c7fa9d52b9b64e6b919f3b8d55d9"},
+         "0016c9fda086e8f97a17a42520098a8ac72ce110c9249b7cff1617b199a4efb5"},
     };
     return values;
 }

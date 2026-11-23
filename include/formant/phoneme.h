@@ -27,6 +27,18 @@ struct FormantBand {
     bool operator==(const FormantBand &) const = default;
 };
 
+// A spectral zero (anti-formant): the mirror of a formant peak. `depth` is the
+// fraction of the envelope removed at the centre, from 0 (no notch) to 1 (a
+// total null). Nasal segments use two: a place-dependent low zero and a
+// weaker upper zero.
+struct SpectralZero {
+    double frequency = 0.0;
+    double bandwidth = 200.0;
+    double depth = 0.0;
+
+    bool operator==(const SpectralZero &) const = default;
+};
+
 struct Phoneme {
     std::string name;
     PhonemeKind kind = PhonemeKind::Silence;
@@ -53,6 +65,11 @@ struct Phoneme {
     // Empty by default, so ordinary renders are byte-for-byte unchanged.
     std::optional<double> f0StartHz;
     std::optional<double> f0EndHz;
+
+    // Optional anti-formants, kept last so existing positional aggregate
+    // initialisers keep their meaning. Zero-depth by default, so every oral
+    // phoneme and every caller-built Phoneme renders exactly as before.
+    std::array<SpectralZero, 2> zeros{};
 
     bool operator==(const Phoneme &) const = default;
 };

@@ -19,6 +19,7 @@ struct Segment {
     int start = 0;
     int end = 0;
     std::array<FormantBand, 4> from{};
+    std::array<SpectralZero, 2> fromZeros{};
     bool wasVoiced = false;
     double wasNoise = 0.0;
 };
@@ -91,6 +92,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
     std::vector<Segment> segments;
     segments.reserve(phonemes.size());
     std::array<FormantBand, 4> previousBands = detail::zeroBands();
+    std::array<SpectralZero, 2> previousZeros{};
     bool previousVoiced = false;
     double previousNoise = 0.0;
 
@@ -101,6 +103,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
         segment.start = spans[i].start;
         segment.end = spans[i].end;
         segment.from = previousBands;
+        segment.fromZeros = previousZeros;
         segment.wasVoiced = previousVoiced;
         segment.wasNoise = previousNoise;
         segments.push_back(segment);
@@ -108,6 +111,7 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
         // A diphthong finishes at endBands, so the next segment must crossfade
         // from that final target, not from its initial bands.
         previousBands = phoneme.hasEndBands ? phoneme.endBands : phoneme.bands;
+        previousZeros = phoneme.zeros;
         previousVoiced = phoneme.voiced;
         previousNoise = phoneme.kind == PhonemeKind::Silence
                             ? 0.0
@@ -157,8 +161,12 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                 detail::bandsAtWithTransition(phoneme, segment.from, s,
                                               segment.start, segment.end,
                                               crossfadeSamples);
+            const std::array<SpectralZero, 2> zeros =
+                detail::zerosAtWithTransition(phoneme, segment.fromZeros, s,
+                                              segment.start, crossfadeSamples);
             const detail::FormantEnvelope formants =
-                detail::makeFormantEnvelope(bands, voice.formantScale);
+                detail::makeFormantEnvelope(bands, zeros, voice.formantScale,
+                                            voice.nasality);
 
             const double voicedMix =
                 segment.wasVoiced + (voicedTarget - segment.wasVoiced) * mix;

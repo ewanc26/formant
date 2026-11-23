@@ -100,6 +100,7 @@ Options:
   --vibrato-rate HZ       Vibrato speed in Hz
   --vibrato-depth CENTS   Vibrato depth in cents
   --breathiness 0..1      Sine-noise mixed into voiced sounds
+  --nasality 0..1         Pervasive nasal anti-formant depth
   --harmonics N           Number of sine partials in the glottal source
   --gain FACTOR           Output gain before normalisation
   --attack SECONDS        Phoneme attack time
@@ -353,19 +354,13 @@ Options parseOptions(int argc, char **argv) {
     Voice baseVoice = options.voice;
     std::vector<std::function<void(Voice &)>> overrides;
     const std::string doubleFlags[] = {
-        "--pitch",
-        "--rate",
-        "--formant-scale",
-        "--vibrato-rate",
-        "--vibrato-depth",
-        "--breathiness",
-        "--gain",
-        "--attack",
-        "--release",
-        "--declination",
-        "--pitch-shift",
-        "--formant-ratio",
-        "--vocal-tract-scale",
+        "--pitch",         "--rate",
+        "--formant-scale", "--vibrato-rate",
+        "--vibrato-depth", "--breathiness",
+        "--nasality",      "--gain",
+        "--attack",        "--release",
+        "--declination",   "--pitch-shift",
+        "--formant-ratio", "--vocal-tract-scale",
     };
 
     for (int i = 1; i < argc; ++i) {
@@ -484,6 +479,9 @@ Options parseOptions(int argc, char **argv) {
             else if (flag == "--breathiness")
                 overrides.push_back(
                     [parsed](Voice &v) { v.breathiness = parsed; });
+            else if (flag == "--nasality")
+                overrides.push_back(
+                    [parsed](Voice &v) { v.nasality = parsed; });
             else if (flag == "--gain")
                 overrides.push_back([parsed](Voice &v) { v.gain = parsed; });
             else if (flag == "--attack")

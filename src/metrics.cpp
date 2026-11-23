@@ -198,6 +198,7 @@ struct PlannedSegment {
     int start = 0;
     int end = 0;
     std::array<FormantBand, 4> from{};
+    std::array<SpectralZero, 2> fromZeros{};
 };
 
 std::vector<PlannedSegment> planSegments(const std::vector<Phoneme> &phonemes,
@@ -207,12 +208,14 @@ std::vector<PlannedSegment> planSegments(const std::vector<Phoneme> &phonemes,
     std::vector<PlannedSegment> segments;
     segments.reserve(phonemes.size());
     std::array<FormantBand, 4> previous = detail::zeroBands();
+    std::array<SpectralZero, 2> previousZeros{};
 
     for (std::size_t i = 0; i < phonemes.size(); ++i) {
-        segments.push_back(
-            {&phonemes[i], spans[i].start, spans[i].end, previous});
+        segments.push_back({&phonemes[i], spans[i].start, spans[i].end,
+                            previous, previousZeros});
         previous =
             phonemes[i].hasEndBands ? phonemes[i].endBands : phonemes[i].bands;
+        previousZeros = phonemes[i].zeros;
     }
     return segments;
 }
@@ -560,6 +563,12 @@ EnvelopeTrack expectedEnvelope(const std::vector<Phoneme> &phonemes,
             const std::array<FormantBand, 4> bands = detail::bandsAt(
                 *segment->phoneme, segment->from, centre, segment->start,
                 segment->end, voice, sampleRate);
+            const std::array<SpectralZero, 2> zeros =
+                detail::zerosAt(*segment->phoneme, segment->fromZeros, centre,
+                                segment->start, voice, sampleRate);
+            const detail::FormantEnvelope envelope =
+                detail::makeFormantEnvelope(bands, zeros, voice.formantScale,
+                                            voice.nasality);
 
             std::vector<double> sourcePower;
             sourcePower.reserve(harmonics.size());
@@ -579,8 +588,7 @@ EnvelopeTrack expectedEnvelope(const std::vector<Phoneme> &phonemes,
                                     ? detail::capGain(harmonicNumber)
                                     : 1.0;
                     }
-                    amplitude = detail::formantResponse(frequency, bands,
-                                                        voice.formantScale) /
+                    amplitude = detail::formantResponse(frequency, envelope) /
                                 static_cast<double>(harmonicNumber) * gain *
                                 segment->phoneme->amplitude;
                 }

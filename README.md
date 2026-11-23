@@ -32,7 +32,7 @@ language front end (English, Spanish) or articulatory IPA mapping
                           interpolated PCM → 16-bit WAV
 ```
 
-A vowel is four resonances of the vocal tract. The glottal source is a stack of sine waves at multiples of the fundamental frequency; each harmonic is weighted by how close it sits to a formant. Fricatives and stops use a fixed set of sine partials with pseudo-random phases instead of white noise, so every sound in the output is still a sine wave. Formant targets are blended across phoneme boundaries to avoid clicks and to give coarticulation.
+A vowel is four resonances of the vocal tract. The glottal source is a stack of sine waves at multiples of the fundamental frequency; each harmonic is weighted by how close it sits to a formant. Fricatives and stops use a fixed set of sine partials with pseudo-random phases instead of white noise, so every sound in the output is still a sine wave. Formant targets are blended across phoneme boundaries to avoid clicks and to give coarticulation. Nasal sounds add spectral zeros (anti-formants) to the same harmonic weighting, giving the notches a peak-only model cannot produce.
 
 The result is deliberately synthetic: it sounds like a small speaking machine, not a human. The trade is that the whole engine is a few thousand lines of dependency-free C++ and runs anywhere you can compile it.
 
@@ -206,7 +206,9 @@ render byte-identically to their compiled counterparts.
 `--list-voice-parameters` prints the same table as data, `--dump-voice NAME`
 exports a preset as a byte-identical round-trippable file, `--package-voice`
 adds attribution and a checksum for sharing, and `--inspect-voice` verifies a
-received package without rendering.
+received package without rendering. Nasal phonemes carry their anti-formant
+data in the phoneme tables; `voice.nasality` (or `--nasality`) adds a pervasive
+nasal twang on top.
 
 ### Languages
 
@@ -308,6 +310,7 @@ voice.pitch = 200.0;          // Hz
 voice.formantScale = 1.15;    // longer vocal tract
 voice.vibratoDepth = 10.0;    // cents
 voice.breathiness = 0.08;     // sine-noise under voiced sounds
+voice.nasality = 0.15;        // pervasive nasal anti-formant, 0..1
 voice.taperCeiling = true;    // fade partials before Nyquist (default)
 
 // Parameter-domain transposition: no audio post-processing.
@@ -369,6 +372,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 - Only English and Spanish text front ends are built in. The IPA and X-SAMPA front ends remain language-independent.
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
+- Nasality is an acoustic approximation: nasal stops and nasalized vowels get two place-dependent spectral zeros rather than a solved vocal-tract area function, and `voice.nasality` is a single fixed notch.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
