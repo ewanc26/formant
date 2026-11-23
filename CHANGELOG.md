@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-11-23
+
 ### Added
 
 - A shared sine kernel for the render hot path (#107). The per-harmonic and
