@@ -1308,4 +1308,175 @@ std::vector<Phoneme> phonemize(std::string_view text,
     return conlangPhonemes(text, language, trace);
 }
 
+namespace {
+
+// A text token is either a word (lower-cased for matching) or a punctuation
+// pause. Non-ASCII code points are kept verbatim so accented words survive.
+struct LexiconToken {
+    bool isWord = false;
+    std::string word;
+    char pause = 0;
+};
+
+std::vector<LexiconToken> tokenizeForLexicon(std::string_view text) {
+    std::vector<LexiconToken> tokens;
+    std::string word;
+    size_t pos = 0;
+
+    const auto flush = [&]() {
+        if (word.empty()) {
+            return;
+        }
+        LexiconToken token;
+        token.isWord = true;
+        token.word = asciiLower(word);
+        tokens.push_back(std::move(token));
+        word.clear();
+    };
+
+    while (pos < text.size()) {
+        const size_t start = pos;
+        uint32_t cp = 0;
+        if (!decodeUtf8(text, pos, cp)) {
+            throw std::invalid_argument("invalid UTF-8 in text");
+        }
+        const bool asciiWord =
+            cp < 0x80 && std::isalnum(static_cast<unsigned char>(cp)) != 0;
+        if (asciiWord || cp >= 0x80) {
+            word.append(text.data() + start, pos - start);
+            continue;
+        }
+        // An apostrophe between letters belongs to the word (don't, it's).
+        if (cp == '\'' && !word.empty() && pos < text.size()) {
+            word.push_back('\'');
+            continue;
+        }
+        flush();
+        if (cp == ',' || cp == '?' || cp == '!' || cp == '.' || cp == ';' ||
+            cp == ':') {
+            LexiconToken token;
+            token.pause = static_cast<char>(cp);
+            tokens.push_back(std::move(token));
+        }
+    }
+    flush();
+    return tokens;
+}
+
+template <typename Fallback>
+std::vector<Phoneme>
+phonemizeWithLexicon(std::string_view text, const PronunciationLexicon &lexicon,
+                     Fallback fallback, std::vector<std::string> *trace) {
+    const std::vector<LexiconToken> tokens = tokenizeForLexicon(text);
+
+    // Context matching uses the orthographic words, so punctuation between
+    // them is ignored and case never matters.
+    std::vector<std::string> words;
+    for (const LexiconToken &token : tokens) {
+        if (token.isWord) {
+            words.push_back(token.word);
+        }
+    }
+
+    std::vector<Phoneme> result;
+    size_t wordIndex = 0;
+    for (const LexiconToken &token : tokens) {
+        if (!token.isWord) {
+            const char *name = token.pause == ','   ? ","
+                               : token.pause == '?' ? "?"
+                               : token.pause == '!' ? "!"
+                                                    : ".";
+            if (const Phoneme *pause = findPhoneme(name)) {
+                result.push_back(*pause);
+            }
+            continue;
+        }
+
+        std::vector<Phoneme> mapped;
+        bool matched = false;
+        bool fromHomograph = false;
+        const std::string *before =
+            wordIndex > 0 ? &words[wordIndex - 1] : nullptr;
+        const std::string *after =
+            wordIndex + 1 < words.size() ? &words[wordIndex + 1] : nullptr;
+
+        // Homograph rules are tried in file order before exact entries, and
+        // the first matching rule wins.
+        for (const HomographRule &rule : lexicon.homographs) {
+            if (rule.spelling != token.word) {
+                continue;
+            }
+            if (!rule.before.empty() &&
+                (before == nullptr || *before != rule.before)) {
+                continue;
+            }
+            if (!rule.after.empty() &&
+                (after == nullptr || *after != rule.after)) {
+                continue;
+            }
+            mapped = parseIpa(rule.ipa);
+            matched = true;
+            fromHomograph = true;
+            break;
+        }
+        if (!matched) {
+            for (const PronunciationEntry &entry : lexicon.words) {
+                if (entry.spelling == token.word) {
+                    mapped = parseIpa(entry.ipa);
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if (!matched) {
+            mapped = fallback(token.word);
+        }
+        if (trace != nullptr) {
+            trace->push_back(
+                std::to_string(wordIndex + 1) + ":" + token.word + ": " +
+                (fromHomograph ? "homograph"
+                               : (matched ? "lexicon" : "fallback")));
+        }
+        result.insert(result.end(), mapped.begin(), mapped.end());
+
+        // Word gaps match the built-in front ends: one after every word, with
+        // only the trailing one removed at the end of the utterance.
+        if (const Phoneme *gap = findPhoneme("_")) {
+            Phoneme separator = *gap;
+            separator.name = "|";
+            separator.duration = 0.035;
+            result.push_back(separator);
+        }
+        ++wordIndex;
+    }
+
+    while (!result.empty() && result.back().name == "|") {
+        result.pop_back();
+    }
+    return result;
+}
+
+} // namespace
+
+std::vector<Phoneme> phonemize(std::string_view text, Language language,
+                               const PronunciationLexicon &lexicon,
+                               std::vector<std::string> *trace) {
+    return phonemizeWithLexicon(
+        text, lexicon,
+        [language](std::string_view word) { return phonemize(word, language); },
+        trace);
+}
+
+std::vector<Phoneme> phonemize(std::string_view text,
+                               const LanguageDefinition &language,
+                               const PronunciationLexicon &lexicon,
+                               std::vector<std::string> *trace) {
+    return phonemizeWithLexicon(
+        text, lexicon,
+        [&language, trace](std::string_view word) {
+            return phonemize(word, language, trace);
+        },
+        trace);
+}
+
 } // namespace formant

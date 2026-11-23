@@ -60,10 +60,11 @@ std::vector<Phoneme> phonemize(std::string_view text,
 // its word lexicon while its grapheme and phoneme rules still apply to
 // unmatched words.
 std::vector<Phoneme> phonemize(std::string_view text, Language language,
-                               const PronunciationLexicon &lexicon);
-std::vector<Phoneme> phonemize(
-    std::string_view text, const LanguageDefinition &language,
-    const PronunciationLexicon &lexicon,
-    std::vector<std::string> *trace = nullptr);
+                               const PronunciationLexicon &lexicon,
+                               std::vector<std::string> *trace = nullptr);
+std::vector<Phoneme> phonemize(std::string_view text,
+                               const LanguageDefinition &language,
+                               const PronunciationLexicon &lexicon,
+                               std::vector<std::string> *trace = nullptr);
 
 } // namespace formant

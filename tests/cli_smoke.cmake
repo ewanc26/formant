@@ -394,8 +394,49 @@ execute_process(
 if(trace_mode_result EQUAL 0)
     message(FATAL_ERROR "formant accepted --trace without --lang-file")
 endif()
-if(NOT trace_mode_error MATCHES "--trace only applies with --lang-file")
+if(NOT trace_mode_error MATCHES "--trace only applies with --lang-file or --lexicon")
     message(FATAL_ERROR "unexpected --trace mode message: ${trace_mode_error}")
+endif()
+
+# A user lexicon supplies pronunciations as data and reports its source layer.
+set(FORMANT_LEXICON_FILE "${CMAKE_CURRENT_BINARY_DIR}/smoke.lex")
+file(WRITE "${FORMANT_LEXICON_FILE}" [=[# names
+ word Ewan juːən
+ homograph lead led after=us
+]=])
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Ewan lead us" --lexicon
+        "${FORMANT_LEXICON_FILE}" --trace --sample-rate 22050
+        --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE lexicon_result
+    OUTPUT_VARIABLE lexicon_output
+    ERROR_VARIABLE lexicon_error
+)
+if(NOT lexicon_result EQUAL 0)
+    message(FATAL_ERROR "formant lexicon render failed: ${lexicon_error}")
+endif()
+if(NOT lexicon_output MATCHES "trace: 1:ewan: lexicon")
+    message(FATAL_ERROR "unexpected lexicon trace: ${lexicon_output}")
+endif()
+if(NOT lexicon_output MATCHES "trace: 2:lead: homograph")
+    message(FATAL_ERROR "unexpected homograph trace: ${lexicon_output}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" lexicon_size)
+if(lexicon_size LESS 44)
+    message(FATAL_ERROR "lexicon WAV output is too short: ${lexicon_size} bytes")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --lexicon "${FORMANT_LEXICON_FILE}"
+        --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE lexicon_mode_result
+    ERROR_VARIABLE lexicon_mode_error
+)
+if(lexicon_mode_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted --lexicon with --ipa")
+endif()
+if(NOT lexicon_mode_error MATCHES "--lexicon only applies to text input")
+    message(FATAL_ERROR "unexpected --lexicon mode message: ${lexicon_mode_error}")
 endif()
 
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

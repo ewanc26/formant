@@ -78,6 +78,9 @@ build/formant --lang es --text "Hola, mundo." --output hola.wav
 # Speak a user-defined conlang from a language definition file
 build/formant --lang-file examples/velta.lang --text "Velta shael." --output velta.wav
 
+# Apply a user pronunciation lexicon (names and homographs as data)
+build/formant --text "Ewan lead us" --lexicon names.lex --trace --output names.wav
+
 # Read text from stdin
 echo "Are you there?" | build/formant --stdin --output question.wav
 
@@ -144,6 +147,24 @@ const auto phonemes = formant::phonemize("Velta shael.", velta);
 Rewrite rules use SCA-style `pattern > replacement / environment` bodies, class sets for vowels, consonants or arbitrary categories, `#` word edges, and `0` for deletion. Grapheme rules run before lookup; phoneme rules run after mapping and before realization overrides. `--trace` reports every application.
 
 See [docs/language-files.md](docs/language-files.md) for the grammar, rule matching, trace output and override semantics. [`examples/velta.lang`](examples/velta.lang) is a complete example.
+
+#### User lexicons
+
+A lexicon file adds exact pronunciation entries and context-sensitive homograph rules on top of any text front end. It composes with `--lang` and `--lang-file`; `--trace` reports whether each word came from a homograph rule, an exact entry or the language fallback.
+
+```sh
+build/formant --text "Ewan lead us" --lexicon names.lex --output names.wav
+build/formant --text "Ewan" --lang es --lexicon names.lex --trace --output names.wav
+```
+
+```cpp
+const auto lex = formant::parsePronunciationLexicon(source);
+std::vector<std::string> trace;
+const auto phonemes =
+    formant::phonemize("Ewan lead us", formant::Language::English, lex, &trace);
+```
+
+See [docs/lexicons.md](docs/lexicons.md) for the file format, layer precedence, validation trace and documented limits.
 
 ### Customisation
 

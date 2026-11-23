@@ -6,6 +6,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "formant/formant.h"
@@ -29,6 +30,16 @@ std::vector<std::string> names(const std::vector<formant::Phoneme> &phonemes) {
         result.push_back(phoneme.name);
     }
     return result;
+}
+
+// The first word of a phrase must match the given IPA, before the word gap
+// and the remaining front-end fallback words.
+bool startsWithIpa(const std::vector<formant::Phoneme> &actual,
+                   std::string_view ipa) {
+    const std::vector<std::string> expected = names(formant::parseIpa(ipa));
+    const std::vector<std::string> got = names(actual);
+    return got.size() >= expected.size() &&
+           std::equal(expected.begin(), expected.end(), got.begin());
 }
 
 bool contains(const std::vector<std::string> &items,
@@ -132,8 +143,7 @@ int main() {
               std::vector<std::string>({"d", "o", "n", "t"}));
         CHECK(names(phonemize("it's")) ==
               std::vector<std::string>({"i", "t", "s"}));
-        CHECK(names(phonemize("I'm")) ==
-              std::vector<std::string>({"ay", "m"}));
+        CHECK(names(phonemize("I'm")) == std::vector<std::string>({"ay", "m"}));
         CHECK(names(phonemize("we're")) ==
               std::vector<std::string>({"w", "ee", "r"}));
         CHECK(names(phonemize("can't")) ==
@@ -597,8 +607,7 @@ int main() {
     CHECK(contains(names(phonemize("hymnal")), "n"));
 
     // Silent h and w in a small closed set of common words.
-    CHECK(names(phonemize("hour")) ==
-          std::vector<std::string>({"ow", "er"}));
+    CHECK(names(phonemize("hour")) == std::vector<std::string>({"ow", "er"}));
     CHECK(names(phonemize("honest")) ==
           std::vector<std::string>({"o", "n", "i", "s", "t"}));
     CHECK(names(phonemize("sword")) ==
@@ -1467,6 +1476,98 @@ int main() {
               .render(phonemize("velta", velta), 8000) ==
           Synthesizer(voicePreset("neutral"))
               .render(phonemize("velta", velta), 8000));
+
+    // User pronunciation lexicons layer exact words and context-sensitive
+    // homograph rules ahead of the selected language front end.
+    {
+        const PronunciationLexicon lex =
+            parsePronunciationLexicon("# a comment\n"
+                                      "word Ewan juːən\n"
+                                      "word ZEELAND ˈziːlənt\n"
+                                      "homograph lead led after=us\n"
+                                      "homograph live laɪv after=the\n");
+        CHECK(lex.words.size() == 2);
+        CHECK(lex.homographs.size() == 2);
+        // Exact entries are case-insensitive and parsed through universal IPA.
+        CHECK(names(phonemize("Ewan", Language::English, lex)) ==
+              names(parseIpa("juːən")));
+        CHECK(names(phonemize("EWAN", Language::English, lex)) ==
+              names(parseIpa("juːən")));
+        // Homograph context is ignored when it does not match, so the word
+        // falls back to the English front end.
+        CHECK(
+            startsWithIpa(phonemize("lead us", Language::English, lex), "led"));
+        CHECK(names(phonemize("the lead", Language::English, lex)) ==
+              names(phonemize("the lead", Language::English)));
+        CHECK(startsWithIpa(phonemize("live the", Language::English, lex),
+                            "laɪv"));
+        // Punctuation survives the layer, and unmatched words use the front
+        // end.
+        const auto phrase =
+            phonemize("Ewan, visited Zeeland!", Language::English, lex);
+        CHECK(contains(names(phrase), ","));
+        CHECK(phrase.back().name == "!");
+        CHECK(contains(names(phrase), "v"));
+        // Determinism: identical text and lexicon render byte-identically.
+        CHECK(Synthesizer(voicePreset("neutral"))
+                  .render(phonemize("Ewan lead us", Language::English, lex),
+                          8000) ==
+              Synthesizer(voicePreset("neutral"))
+                  .render(phonemize("Ewan lead us", Language::English, lex),
+                          8000));
+        // Validation trace reports the source layer per word.
+        std::vector<std::string> trace;
+        const auto traced =
+            phonemize("Ewan lead us", Language::English, lex, &trace);
+        CHECK(traced.size() > 0);
+        CHECK(trace.size() == 3);
+        CHECK(trace[0] == "1:ewan: lexicon");
+        CHECK(trace[1] == "2:lead: homograph");
+        CHECK(trace[2] == "3:us: fallback");
+    }
+    {
+        // A homograph rule beats an exact entry for the same spelling.
+        const PronunciationLexicon lex =
+            parsePronunciationLexicon("word read ɹɛd\n"
+                                      "homograph read ɹiːd after=a\n");
+        CHECK(
+            startsWithIpa(phonemize("read a", Language::English, lex), "ɹiːd"));
+        CHECK(
+            startsWithIpa(phonemize("read it", Language::English, lex), "ɹɛd"));
+    }
+    {
+        // Malformed lexicons report the offending line number.
+        const std::pair<std::string, std::string> bad[] = {
+            {"bogus x\n", "lexicon line 1"},
+            {"word bad not-a-symbol\n", "lexicon line 1"},
+            {"\n\nword\n", "lexicon line 3"},
+            {"homograph read ɹɛd bogus=x\n", "lexicon line 1"},
+            {"homograph read ɹɛd before=\n", "lexicon line 1"},
+        };
+        for (const auto &item : bad) {
+            bool rejected = false;
+            std::string message;
+            try {
+                (void)parsePronunciationLexicon(item.first);
+            } catch (const std::invalid_argument &error) {
+                rejected = true;
+                message = error.what();
+            }
+            CHECK(rejected);
+            CHECK(message.find(item.second) == 0);
+        }
+    }
+    {
+        // Lexicons compose with language definitions: an exact user entry
+        // overrides the definition's word table, while unmatched words still
+        // go through its grapheme rules.
+        const PronunciationLexicon lex =
+            parsePronunciationLexicon("word velta ˈanar\n");
+        CHECK(names(phonemize("velta", velta, lex)) ==
+              names(parseIpa("ˈanar")));
+        CHECK(names(phonemize("sha", velta, lex)) ==
+              names(phonemize("sha", velta)));
+    }
 
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);

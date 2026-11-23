@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-23
+
+### Added
+
+- User pronunciation lexicons as data. A line-oriented file supplies exact `word <spelling> <IPA>` entries and ordered, context-sensitive `homograph <spelling> <IPA> [before=<word>] [after=<word>]` rules. Matching is case-insensitive, IPA goes through the universal mapping, and malformed lines report their line number. `parsePronunciationLexicon()` exposes the model, and new `phonemize()` overloads apply it on top of any language front end, including `--lang-file` definitions.
+- CLI `--lexicon FILE` for text input. Homograph rules take precedence over exact entries, which take precedence over the language front end; unmatched words fall through. `--trace` now works with `--lexicon` (alone or with `--lang-file`) and reports the source layer per word (`homograph`, `lexicon` or `fallback`) as a validation view.
+- [docs/lexicons.md](docs/lexicons.md) documents the format, precedence, trace output, composition with language profiles and the documented limits of adjacent-word context matching.
+
 ## [0.7.0] - 2026-11-23
 
 ### Added
