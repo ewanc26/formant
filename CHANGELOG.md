@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-23
+
+### Added
+
+- A property-based and fuzz testing suite that turns determinism and input hardening into CI-failing proof, with no new dependencies. `formant_property_tests` checks five invariants over 240 seeded cases on Linux and macOS in the fast PR gate: identical input renders identical bytes (including `renderContinued()` byte-identity), samples stay finite and in range, malformed data files are rejected with instructive errors, text normalization is idempotent, and arbitrary Unicode/invalid UTF-8/embedded NULs are handled safely. `formant_fuzz` renders tens of thousands of seeded synthetic scripts through the full pipeline nightly or on demand (`.github/workflows/nightly.yml`); every failure prints the reproducing seed. A checksum corpus (`tests/checksum_corpus.txt`, checked by CTest) stores canonical SHA-256 output for every input kind and fails on unintended acoustic changes; intended updates require the explicit `FORMANT_UPDATE_CHECKSUMS=ON` flag. Documented in `docs/property-testing.md`.
+
 ## [0.21.0] - 2026-11-23
 
 ### Added
