@@ -1,14 +1,30 @@
 # Seeded gibberish generation
 
-`--gibberish` generates phonotactically shaped words from an Awkwords-compatible
-pattern. It is a *text* front end: the generator produces an IPA transcript,
-which the ordinary `parseIpa()` → `Synthesizer` pipeline renders. Nothing in the
-synthesis path is random; the seeded generator lives in `src/gibberish.cpp` and
-never feeds audio state.
+`--gibberish` generates phonotactically shaped words. It is a *text* front end:
+the generator produces an IPA transcript, which the ordinary `parseIpa()` →
+`Synthesizer` pipeline renders. Nothing in the synthesis path is random; the
+seeded generator lives in `src/gibberish.cpp` and never feeds audio state.
+
+Three modes are available:
+
+| Mode | Flag | What it does |
+|---|---|---|
+| Pattern | `--gibberish-style pattern` (default) | Awkwords-compatible explicit grammar |
+| Statistical | `--gibberish-style statistical` or a style tag such as `en-us` | weighted phoneme n-gram sampling from a data table |
+| Combined | `--gibberish-style combined` | explicit grammar structure, with category atoms weighted by the n-gram table |
 
 ```sh
+# Pattern mode
 formant --gibberish "CVC" --seed 7 --count 4 \
   --transcript babble.txt --output babble.wav
+
+# Statistical mode (English-like, from committed n-gram data)
+formant --gibberish "ignored" --gibberish-style en-us --seed 7 --count 4 \
+  --transcript stat.txt --output stat.wav
+
+# Combined mode (pattern structure + statistical category weights)
+formant --gibberish "CVCV" --gibberish-style combined --seed 7 --count 4 \
+  --output combined.wav
 ```
 
 The transcript is printed to stdout (or stderr when `--output -` streams audio)
@@ -53,10 +69,26 @@ list contour plus phrase-final lengthening. Word generation and contour
 selection use independent streams derived from the seed, so enabling or
 disabling contours never changes the generated transcript.
 
+## Statistical n-gram tables
+
+`--gibberish-style en-us` uses a committed plain-text table derived offline from
+CMUdict (Carnegie Mellon University, BSD-2-Clause). The table stores aggregate
+start/end/length/unigram/bigram/trigram counts, not the original dictionary
+entries. Provenance, mapping, licence text and the regeneration command live in
+[`data/gibberish/PROVENANCE.md`](../data/gibberish/PROVENANCE.md).
+
+Custom tables can be supplied with `--gibberish-style-file PATH`. The format is
+line-oriented and validated before generation; unknown or out-of-inventory
+phonemes are rejected, and statistical/combined generation is constrained to the
+active profile's phoneme inventory so output remains renderable.
+
 ## Library API
 
 `formant/gibberish.h` exposes `SeededRng`, `PatternGrammar`,
-`PatternInventory`, `GibberishSettings`, `parsePatternGrammar()`,
-`defaultPatternInventory()`, `patternInventory()`, `patternGrammarHelp()` and
+`PatternInventory`, `PhonotacticNgramTable`, `GibberishStyle`,
+`GibberishSettings`, `parsePatternGrammar()`, `defaultPatternInventory()`,
+`patternInventory()`, `parsePhonotacticNgramTable()`,
+`loadPhonotacticNgramTable()`, `builtinPhonotacticNgramTable()`,
+`availableGibberishStyles()`, `patternGrammarHelp()` and
 `generateGibberish()`. The result carries per-word IPA, per-word phonemes, the
 full utterance ready for `Synthesizer::render()` and the joined transcript.

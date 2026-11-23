@@ -51,6 +51,8 @@ Options:
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
   --gibberish "PATTERN"   Generate seeded phonotactic words (Awkwords grammar)
+  --gibberish-style MODE  pattern (default), statistical, or combined
+  --gibberish-style-file FILE  Custom .ngram table for statistical/combined
   --seed N                Unsigned 32-bit seed for --gibberish (default: 1)
   --count N               Words to generate per render (default: 5)
   --transcript FILE       Save the generated IPA transcript (one word per line)
@@ -267,6 +269,8 @@ struct Options {
     std::string gibberish;
     uint32_t seed = 1;
     int gibberishCount = 5;
+    std::string gibberishStyle = "pattern";
+    std::string gibberishStyleFile;
     std::string transcriptFile;
     std::string languageFile;
     std::string lexiconFile;
@@ -498,6 +502,14 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--gibberish" || arg.rfind("--gibberish=", 0) == 0) {
             options.gibberish = takeValue(i, argc, argv, "--gibberish");
             options.useGibberish = true;
+        } else if (arg == "--gibberish-style" ||
+                   arg.rfind("--gibberish-style=", 0) == 0) {
+            options.gibberishStyle =
+                takeValue(i, argc, argv, "--gibberish-style");
+        } else if (arg == "--gibberish-style-file" ||
+                   arg.rfind("--gibberish-style-file=", 0) == 0) {
+            options.gibberishStyleFile =
+                takeValue(i, argc, argv, "--gibberish-style-file");
         } else if (arg == "--seed" || arg.rfind("--seed=", 0) == 0) {
             options.seed =
                 unsignedSeed("--seed", takeValue(i, argc, argv, "--seed"));
@@ -979,6 +991,14 @@ int main(int argc, char **argv) {
             throw std::invalid_argument(
                 "--transcript only applies to --gibberish");
         }
+        if (!options.gibberishStyleFile.empty() && !options.useGibberish) {
+            throw std::invalid_argument(
+                "--gibberish-style-file only applies to --gibberish");
+        }
+        if (options.gibberishStyle != "pattern" && !options.useGibberish) {
+            throw std::invalid_argument(
+                "--gibberish-style only applies to --gibberish");
+        }
         if (options.useSsml && inputModes > 0) {
             throw std::invalid_argument(
                 "--ssml-file cannot be combined with --phonemes, --ipa or "
@@ -1126,8 +1146,6 @@ int main(int argc, char **argv) {
         std::vector<formant::Phoneme> phonemes;
         std::string generatedTranscript;
         if (options.useGibberish) {
-            formant::PatternGrammar grammar =
-                formant::parsePatternGrammar(options.gibberish);
             formant::PatternInventory inventory =
                 options.useLanguageFile
                     ? formant::patternInventory(languageDefinition)
@@ -1135,12 +1153,34 @@ int main(int argc, char **argv) {
             formant::GibberishSettings settings;
             settings.seed = options.seed;
             settings.count = options.gibberishCount;
+            settings.styleTablePath = options.gibberishStyleFile;
+            if (options.gibberishStyle == "pattern") {
+                settings.style = formant::GibberishStyle::Pattern;
+                settings.styleTag = "en-us";
+            } else if (options.gibberishStyle == "statistical") {
+                settings.style = formant::GibberishStyle::Statistical;
+                settings.styleTag = "en-us";
+            } else if (options.gibberishStyle == "combined") {
+                settings.style = formant::GibberishStyle::Combined;
+                settings.styleTag = "en-us";
+            } else if (options.gibberishStyleFile.empty()) {
+                settings.style = formant::GibberishStyle::Statistical;
+                settings.styleTag = options.gibberishStyle;
+            } else {
+                settings.style = formant::GibberishStyle::Statistical;
+                settings.styleTag = options.gibberishStyle;
+            }
+            formant::PatternGrammar grammar;
+            if (settings.style != formant::GibberishStyle::Statistical) {
+                grammar = formant::parsePatternGrammar(options.gibberish);
+            }
             const formant::GibberishResult result = formant::generateGibberish(
                 grammar, inventory, settings, options.language);
             phonemes = result.phonemes;
             generatedTranscript = result.transcript;
-            status << "Generated " << result.words.size()
-                   << " word(s) from pattern (seed " << options.seed << ")\n";
+            status << "Generated " << result.words.size() << " word(s) from "
+                   << options.gibberishStyle << " gibberish (seed "
+                   << options.seed << ")\n";
             status << generatedTranscript << "\n";
             if (!options.transcriptFile.empty()) {
                 writeTextFile(options.transcriptFile, generatedTranscript);

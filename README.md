@@ -75,6 +75,9 @@ build/formant --xsampa "h@loU" --output xsampa.wav
 # Generate deterministic, seeded gibberish from an Awkwords-style pattern
 build/formant --gibberish "CVC" --seed 7 --count 4 \
   --transcript babble.txt --output babble.wav
+# Sample language-like words from committed n-gram statistics
+build/formant --gibberish "ignored" --gibberish-style en-us --seed 7 --count 4 \
+  --output babble-stat.wav
 build/formant --list-pattern-help
 
 # Speak Spanish text with the Castilian front end

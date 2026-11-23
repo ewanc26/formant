@@ -2,15 +2,19 @@
 
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 #include <iterator>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "formant/intonation.h"
 #include "formant/ipa.h"
+#include "gibberish_ngram.h"
 
 namespace formant {
 namespace {
@@ -497,6 +501,235 @@ bool SeededRng::chance(double probability) {
     return scaled < probability;
 }
 
+namespace {
+
+std::string lowerAscii(std::string text) {
+    for (char &c : text) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return text;
+}
+
+std::vector<std::string> splitWhitespace(const std::string &line) {
+    std::istringstream stream(line);
+    std::vector<std::string> items;
+    std::string item;
+    while (stream >> item) {
+        items.push_back(item);
+    }
+    return items;
+}
+
+uint32_t parseUint32(const std::string &text, const std::string &context) {
+    if (text.empty()) {
+        throw std::invalid_argument("empty integer in " + context);
+    }
+    uint64_t value = 0;
+    for (char c : text) {
+        if (c < '0' || c > '9') {
+            throw std::invalid_argument("invalid integer in " + context + ": " +
+                                        text);
+        }
+        value = value * 10 + static_cast<uint64_t>(c - '0');
+        if (value > 0xFFFFFFFFu) {
+            throw std::invalid_argument("integer out of range in " + context);
+        }
+    }
+    return static_cast<uint32_t>(value);
+}
+
+std::pair<std::string, uint32_t> parseWeightedAtom(const std::string &text,
+                                                   const std::string &context) {
+    const size_t colon = text.rfind(':');
+    if (colon == std::string::npos) {
+        throw std::invalid_argument("expected name:count in " + context);
+    }
+    const std::string name = text.substr(0, colon);
+    const uint32_t count = parseUint32(text.substr(colon + 1), context);
+    if (name.empty() || count == 0) {
+        throw std::invalid_argument("invalid weighted atom in " + context);
+    }
+    return {name, count};
+}
+
+bool isKnownPhonemeName(const std::string &name) {
+    return findPhoneme(name) != nullptr;
+}
+
+void validateNgramTable(const PhonotacticNgramTable &table) {
+    if (table.languageTag.empty()) {
+        throw std::invalid_argument("ngram table is missing lang");
+    }
+    if (table.empty()) {
+        throw std::invalid_argument("ngram table is missing required sections");
+    }
+    auto validateAtoms =
+        [](const std::vector<std::pair<std::string, uint32_t>> &atoms,
+           const std::string &context) {
+            uint64_t total = 0;
+            for (const auto &atom : atoms) {
+                if (atom.second == 0 || !isKnownPhonemeName(atom.first)) {
+                    throw std::invalid_argument("invalid phoneme in " +
+                                                context + ": " + atom.first);
+                }
+                total += atom.second;
+            }
+            if (total == 0) {
+                throw std::invalid_argument("empty section: " + context);
+            }
+        };
+    validateAtoms(table.starts, "starts");
+    validateAtoms(table.unigrams, "unigrams");
+    for (const auto &entry : table.lengths) {
+        const uint32_t length = parseUint32(entry.first, "lengths");
+        if (length < 1 || length > 32 || entry.second == 0) {
+            throw std::invalid_argument("invalid length entry");
+        }
+    }
+    for (const auto &entry : table.bigrams) {
+        if (!isKnownPhonemeName(entry.first)) {
+            throw std::invalid_argument("invalid bigram key: " + entry.first);
+        }
+        validateAtoms(entry.second, "bigrams " + entry.first);
+    }
+    for (const auto &entry : table.trigrams) {
+        const size_t space = entry.first.find(' ');
+        if (space == std::string::npos) {
+            throw std::invalid_argument("invalid trigram key: " + entry.first);
+        }
+        const std::string p1 = entry.first.substr(0, space);
+        const std::string p2 = entry.first.substr(space + 1);
+        if (!isKnownPhonemeName(p1) || !isKnownPhonemeName(p2)) {
+            throw std::invalid_argument("invalid trigram key: " + entry.first);
+        }
+        validateAtoms(entry.second, "trigrams " + entry.first);
+    }
+    for (const auto &entry : table.ends) {
+        if (entry.second == 0 || !isKnownPhonemeName(entry.first)) {
+            throw std::invalid_argument("invalid end phoneme: " + entry.first);
+        }
+    }
+}
+
+} // namespace
+
+PhonotacticNgramTable parsePhonotacticNgramTable(std::string_view source) {
+    PhonotacticNgramTable table;
+    std::string section;
+    size_t begin = 0;
+    while (begin <= source.size()) {
+        size_t end = source.find('\n', begin);
+        if (end == std::string_view::npos) {
+            end = source.size();
+        }
+        std::string line = trim(source.substr(begin, end - begin));
+        begin = end + 1;
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        if (line.rfind("begin ", 0) == 0) {
+            section = trim(line.substr(6));
+            continue;
+        }
+        if (line.rfind("end ", 0) == 0) {
+            const std::string closed = trim(line.substr(4));
+            if (closed != section) {
+                throw std::invalid_argument("ngram section mismatch: " + line);
+            }
+            section.clear();
+            continue;
+        }
+        if (section.empty()) {
+            const auto parts = splitWhitespace(line);
+            if (parts.size() >= 2 && parts[0] == "lang") {
+                table.languageTag = lowerAscii(parts[1]);
+            } else if (parts.size() >= 2 && parts[0] == "source") {
+                table.source = trim(line.substr(line.find(' ') + 1));
+            } else if (parts.size() >= 2 && parts[0] == "license") {
+                table.license = trim(line.substr(line.find(' ') + 1));
+            }
+            continue;
+        }
+        if (section == "lengths" || section == "starts" || section == "ends" ||
+            section == "unigrams") {
+            const auto parts = splitWhitespace(line);
+            if (parts.size() != 2) {
+                throw std::invalid_argument("invalid " + section + " row");
+            }
+            const uint32_t count = parseUint32(parts[1], section);
+            auto &target = section == "lengths"  ? table.lengths
+                           : section == "starts" ? table.starts
+                           : section == "ends"   ? table.ends
+                                                 : table.unigrams;
+            target.emplace_back(parts[0], count);
+            continue;
+        }
+        if (section == "bigrams") {
+            const size_t tab = line.find('\t');
+            if (tab == std::string::npos) {
+                throw std::invalid_argument("invalid bigram row");
+            }
+            const std::string prev = trim(line.substr(0, tab));
+            const auto rhs = splitWhitespace(line.substr(tab + 1));
+            auto &row = table.bigrams[prev];
+            for (const std::string &item : rhs) {
+                row.push_back(parseWeightedAtom(item, "bigrams"));
+            }
+            continue;
+        }
+        if (section == "trigrams") {
+            const size_t tab = line.find('\t');
+            if (tab == std::string::npos) {
+                throw std::invalid_argument("invalid trigram row");
+            }
+            const auto key = splitWhitespace(line.substr(0, tab));
+            if (key.size() != 2) {
+                throw std::invalid_argument("invalid trigram key");
+            }
+            const auto rhs = splitWhitespace(line.substr(tab + 1));
+            auto &row = table.trigrams[key[0] + " " + key[1]];
+            for (const std::string &item : rhs) {
+                row.push_back(parseWeightedAtom(item, "trigrams"));
+            }
+            continue;
+        }
+        throw std::invalid_argument("unknown ngram section: " + section);
+    }
+    if (!section.empty()) {
+        throw std::invalid_argument("unterminated ngram section: " + section);
+    }
+    validateNgramTable(table);
+    return table;
+}
+
+PhonotacticNgramTable loadPhonotacticNgramTable(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open ngram table: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read ngram table: " + path);
+    }
+    try {
+        return parsePhonotacticNgramTable(source.str());
+    } catch (const std::invalid_argument &error) {
+        throw std::invalid_argument(path + ": " + error.what());
+    }
+}
+
+PhonotacticNgramTable builtinPhonotacticNgramTable(std::string_view tag) {
+    const std::string normalized = lowerAscii(std::string(tag));
+    if (normalized == "en-us" || normalized == "en" ||
+        normalized == "english" || normalized == "statistical") {
+        return parsePhonotacticNgramTable(detail::builtinEnUsNgramTable());
+    }
+    throw std::invalid_argument("unknown gibberish style: " + std::string(tag));
+}
+
+std::vector<std::string> availableGibberishStyles() { return {"en-us"}; }
+
 PatternGrammar parsePatternGrammar(std::string_view source) {
     PatternGrammar grammar;
     size_t begin = 0;
@@ -650,6 +883,14 @@ Whitespace outside quotes is ignored. Brackets nest up to 32 levels. A word
 that violates any exclusion is discarded and regenerated from the same seeded
 stream, so a given seed always produces the same transcripts.
 
+Styles:
+  pattern      explicit grammar (default)
+  statistical  weighted phoneme n-grams from a data table
+  combined     grammar structure with weighted statistical categories
+
+Statistical tables are plain data files with documented provenance. Use
+--gibberish-style en-us, or --gibberish-style-file for a custom table.
+
 Examples:
   CVC
   CV(V)C
@@ -663,6 +904,335 @@ Inline definitions can be placed before the main pattern:
 )";
 }
 
+namespace {
+
+using Weighted = std::vector<std::pair<std::string, uint32_t>>;
+
+std::unordered_set<std::string>
+inventoryAtomSet(const PatternInventory &inventory) {
+    std::unordered_set<std::string> atoms;
+    for (char letter = 'A'; letter <= 'Z'; ++letter) {
+        for (const std::string &atom : inventory.get(letter)) {
+            if (isKnownPhonemeName(atom)) {
+                atoms.insert(atom);
+            }
+        }
+    }
+    return atoms;
+}
+
+Weighted filterWeighted(const Weighted &items,
+                        const std::unordered_set<std::string> *allowed) {
+    Weighted filtered;
+    filtered.reserve(items.size());
+    for (const auto &item : items) {
+        if (!isKnownPhonemeName(item.first) || item.second == 0) {
+            continue;
+        }
+        if (allowed != nullptr && allowed->find(item.first) == allowed->end()) {
+            continue;
+        }
+        filtered.push_back(item);
+    }
+    return filtered;
+}
+
+uint32_t totalWeight(const Weighted &items) {
+    uint64_t total = 0;
+    for (const auto &item : items) {
+        total += item.second;
+    }
+    if (total > 0xFFFFFFFFu) {
+        return 0xFFFFFFFFu;
+    }
+    return static_cast<uint32_t>(total);
+}
+
+const std::string &pickWeighted(const Weighted &items, SeededRng &rng) {
+    const uint32_t total = totalWeight(items);
+    if (total == 0) {
+        throw std::runtime_error("no weighted candidates available");
+    }
+    uint32_t draw = rng.below(total);
+    for (const auto &item : items) {
+        if (draw < item.second) {
+            return item.first;
+        }
+        draw -= item.second;
+    }
+    return items.back().first;
+}
+
+PhonotacticNgramTable constrainNgramTable(const PhonotacticNgramTable &table,
+                                          const PatternInventory &inventory) {
+    const std::unordered_set<std::string> allowed = inventoryAtomSet(inventory);
+    if (allowed.empty()) {
+        throw std::invalid_argument(
+            "statistical gibberish needs a non-empty phoneme inventory");
+    }
+    PhonotacticNgramTable constrained = table;
+    constrained.starts = filterWeighted(table.starts, &allowed);
+    constrained.ends = filterWeighted(table.ends, &allowed);
+    constrained.unigrams = filterWeighted(table.unigrams, &allowed);
+    constrained.lengths.clear();
+    for (const auto &entry : table.lengths) {
+        const uint32_t length = parseUint32(entry.first, "lengths");
+        if (length >= 1 && length <= 32 && entry.second > 0) {
+            constrained.lengths.push_back(entry);
+        }
+    }
+    constrained.bigrams.clear();
+    for (const auto &entry : table.bigrams) {
+        if (allowed.find(entry.first) == allowed.end()) {
+            continue;
+        }
+        Weighted next = filterWeighted(entry.second, &allowed);
+        if (!next.empty()) {
+            constrained.bigrams[entry.first] = std::move(next);
+        }
+    }
+    constrained.trigrams.clear();
+    for (const auto &entry : table.trigrams) {
+        const size_t space = entry.first.find(' ');
+        if (space == std::string::npos) {
+            continue;
+        }
+        const std::string p1 = entry.first.substr(0, space);
+        const std::string p2 = entry.first.substr(space + 1);
+        if (allowed.find(p1) == allowed.end() ||
+            allowed.find(p2) == allowed.end()) {
+            continue;
+        }
+        Weighted next = filterWeighted(entry.second, &allowed);
+        if (!next.empty()) {
+            constrained.trigrams[entry.first] = std::move(next);
+        }
+    }
+    if (constrained.starts.empty() || constrained.unigrams.empty() ||
+        constrained.lengths.empty()) {
+        throw std::invalid_argument(
+            "gibberish style table has no usable phonemes for this inventory");
+    }
+    return constrained;
+}
+
+bool hasLegalTransitions(const std::vector<std::string> &phones,
+                         const PhonotacticNgramTable &table) {
+    if (phones.empty()) {
+        return false;
+    }
+    for (size_t i = 0; i + 1 < phones.size(); ++i) {
+        auto bigram = table.bigrams.find(phones[i]);
+        if (bigram == table.bigrams.end()) {
+            return false;
+        }
+        bool allowed = false;
+        for (const auto &next : bigram->second) {
+            if (next.first == phones[i + 1]) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed) {
+            return false;
+        }
+        if (i + 2 < phones.size()) {
+            auto trigram = table.trigrams.find(phones[i] + " " + phones[i + 1]);
+            if (trigram != table.trigrams.end()) {
+                bool trigramAllowed = false;
+                for (const auto &next : trigram->second) {
+                    if (next.first == phones[i + 2]) {
+                        trigramAllowed = true;
+                        break;
+                    }
+                }
+                if (!trigramAllowed) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+Weighted categoryWeights(char letter, const PatternInventory &inventory,
+                         const PhonotacticNgramTable &table) {
+    const std::vector<std::string> &atoms = inventory.get(letter);
+    Weighted weighted;
+    weighted.reserve(atoms.size());
+    for (const std::string &atom : atoms) {
+        uint32_t weight = 0;
+        for (const auto &entry : table.unigrams) {
+            if (entry.first == atom) {
+                weight = entry.second;
+                break;
+            }
+        }
+        if (weight == 0) {
+            weight = 1;
+        }
+        weighted.emplace_back(atom, weight);
+    }
+    return weighted;
+}
+
+GeneratedWord wordFromPhones(std::vector<std::string> phones) {
+    GeneratedWord word;
+    for (size_t i = 0; i < phones.size(); ++i) {
+        if (i != 0) {
+            word.ipa.push_back(' ');
+        }
+        word.ipa += phones[i];
+    }
+    word.phonemes = parseIpa(word.ipa);
+    return word;
+}
+
+GeneratedWord generateStatisticalWord(const PhonotacticNgramTable &table,
+                                      SeededRng &rng) {
+    for (int attempt = 0; attempt < kMaxFilterRetries; ++attempt) {
+        const uint32_t targetLength =
+            parseUint32(pickWeighted(table.lengths, rng), "lengths");
+        std::vector<std::string> phones;
+        phones.reserve(targetLength);
+        phones.push_back(pickWeighted(table.starts, rng));
+        for (uint32_t i = 1; i < targetLength; ++i) {
+            Weighted candidates;
+            if (i >= 2) {
+                auto trigram =
+                    table.trigrams.find(phones[i - 2] + " " + phones[i - 1]);
+                if (trigram != table.trigrams.end()) {
+                    candidates = trigram->second;
+                }
+            }
+            if (candidates.empty()) {
+                auto bigram = table.bigrams.find(phones.back());
+                if (bigram != table.bigrams.end()) {
+                    candidates = bigram->second;
+                }
+            }
+            if (candidates.empty()) {
+                candidates = table.unigrams;
+            }
+            if (i + 1 == targetLength && !table.ends.empty()) {
+                Weighted endCandidates;
+                for (const auto &candidate : candidates) {
+                    for (const auto &end : table.ends) {
+                        if (candidate.first == end.first) {
+                            endCandidates.emplace_back(
+                                candidate.first,
+                                std::max<uint32_t>(1, candidate.second / 8 +
+                                                          end.second / 8));
+                            break;
+                        }
+                    }
+                }
+                if (!endCandidates.empty()) {
+                    candidates = std::move(endCandidates);
+                }
+            }
+            phones.push_back(pickWeighted(candidates, rng));
+        }
+        if (hasLegalTransitions(phones, table)) {
+            return wordFromPhones(std::move(phones));
+        }
+    }
+    throw std::runtime_error(
+        "gibberish style could not satisfy phonotactic constraints");
+}
+
+Expansion expandCombined(const Node &node, SeededRng &rng,
+                         const PatternInventory &inventory,
+                         const Definitions &definitions,
+                         const PhonotacticNgramTable &table,
+                         std::vector<char> &stack,
+                         std::vector<FilterCheck> &checks) {
+    Expansion result;
+    switch (node.kind) {
+    case Node::Kind::Literal:
+        result.raw = node.text;
+        result.spaced = node.text;
+        break;
+    case Node::Kind::Category: {
+        if (const Node *definition =
+                findDefinition(definitions, node.text[0])) {
+            if (std::find(stack.begin(), stack.end(), node.text[0]) !=
+                stack.end()) {
+                throw std::invalid_argument(
+                    "recursive subpattern definition for " + node.text);
+            }
+            stack.push_back(node.text[0]);
+            result = expandCombined(*definition, rng, inventory, definitions,
+                                    table, stack, checks);
+            stack.pop_back();
+            break;
+        }
+        const Weighted weighted =
+            categoryWeights(node.text[0], inventory, table);
+        if (weighted.empty()) {
+            throw std::invalid_argument("no inventory for category " +
+                                        node.text);
+        }
+        const std::string &atom = pickWeighted(weighted, rng);
+        result.raw = atom;
+        result.spaced = atom;
+        break;
+    }
+    case Node::Kind::Sequence:
+        for (const Node &child : node.children) {
+            appendExpansion(result,
+                            expandCombined(child, rng, inventory, definitions,
+                                           table, stack, checks));
+        }
+        break;
+    case Node::Kind::Choice: {
+        const uint32_t total =
+            std::accumulate(node.alternatives.begin(), node.alternatives.end(),
+                            uint32_t{0}, [](uint32_t sum, const Node &option) {
+                                return sum + option.weight;
+                            });
+        uint32_t draw = rng.below(total);
+        size_t selected = 0;
+        for (; selected + 1 < node.alternatives.size(); ++selected) {
+            if (draw < node.alternatives[selected].weight) {
+                break;
+            }
+            draw -= node.alternatives[selected].weight;
+        }
+        result = expandCombined(node.alternatives[selected], rng, inventory,
+                                definitions, table, stack, checks);
+        break;
+    }
+    case Node::Kind::Optional:
+        if (rng.chance(0.5) && !node.children.empty()) {
+            result = expandCombined(node.children.front(), rng, inventory,
+                                    definitions, table, stack, checks);
+        }
+        break;
+    }
+    checks.push_back({result.raw, node.filters});
+    return result;
+}
+
+void finalizeWord(GibberishResult &result, GeneratedWord word, int index,
+                  int count, bool prosody, Language language,
+                  SeededRng &prosodyRng) {
+    std::vector<Phoneme> utterance = word.phonemes;
+    if (prosody) {
+        applySeededProsody(utterance, language, prosodyRng, index, count);
+    }
+    if (!result.phonemes.empty()) {
+        Phoneme pause = *findPhoneme("_");
+        pause.duration = kInterWordPause;
+        result.phonemes.push_back(pause);
+    }
+    result.phonemes.insert(result.phonemes.end(), utterance.begin(),
+                           utterance.end());
+    result.words.push_back(std::move(word));
+}
+
+} // namespace
+
 GibberishResult generateGibberish(const PatternGrammar &grammar,
                                   const PatternInventory &inventory,
                                   const GibberishSettings &settings,
@@ -671,16 +1241,24 @@ GibberishResult generateGibberish(const PatternGrammar &grammar,
         throw std::invalid_argument("gibberish count must be positive");
     }
 
-    // Parse the raw pattern bodies afresh: parsePatternGrammar() validated the
-    // source, and generateGibberish() is also a public entry point.
-    Definitions definitions;
-    for (const auto &definition : grammar.definitions) {
-        definitions.emplace_back(definition.first,
-                                 PatternParser(definition.second).parse());
+    const bool isStatistical = settings.style == GibberishStyle::Statistical;
+    const bool isCombined = settings.style == GibberishStyle::Combined;
+    PhonotacticNgramTable styleTable;
+    if (isStatistical || isCombined) {
+        styleTable = settings.styleTablePath.empty()
+                         ? builtinPhonotacticNgramTable(settings.styleTag)
+                         : loadPhonotacticNgramTable(settings.styleTablePath);
+        styleTable = constrainNgramTable(styleTable, inventory);
     }
-    const Node root = PatternParser(grammar.main).parse();
 
-    {
+    Definitions definitions;
+    Node root;
+    if (!isStatistical) {
+        for (const auto &definition : grammar.definitions) {
+            definitions.emplace_back(definition.first,
+                                     PatternParser(definition.second).parse());
+        }
+        root = PatternParser(grammar.main).parse();
         std::vector<char> stack;
         validateCategories(root, inventory, definitions, stack);
         for (const auto &definition : definitions) {
@@ -691,9 +1269,6 @@ GibberishResult generateGibberish(const PatternGrammar &grammar,
         }
     }
 
-    // Word generation and prosody use independent streams derived from the
-    // seed. Enabling or disabling contours must never change the transcript,
-    // so a word must not consume a draw that a later word would have used.
     SeededRng rng(settings.seed);
     SeededRng prosodyRng(settings.seed ^ 0x85ebca6bu);
     GibberishResult result;
@@ -704,46 +1279,50 @@ GibberishResult generateGibberish(const PatternGrammar &grammar,
         bool generated = false;
         for (int attempt = 0; attempt < kMaxFilterRetries && !generated;
              ++attempt) {
+            if (isStatistical) {
+                word = generateStatisticalWord(styleTable, rng);
+                generated = true;
+                break;
+            }
             std::vector<FilterCheck> checks;
             std::vector<char> stack;
             const Expansion expansion =
-                expand(root, rng, inventory, definitions, stack, checks);
+                isCombined
+                    ? expandCombined(root, rng, inventory, definitions,
+                                     styleTable, stack, checks)
+                    : expand(root, rng, inventory, definitions, stack, checks);
             if (expansion.spaced.empty() || !passesFilters(checks)) {
                 continue;
             }
-            std::vector<Phoneme> phonemes;
+            std::vector<std::string> atoms;
+            {
+                std::istringstream spaced(expansion.spaced);
+                std::string atom;
+                while (spaced >> atom) {
+                    atoms.push_back(atom);
+                }
+            }
+            if (isCombined && !hasLegalTransitions(atoms, styleTable)) {
+                continue;
+            }
             try {
-                phonemes = parseIpa(expansion.spaced);
+                word = wordFromPhones(std::move(atoms));
             } catch (const std::invalid_argument &error) {
                 throw std::invalid_argument(
                     std::string("generated transcript is not valid IPA: ") +
                     error.what());
             }
-            if (phonemes.empty()) {
+            if (word.phonemes.empty()) {
                 continue;
             }
-            word.ipa = expansion.spaced;
-            word.phonemes = phonemes;
             generated = true;
         }
         if (!generated) {
-            throw std::runtime_error(
-                "gibberish pattern could not satisfy its exclusions");
+            throw std::runtime_error("gibberish pattern could not satisfy its "
+                                     "exclusions/constraints");
         }
-
-        std::vector<Phoneme> utterance = word.phonemes;
-        if (settings.prosody) {
-            applySeededProsody(utterance, language, prosodyRng, index,
-                               settings.count);
-        }
-        if (!result.phonemes.empty()) {
-            Phoneme pause = *findPhoneme("_");
-            pause.duration = kInterWordPause;
-            result.phonemes.push_back(pause);
-        }
-        result.phonemes.insert(result.phonemes.end(), utterance.begin(),
-                               utterance.end());
-        result.words.push_back(std::move(word));
+        finalizeWord(result, std::move(word), index, settings.count,
+                     settings.prosody, language, prosodyRng);
     }
     result.transcript = joinWords(result.words);
     return result;

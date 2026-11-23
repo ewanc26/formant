@@ -1241,6 +1241,49 @@ if(gib_conflict_result EQUAL 0 OR NOT gib_conflict_error MATCHES "use only one o
     message(FATAL_ERROR "gibberish/input-mode conflict was not rejected: ${gib_conflict_error}")
 endif()
 
+# #115: statistical/combined gibberish modes.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "ignored" --gibberish-style statistical
+        --seed 5 --count 3 --output "${GIB_DIR}/stat1.wav"
+    RESULT_VARIABLE gib_stat_result
+    ERROR_VARIABLE gib_stat_error
+)
+if(NOT gib_stat_result EQUAL 0)
+    message(FATAL_ERROR "statistical gibberish failed: ${gib_stat_error}")
+endif()
+file(SHA256 "${GIB_DIR}/stat1.wav" gib_stat_hash)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "ignored" --gibberish-style statistical
+        --seed 5 --count 3 --output "${GIB_DIR}/stat2.wav"
+    RESULT_VARIABLE gib_stat2_result
+    ERROR_VARIABLE gib_stat2_error
+)
+if(NOT gib_stat2_result EQUAL 0)
+    message(FATAL_ERROR "statistical gibberish second run failed: ${gib_stat2_error}")
+endif()
+file(SHA256 "${GIB_DIR}/stat2.wav" gib_stat2_hash)
+if(NOT gib_stat_hash STREQUAL gib_stat2_hash)
+    message(FATAL_ERROR "statistical gibberish not deterministic")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --gibberish-style combined
+        --seed 5 --count 3 --output "${GIB_DIR}/combined.wav"
+    RESULT_VARIABLE gib_comb_result
+    ERROR_VARIABLE gib_comb_error
+)
+if(NOT gib_comb_result EQUAL 0)
+    message(FATAL_ERROR "combined gibberish failed: ${gib_comb_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --gibberish "CVC" --gibberish-style nope
+        --seed 5 --count 1 --output "${GIB_DIR}/badstyle.wav"
+    RESULT_VARIABLE gib_badstyle_result
+    ERROR_VARIABLE gib_badstyle_error
+)
+if(gib_badstyle_result EQUAL 0 OR NOT gib_badstyle_error MATCHES "unknown gibberish style")
+    message(FATAL_ERROR "bad gibberish style was not rejected: ${gib_badstyle_error}")
+endif()
+
 # The exact transcription-mode error text is a compatibility contract.
 execute_process(
     COMMAND "${FORMANT_CLI}" --ipa "a" --phonemes "[a]" --output "${GIB_DIR}/contract.wav"
