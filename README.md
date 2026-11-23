@@ -383,3 +383,5 @@ See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs
 ## Licence
 
 AGPL-3.0. See [LICENSE](LICENSE).
+
+Copyright (C) 2026 Ewan Croft (ewanc26).
