@@ -56,6 +56,10 @@ Adding another built-in language means implementing a tokeniser and a G2P module
 
 A language definition file extends this without C++: it supplies grapheme routes, a word lexicon, an optional inventory, per-phoneme realization overrides and ordered context-sensitive rewrite rules for romanisation and allophony, then feeds the same IPA parser and synthesizer. The line-oriented format, rule matching and precedence are in [docs/language-files.md](language-files.md). Phonotactic generation remains separate work.
 
+## Exact timing
+
+Because durations are assigned to phonemes before synthesis, timing is not a post-hoc analysis of the waveform. `src/schedule.cpp` owns the single cumulative scheduler that rounds `duration * sampleRate / rate` at each phoneme boundary; `Synthesizer::render()` and `planTiming()` both consume it, so emitted `startSample`/`endSample` values describe the exact buffer that was rendered, including fast rates and zero-length segments. Word units group phonemes around `|` gaps, fold pauses into the preceding word, and use source-text labels when available. Visemes are a separate data table keyed by phoneme name with a `PhonemeKind` fallback; both are pure transforms of the plan. This keeps the usual rule that data lives in tables and nothing mutates global state. See [docs/timing.md](timing.md) for formats and the public API.
+
 ## Possible extensions
 
 - More language front ends (French, German, Italian) behind the same registry.

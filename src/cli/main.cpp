@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -8,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "formant/formant.h"
@@ -45,6 +47,8 @@ Options:
   --list-ipa              List recognised IPA symbols and exit
   --list-languages        List available text languages and exit
   --output FILE           WAV output path (default: output.wav)
+  --timing FILE           Write word/phoneme timing (.json, .lrc, .srt, .vtt)
+  --visemes FILE          Write a lip-sync viseme track as JSON
   --sample-rate HZ        PCM sample rate (default: 44100, minimum: 8000)
   --pitch HZ              Fundamental frequency; 0 disables voicing
   --rate FACTOR           Speaking-rate multiplier (default: 1)
@@ -137,6 +141,8 @@ struct Options {
     std::string languageFile;
     std::string lexiconFile;
     std::string output = "output.wav";
+    std::string timingFile;
+    std::string visemesFile;
     int sampleRate = 44100;
     bool usePhonemes = false;
     bool useIpa = false;
@@ -275,6 +281,10 @@ Options parseOptions(int argc, char **argv) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
             options.output = takeValue(i, argc, argv, "--output");
+        } else if (arg == "--timing" || arg.rfind("--timing=", 0) == 0) {
+            options.timingFile = takeValue(i, argc, argv, "--timing");
+        } else if (arg == "--visemes" || arg.rfind("--visemes=", 0) == 0) {
+            options.visemesFile = takeValue(i, argc, argv, "--visemes");
         } else if (arg == "--sample-rate" ||
                    arg.rfind("--sample-rate=", 0) == 0) {
             options.sampleRate = integer(
@@ -295,6 +305,58 @@ Options parseOptions(int argc, char **argv) {
         apply(options.voice);
     }
     return options;
+}
+
+std::string lowerAscii(std::string_view value) {
+    std::string result(value);
+    std::transform(
+        result.begin(), result.end(), result.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return result;
+}
+
+// Timing formats are selected by extension. An unknown extension is an error
+// rather than silently producing JSON under the wrong filename.
+std::string timingFormatFor(std::string_view path) {
+    const size_t dot = path.find_last_of('.');
+    const std::string extension =
+        dot == std::string_view::npos ? "" : lowerAscii(path.substr(dot));
+    if (extension == ".json" || extension == ".lrc" || extension == ".srt" ||
+        extension == ".vtt") {
+        return extension.substr(1);
+    }
+    throw std::invalid_argument(
+        "unsupported timing file extension: " + std::string(path) +
+        " (use .json, .lrc, .srt or .vtt)");
+}
+
+std::string formatTiming(const formant::TimingPlan &plan,
+                         const std::vector<formant::VisemeFrame> &visemes,
+                         std::string_view path) {
+    const std::string format = timingFormatFor(path);
+    if (format == "lrc") {
+        return formant::timingLrc(plan);
+    }
+    if (format == "srt") {
+        return formant::timingSrt(plan);
+    }
+    if (format == "vtt") {
+        return formant::timingVtt(plan);
+    }
+    return formant::timingJson(plan, visemes);
+}
+
+void writeTextFile(const std::string &path, const std::string &contents) {
+    // Binary mode keeps the writers' fixed '\n' endings byte-identical on
+    // every platform, which is part of the timing export contract.
+    std::ofstream file(path, std::ios::binary);
+    if (!file) {
+        throw std::runtime_error("cannot open output file: " + path);
+    }
+    file << contents;
+    if (!file) {
+        throw std::runtime_error("cannot write output file: " + path);
+    }
 }
 
 } // namespace
@@ -333,6 +395,11 @@ int main(int argc, char **argv) {
         if (options.trace && !options.useLanguageFile && !options.useLexicon) {
             throw std::invalid_argument("--trace only applies with "
                                         "--lang-file or --lexicon");
+        }
+        if (!options.timingFile.empty()) {
+            // Fail before rendering (and before writing a WAV) on a typo in
+            // the timing filename extension.
+            (void)timingFormatFor(options.timingFile);
         }
 
         formant::LanguageDefinition languageDefinition;
@@ -432,6 +499,34 @@ int main(int argc, char **argv) {
         std::cout << "Wrote " << samples.size() << " samples to "
                   << options.output << " (" << options.voice.name << ", "
                   << options.sampleRate << " Hz)\n";
+
+        if (!options.timingFile.empty() || !options.visemesFile.empty()) {
+            // Text modes supply their source words; transcription modes use
+            // deterministic phoneme-derived labels. The same scheduler drives
+            // the plan and render(), so these boundaries describe this WAV.
+            const std::vector<std::string> wordLabels =
+                inputModes == 0 ? formant::splitWordsForTiming(text)
+                                : std::vector<std::string>{};
+            const formant::TimingPlan plan = formant::planTiming(
+                phonemes, options.voice, options.sampleRate, wordLabels);
+            if (plan.totalSamples != static_cast<int>(samples.size())) {
+                throw std::runtime_error(
+                    "timing plan does not match the rendered audio");
+            }
+            const std::vector<formant::VisemeFrame> visemes =
+                formant::planVisemes(plan);
+
+            if (!options.timingFile.empty()) {
+                writeTextFile(options.timingFile,
+                              formatTiming(plan, visemes, options.timingFile));
+                std::cout << "Wrote timing to " << options.timingFile << "\n";
+            }
+            if (!options.visemesFile.empty()) {
+                writeTextFile(options.visemesFile,
+                              formant::timingVisemesJson(plan, visemes));
+                std::cout << "Wrote visemes to " << options.visemesFile << "\n";
+            }
+        }
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "formant: " << error.what() << "\n";

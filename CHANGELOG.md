@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-23
+
+### Added
+
+- Sample-accurate timing output via `planTiming()`, `splitWordsForTiming()` and `planVisemes()`. A timing plan reuses the exact cumulative scheduler that drives `Synthesizer::render()`, so word and phoneme `startSample`/`endSample` boundaries describe the audio that was produced, including fast/slow `--rate` and zero-length renders. Word labels come from the source text for text input and are derived deterministically from phoneme runs for `--phonemes`, `--ipa` and `--xsampa`; pauses and word gaps fold into the preceding word so captions stay contiguous.
+- CLI `--timing FILE` writes word/phoneme timing as JSON (`.json`), SRT (`.srt`), WebVTT (`.vtt`) or enhanced word-level LRC (`.lrc`), inferred from the extension. `--visemes FILE` writes a stable lip-sync viseme track as JSON. Unknown extensions are rejected before rendering. Writers use fixed numeric formatting, JSON escaping and `\\n` line endings for byte-identical output across platforms.
+- A documented viseme mapping in [docs/timing.md](docs/timing.md) with stable shape names, approximate openness values and a `PhonemeKind` fallback for unknown phonemes. [docs/timing.md](docs/timing.md) also documents the JSON schemas, caption formats and library API; the README has new timing examples.
+
 ## [0.8.0] - 2026-11-23
 
 ### Added

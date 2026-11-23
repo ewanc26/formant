@@ -1605,6 +1605,183 @@ int main() {
               names(phonemize("sha", velta)));
     }
 
+    // Exact timing: the plan uses the same cumulative scheduler as render().
+    {
+        const Voice voice = voicePreset("neutral");
+        const std::vector<Phoneme> phrase = parsePhonemes("[h ee l o]");
+        const TimingPlan plan = planTiming(phrase, voice, 22050);
+        const std::vector<float> samples =
+            Synthesizer(voice).render(phrase, 22050);
+        CHECK(plan.sampleRate == 22050);
+        CHECK(plan.totalSamples == static_cast<int>(samples.size()));
+        CHECK(plan.phonemes.size() == phrase.size());
+        CHECK(plan.duration ==
+              static_cast<double>(plan.totalSamples) / 22050.0);
+
+        double cumulative = 0.0;
+        int previous = 0;
+        for (size_t i = 0; i < phrase.size(); ++i) {
+            cumulative += phrase[i].duration;
+            const int expected = static_cast<int>(
+                std::llround(cumulative * 22050.0 / voice.rate));
+            CHECK(plan.phonemes[i].startSample == previous);
+            CHECK(plan.phonemes[i].endSample == std::max(expected, previous));
+            CHECK(plan.phonemes[i].startTime ==
+                  static_cast<double>(plan.phonemes[i].startSample) / 22050.0);
+            CHECK(plan.phonemes[i].endTime >= plan.phonemes[i].startTime);
+            previous = plan.phonemes[i].endSample;
+        }
+        CHECK(previous == plan.totalSamples);
+
+        // Text labels are attached to words, and gaps/pauses extend a word to
+        // the next spoken word rather than appearing as extra units.
+        const std::string text = "Hello, world.";
+        const std::vector<Phoneme> spoken = phonemize(text);
+        const TimingPlan words =
+            planTiming(spoken, voice, 22050, splitWordsForTiming(text));
+        CHECK(words.words.size() == 2);
+        CHECK(words.words[0].label == "Hello");
+        CHECK(words.words[1].label == "world");
+        CHECK(words.words[0].startSample == 0);
+        CHECK(words.words[0].endSample == words.words[1].startSample);
+        CHECK(words.words[1].endSample == words.totalSamples);
+        for (size_t i = 0; i < words.words.size(); ++i) {
+            CHECK(words.words[i].startSample <= words.words[i].endSample);
+            CHECK(words.words[i].endTime >= words.words[i].startTime);
+            if (i > 0) {
+                CHECK(words.words[i].startSample >=
+                      words.words[i - 1].startSample);
+            }
+        }
+
+        // If caller labels do not describe every word, deterministic phoneme
+        // labels are used instead of silently misaligning captions.
+        const TimingPlan derived = planTiming(parsePhonemes("[a ee]"), voice,
+                                              8000, {"wrong", "extra"});
+        CHECK(derived.words.size() == 1);
+        CHECK(derived.words[0].label == "a ee");
+
+        // The fast-rate contract and slow-rate contract still hold exactly.
+        Voice fast = voice;
+        fast.rate = 1e6;
+        const TimingPlan zero = planTiming(phrase, fast, 22050);
+        CHECK(zero.totalSamples == 0);
+        CHECK(zero.duration == 0.0);
+        CHECK(Synthesizer(fast).render(phrase, 22050).empty());
+        Voice slow = voice;
+        slow.rate = 0.05;
+        const TimingPlan longer = planTiming(phrase, slow, 8000);
+        double phraseDuration = 0.0;
+        for (const Phoneme &phoneme : phrase) {
+            phraseDuration += phoneme.duration;
+        }
+        CHECK(longer.totalSamples == static_cast<int>(std::llround(
+                                         phraseDuration * 8000.0 / slow.rate)));
+        CHECK(longer.totalSamples ==
+              static_cast<int>(Synthesizer(slow).render(phrase, 8000).size()));
+
+        bool rejected = false;
+        try {
+            (void)planTiming(phrase, voice, 7999);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+        Voice invalidRate = voice;
+        invalidRate.rate = 0.0;
+        rejected = false;
+        try {
+            (void)planTiming(phrase, invalidRate, 22050);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+    }
+
+    // Word splitting and viseme mapping are deterministic data transforms.
+    {
+        CHECK(splitWordsForTiming("Hello, world.") ==
+              std::vector<std::string>({"Hello", "world"}));
+        CHECK(splitWordsForTiming("don't stop") ==
+              std::vector<std::string>({"don't", "stop"}));
+        CHECK(splitWordsForTiming("Hola, señor.") ==
+              std::vector<std::string>({"Hola", "señor"}));
+        bool rejected = false;
+        try {
+            (void)splitWordsForTiming(std::string("\xff", 1));
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        CHECK(rejected);
+
+        const Voice voice = voicePreset("neutral");
+        const TimingPlan plan =
+            planTiming(parsePhonemes("[a m s .]"), voice, 8000);
+        const std::vector<VisemeFrame> visemes = planVisemes(plan);
+        CHECK(visemes.size() == 4);
+        CHECK(visemes[0].shape == "open");
+        CHECK(visemes[0].openness > 0.5);
+        CHECK(visemes[1].shape == "closed");
+        CHECK(visemes[2].shape == "alveolar");
+        CHECK(visemes[3].shape == "rest");
+        for (size_t i = 0; i < visemes.size(); ++i) {
+            CHECK(visemes[i].phoneme == plan.phonemes[i].label);
+            CHECK(visemes[i].startSample == plan.phonemes[i].startSample);
+            CHECK(visemes[i].endSample == plan.phonemes[i].endSample);
+        }
+        CHECK(planVisemes(plan) == visemes);
+
+        // Unknown names still fall back to a stable shape from the phoneme
+        // kind, so new inventory entries never break a lip-sync track.
+        Phoneme custom = *findPhoneme("a");
+        custom.name = "future";
+        const TimingPlan unknown = planTiming({custom}, voice, 8000);
+        CHECK(planVisemes(unknown)[0].shape == "open");
+    }
+
+    // Caption and JSON writers have fixed layouts and are byte-identical for
+    // equal plans.
+    {
+        const Voice voice = voicePreset("neutral");
+        const TimingPlan plan = planTiming(phonemize("Hello, world."), voice,
+                                           22050, {"Hello", "world"});
+        const std::vector<VisemeFrame> visemes = planVisemes(plan);
+        const std::string json = timingJson(plan, visemes);
+        CHECK(json == timingJson(plan, visemes));
+        CHECK(json.find("\"format\": \"formant-timing\"") != std::string::npos);
+        CHECK(json.find("\"label\": \"Hello\"") != std::string::npos);
+        CHECK(json.find("\"startSample\": 0") != std::string::npos);
+        CHECK(json.find("\"shape\": \"") != std::string::npos);
+        CHECK(timingVisemesJson(plan, visemes)
+                  .find("\"format\": \"formant-visemes\"") !=
+              std::string::npos);
+
+        const std::string escapedPlan =
+            timingJson(planTiming(parsePhonemes("[a]"), voice, 8000,
+                                  {std::string("say \"hi\"\n")}),
+                       {});
+        CHECK(escapedPlan.find("say \\\"hi\\\"\\n") != std::string::npos);
+
+        const std::string srt = timingSrt(plan);
+        CHECK(srt.find("1\n00:00:00,000 --> ") == 0);
+        CHECK(srt.find("\nHello\n\n2\n") != std::string::npos);
+        CHECK(timingVtt(plan).find("WEBVTT\n\n00:00:00.000 --> ") == 0);
+        const std::string lrc = timingLrc(plan);
+        CHECK(lrc.find("[ar:formant]\n") == 0);
+        CHECK(lrc.find("[00:00.") != std::string::npos);
+        CHECK(lrc.find("<00:00.") != std::string::npos);
+        CHECK(lrc.find(">Hello ") != std::string::npos);
+
+        const TimingPlan empty = planTiming({}, voice, 8000);
+        CHECK(empty.totalSamples == 0);
+        CHECK(empty.words.empty());
+        CHECK(timingJson(empty, {}).find("\"words\": [\n  ],") !=
+              std::string::npos);
+        CHECK(timingSrt(empty).empty());
+        CHECK(timingVtt(empty) == "WEBVTT\n\n");
+        CHECK(timingLrc(empty).find("<") == std::string::npos);
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 
