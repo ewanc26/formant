@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-23
+
+### Added
+
+- Phonotactically weighted gibberish generation via `--gibberish-style`, with `statistical` and `combined` modes alongside the existing pattern grammar. Statistical mode samples phoneme sequences from committed n-gram data tables constrained to the active profile's inventory; combined mode keeps explicit pattern structure while weighting category atoms from the same table. The built-in `en-us` table is derived offline from CMUdict with documented provenance/licence in `data/gibberish/PROVENANCE.md`, and custom `.ngram` tables can be supplied with `--gibberish-style-file`. Generation remains deterministic for the same seed/settings and never introduces randomness into synthesis.
+
 ## [0.23.0] - 2026-11-23
 
 ### Added

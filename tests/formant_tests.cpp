@@ -3329,6 +3329,99 @@ int main() {
         }));
         CHECK(formant::patternGrammarHelp().find("weight") !=
               std::string::npos);
+
+        // #115: statistical/combined gibberish modes from n-gram tables.
+        const auto enTable = formant::builtinPhonotacticNgramTable("en-us");
+        CHECK(enTable.languageTag == "en-us");
+        CHECK(!enTable.empty());
+        CHECK(formant::availableGibberishStyles().size() >= 1);
+
+        GibberishSettings stat = settings;
+        stat.seed = 42;
+        stat.count = 6;
+        stat.style = formant::GibberishStyle::Statistical;
+        stat.styleTag = "en-us";
+        const GibberishResult statA = formant::generateGibberish(
+            formant::PatternGrammar{}, builtin, stat);
+        const GibberishResult statB = formant::generateGibberish(
+            formant::PatternGrammar{}, builtin, stat);
+        CHECK(statA.transcript == statB.transcript);
+        CHECK(statA.phonemes == statB.phonemes);
+        CHECK(
+            Synthesizer(voicePreset("neutral")).render(statA.phonemes, 8000) ==
+            Synthesizer(voicePreset("neutral")).render(statB.phonemes, 8000));
+        for (const formant::GeneratedWord &word : statA.words) {
+            std::vector<std::string> atoms;
+            {
+                std::istringstream spaced(word.ipa);
+                std::string atom;
+                while (spaced >> atom) {
+                    atoms.push_back(atom);
+                }
+            }
+            CHECK(!atoms.empty());
+            // Validate generated sequences against the same constrained table.
+            PhonotacticNgramTable constrained = enTable;
+            constrained.starts.clear();
+            constrained.ends.clear();
+            constrained.unigrams.clear();
+            constrained.bigrams.clear();
+            constrained.trigrams.clear();
+            constrained.lengths = enTable.lengths;
+            // Rebuild constrained view through generation contract by checking
+            // each adjacent transition exists in bigram table or unigram
+            // fallback.
+            for (size_t i = 0; i + 1 < atoms.size(); ++i) {
+                auto bit = enTable.bigrams.find(atoms[i]);
+                bool ok = false;
+                if (bit != enTable.bigrams.end()) {
+                    for (const auto &next : bit->second) {
+                        if (next.first == atoms[i + 1]) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                }
+                CHECK(ok);
+                if (i + 2 < atoms.size()) {
+                    auto tit =
+                        enTable.trigrams.find(atoms[i] + " " + atoms[i + 1]);
+                    if (tit != enTable.trigrams.end()) {
+                        bool tok = false;
+                        for (const auto &next : tit->second) {
+                            if (next.first == atoms[i + 2]) {
+                                tok = true;
+                                break;
+                            }
+                        }
+                        CHECK(tok);
+                    }
+                }
+            }
+        }
+
+        stat.seed = 43;
+        CHECK(
+            formant::generateGibberish(formant::PatternGrammar{}, builtin, stat)
+                .transcript != statA.transcript);
+
+        GibberishSettings comb = stat;
+        comb.seed = 42;
+        comb.style = formant::GibberishStyle::Combined;
+        const GibberishResult combA = formant::generateGibberish(
+            formant::parsePatternGrammar("CVC"), builtin, comb);
+        const GibberishResult combB = formant::generateGibberish(
+            formant::parsePatternGrammar("CVC"), builtin, comb);
+        CHECK(combA.transcript == combB.transcript);
+        CHECK(combA.phonemes == combB.phonemes);
+        for (const formant::GeneratedWord &word : combA.words) {
+            CHECK(names(word.phonemes).size() == 3);
+        }
+        CHECK(throwsInvalid([&] {
+            GibberishSettings bad = stat;
+            bad.styleTag = "nope-lang";
+            formant::generateGibberish(formant::PatternGrammar{}, builtin, bad);
+        }));
     }
 
     // The English paths remain byte-for-byte unchanged.
