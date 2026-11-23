@@ -8,6 +8,7 @@
 
 #include "formant/phoneme.h"
 #include "formant/language.h"
+#include "formant/lexicon.h"
 #include "formant/ipa.h"
 #include "formant/synthesizer.h"
 #include "formant/voice.h"

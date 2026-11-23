@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "formant/phoneme.h"
+#include "formant/lexicon.h"
 
 namespace formant {
 
@@ -52,5 +53,17 @@ LanguageDefinition parseLanguageDefinition(std::string_view text);
 std::vector<Phoneme> phonemize(std::string_view text,
                                const LanguageDefinition &language,
                                std::vector<std::string> *trace = nullptr);
+
+// Convert text with a user pronunciation layer. Homograph rules are tried in
+// file order, then exact entries; unmatched words fall back to the selected
+// language front end. With a language definition, exact user entries override
+// its word lexicon while its grapheme and phoneme rules still apply to
+// unmatched words.
+std::vector<Phoneme> phonemize(std::string_view text, Language language,
+                               const PronunciationLexicon &lexicon);
+std::vector<Phoneme> phonemize(
+    std::string_view text, const LanguageDefinition &language,
+    const PronunciationLexicon &lexicon,
+    std::vector<std::string> *trace = nullptr);
 
 } // namespace formant
