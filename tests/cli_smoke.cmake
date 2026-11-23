@@ -129,6 +129,35 @@ if(NOT ssml_bad_error MATCHES "unsupported element <b>")
     message(FATAL_ERROR "unexpected SSML error message: ${ssml_bad_error}")
 endif()
 
+# --prosody-file layers exact F0, duration and amplitude overrides.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/smoke.prosody" "# exact contour\nf0 0 180\nduration 1 0.25s\namplitude 2 0.8\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --prosody-file "${CMAKE_CURRENT_BINARY_DIR}/smoke.prosody" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE prosody_result
+    ERROR_VARIABLE prosody_error
+)
+if(NOT prosody_result EQUAL 0)
+    message(FATAL_ERROR "formant CLI prosody render failed (${prosody_result}): ${prosody_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" prosody_size)
+if(prosody_size LESS 44)
+    message(FATAL_ERROR "prosody WAV output is too short: ${prosody_size} bytes")
+endif()
+
+# Malformed prosody directives fail with the source line number.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bad.prosody" "wobble 0 1\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --prosody-file "${CMAKE_CURRENT_BINARY_DIR}/bad.prosody" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE prosody_bad_result
+    ERROR_VARIABLE prosody_bad_error
+)
+if(prosody_bad_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted a malformed prosody file")
+endif()
+if(NOT prosody_bad_error MATCHES "prosody line 1")
+    message(FATAL_ERROR "unexpected prosody error message: ${prosody_bad_error}")
+endif()
+
 # --stdin must be ignored when a transcription mode supplies the phonemes.
 # An endless stdin source terminates via SIGPIPE only if the CLI never drains
 # it; the buggy version blocks reading it until the CMake timeout kills it.

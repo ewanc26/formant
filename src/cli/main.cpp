@@ -37,6 +37,7 @@ Options:
   --text "words"          Text to speak (default: "Hello, world.")
   --stdin                 Read the text to speak from standard input
   --ssml-file FILE        Speak an SSML document (a supported subset)
+  --prosody-file FILE     Layer exact F0, duration and amplitude overrides
   --phonemes "[h ee l o]" Speak a bracketed phoneme sequence instead of text
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
@@ -193,6 +194,7 @@ struct Options {
     std::string languageFile;
     std::string lexiconFile;
     std::string ssmlFile;
+    std::string prosodyFile;
     std::string output = "output.wav";
     formant::AudioFormat format = formant::AudioFormat::Pcm16;
     formant::AudioWriteOptions audioOptions;
@@ -207,6 +209,7 @@ struct Options {
     bool useLanguageFile = false;
     bool useLexicon = false;
     bool useSsml = false;
+    bool useProsody = false;
     bool trace = false;
 };
 
@@ -357,6 +360,10 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--ssml-file" || arg.rfind("--ssml-file=", 0) == 0) {
             options.ssmlFile = takeValue(i, argc, argv, "--ssml-file");
             options.useSsml = true;
+        } else if (arg == "--prosody-file" ||
+                   arg.rfind("--prosody-file=", 0) == 0) {
+            options.prosodyFile = takeValue(i, argc, argv, "--prosody-file");
+            options.useProsody = true;
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
@@ -647,6 +654,18 @@ int main(int argc, char **argv) {
         } else {
             phonemes = formant::phonemize(text, options.language);
         }
+
+        if (options.useProsody) {
+            // Applied after every front end (including SSML) and before the
+            // scheduler, so rendering, timing and visemes all see the same
+            // overridden phonemes. With no file the default path is untouched.
+            const formant::ProsodyFile file =
+                formant::loadProsodyFile(options.prosodyFile);
+            formant::applyProsodyFile(phonemes, file);
+            status << "Applied " << file.directives.size()
+                   << " prosody override(s)\n";
+        }
+
         const std::vector<float> samples =
             formant::Synthesizer(options.voice)
                 .render(phonemes, options.sampleRate);

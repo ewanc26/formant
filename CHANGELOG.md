@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-23
+
+### Added
+
+- Prosody-direct input via `--prosody-file` and the `loadProsodyFile()` / `applyProsodyFile()` API: segment- or time-indexed absolute F0 targets in Hz (including linear ramps), relative F0 in cents/semitones/percent, exact or scaled durations, and amplitude multipliers. Unspecified values fall back to the front-end defaults byte-for-byte, overrides compose after SSML, and absolute targets are honored by both the renderer and the metrics oracle through the shared contour function. Documented in `docs/prosody-overrides.md`, including precedence, validation and the phase-continuation contract.
+
 ## [0.15.0] - 2026-11-23
 
 ### Added
