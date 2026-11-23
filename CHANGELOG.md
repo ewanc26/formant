@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-23
+
+### Added
+
+- Minimal SSML input via `--ssml-file` and the `phonemizeSsml()` API: `<speak>`, `<break>` (time and strength), `<prosody>` (rate, pitch, volume), `<phoneme>` (IPA/X-SAMPA), `<say-as>` (digits, number, date) and `<s>`/`<p>` boundaries. XML entities and numeric character references are decoded; unsupported elements fail loudly with the tag name and byte offset. SSML composes with the selected language/lexicon front end, and inline prosody scales phonemes in the parameter domain so rendering stays deterministic. Documented in `docs/ssml.md`, including precedence and known limitations.
+
 ## [0.14.0] - 2026-11-23
 
 ### Added

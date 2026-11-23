@@ -100,6 +100,35 @@ if(NOT precedence_result EQUAL 0)
     message(FATAL_ERROR "formant rejected --text with --ipa (${precedence_result}): ${precedence_error}")
 endif()
 
+# --ssml-file renders a document using the full supported subset.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/smoke.ssml" "<speak><p>Hello. <say-as interpret-as=\"digits\">123</say-as>. <phoneme alphabet=\"ipa\" ph=\"ˈhəˈloʊ\"/><prosody rate=\"1.2\" pitch=\"+2st\" volume=\"1.1\">Wide.</prosody><break time=\"250ms\"/>Done.</p></speak>")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ssml-file "${CMAKE_CURRENT_BINARY_DIR}/smoke.ssml" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE ssml_result
+    ERROR_VARIABLE ssml_error
+)
+if(NOT ssml_result EQUAL 0)
+    message(FATAL_ERROR "formant CLI SSML render failed (${ssml_result}): ${ssml_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" ssml_size)
+if(ssml_size LESS 44)
+    message(FATAL_ERROR "SSML WAV output is too short: ${ssml_size} bytes")
+endif()
+
+# Unsupported SSML elements are rejected with the tag name and byte position.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bad.ssml" "<speak><b>bold</b></speak>")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ssml-file "${CMAKE_CURRENT_BINARY_DIR}/bad.ssml" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE ssml_bad_result
+    ERROR_VARIABLE ssml_bad_error
+)
+if(ssml_bad_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted an unsupported SSML element")
+endif()
+if(NOT ssml_bad_error MATCHES "unsupported element <b>")
+    message(FATAL_ERROR "unexpected SSML error message: ${ssml_bad_error}")
+endif()
+
 # --stdin must be ignored when a transcription mode supplies the phonemes.
 # An endless stdin source terminates via SIGPIPE only if the CLI never drains
 # it; the buggy version blocks reading it until the CMake timeout kills it.

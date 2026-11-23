@@ -12,6 +12,7 @@
 #include "formant/ipa.h"
 #include "formant/metrics.h"
 #include "formant/synthesizer.h"
+#include "formant/ssml.h"
 #include "formant/timing.h"
 #include "formant/transpose.h"
 #include "formant/voice.h"
