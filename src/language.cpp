@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "formant/ipa.h"
@@ -581,9 +582,336 @@ void applyPhonemeOverride(Phoneme &phoneme, const PhonemeOverride &changes) {
     }
 }
 
-std::vector<Phoneme> conlangIpa(std::string_view ipa,
-                                const LanguageDefinition &language) {
-    std::vector<Phoneme> phonemes = parseIpa(ipa);
+using RuleClasses = std::unordered_map<std::string, std::vector<std::string>>;
+
+struct RuleItem {
+    bool boundary = false;
+    // A literal has one alternative; a category has one alternative per
+    // member. Alternatives are stored longest first for greedy matching.
+    std::vector<std::vector<std::string>> alternatives;
+};
+
+struct RewriteRule {
+    std::vector<RuleItem> pattern;
+    std::vector<std::string> replacement;
+    std::vector<RuleItem> before;
+    std::vector<RuleItem> after;
+    std::string text;
+};
+
+struct RuleToken {
+    std::string symbol;
+    size_t source = static_cast<size_t>(-1);
+};
+
+constexpr size_t noRuleSource = static_cast<size_t>(-1);
+
+std::vector<std::string> splitGraphemeUnits(std::string_view text) {
+    std::vector<std::string> units;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t start = pos;
+        uint32_t codePoint = 0;
+        if (!decodeUtf8(text, pos, codePoint)) {
+            throw std::invalid_argument("invalid UTF-8 in language rule");
+        }
+        units.emplace_back(text.substr(start, pos - start));
+    }
+    return units;
+}
+
+std::vector<std::string> ruleUnits(std::string_view token, bool graphemePhase) {
+    if (graphemePhase) {
+        return splitGraphemeUnits(token);
+    }
+    return {std::string(token)};
+}
+
+RuleItem makeRuleItem(const std::string &token, bool graphemePhase,
+                      const RuleClasses &classes, bool allowBoundary) {
+    RuleItem item;
+    if (token == "#") {
+        if (!allowBoundary) {
+            throw std::invalid_argument(
+                "boundary '#' is only allowed in a rule environment");
+        }
+        item.boundary = true;
+        return item;
+    }
+
+    if (const auto found = classes.find(token); found != classes.end()) {
+        for (const std::string &member : found->second) {
+            item.alternatives.push_back(ruleUnits(member, graphemePhase));
+        }
+    } else {
+        item.alternatives.push_back(ruleUnits(token, graphemePhase));
+    }
+    if (item.alternatives.empty() || item.alternatives.front().empty()) {
+        throw std::invalid_argument("rule item is empty");
+    }
+    std::stable_sort(item.alternatives.begin(), item.alternatives.end(),
+                     [](const std::vector<std::string> &left,
+                        const std::vector<std::string> &right) {
+                         return left.size() > right.size();
+                     });
+    return item;
+}
+
+RewriteRule compileRule(std::string_view body, bool graphemePhase,
+                        const RuleClasses &classes) {
+    const std::vector<std::string> fields = splitFields(body);
+    if (fields.empty()) {
+        throw std::invalid_argument("rule is empty");
+    }
+
+    const auto greater = std::find(fields.begin(), fields.end(), ">");
+    if (greater == fields.end()) {
+        throw std::invalid_argument("rule needs '>'");
+    }
+    if (std::find(greater + 1, fields.end(), ">") != fields.end()) {
+        throw std::invalid_argument("rule has more than one '>'");
+    }
+    const auto slash = std::find(greater + 1, fields.end(), "/");
+    if (slash != fields.end() &&
+        std::find(slash + 1, fields.end(), "/") != fields.end()) {
+        throw std::invalid_argument("rule has more than one '/'");
+    }
+
+    const size_t greaterIndex = static_cast<size_t>(greater - fields.begin());
+    const size_t slashIndex = slash == fields.end()
+                                  ? fields.size()
+                                  : static_cast<size_t>(slash - fields.begin());
+    if (greaterIndex == 0) {
+        throw std::invalid_argument("rule needs a pattern");
+    }
+    if (greaterIndex + 1 == slashIndex) {
+        throw std::invalid_argument(
+            "rule needs a replacement; use 0 to delete");
+    }
+
+    RewriteRule rule;
+    for (size_t i = 0; i < greaterIndex; ++i) {
+        rule.pattern.push_back(
+            makeRuleItem(fields[i], graphemePhase, classes, false));
+    }
+
+    const bool deletion =
+        slashIndex == greaterIndex + 2 && fields[greaterIndex + 1] == "0";
+    if (!deletion) {
+        for (size_t i = greaterIndex + 1; i < slashIndex; ++i) {
+            const std::string &unit = fields[i];
+            if (unit == "0") {
+                throw std::invalid_argument("0 must be the whole replacement");
+            }
+            if (unit == "#") {
+                throw std::invalid_argument(
+                    "boundary '#' cannot appear in a replacement");
+            }
+            if (classes.find(unit) != classes.end()) {
+                throw std::invalid_argument("class \"" + unit +
+                                            "\" cannot appear in a "
+                                            "replacement");
+            }
+            const std::vector<std::string> units =
+                ruleUnits(unit, graphemePhase);
+            rule.replacement.insert(rule.replacement.end(), units.begin(),
+                                    units.end());
+        }
+    }
+
+    if (slashIndex < fields.size()) {
+        const auto underscore =
+            std::find(fields.begin() + slashIndex + 1, fields.end(), "_");
+        if (underscore == fields.end()) {
+            throw std::invalid_argument("rule environment needs '_'");
+        }
+        if (std::find(underscore + 1, fields.end(), "_") != fields.end()) {
+            throw std::invalid_argument(
+                "rule environment has more than one '_'");
+        }
+        const size_t underscoreIndex =
+            static_cast<size_t>(underscore - fields.begin());
+        for (size_t i = slashIndex + 1; i < underscoreIndex; ++i) {
+            rule.before.push_back(
+                makeRuleItem(fields[i], graphemePhase, classes, true));
+        }
+        for (size_t i = underscoreIndex + 1; i < fields.size(); ++i) {
+            rule.after.push_back(
+                makeRuleItem(fields[i], graphemePhase, classes, true));
+        }
+    }
+
+    rule.text = std::string(body);
+    return rule;
+}
+
+bool matchesAlternative(const std::vector<RuleToken> &tokens, size_t pos,
+                        const std::vector<std::string> &alternative) {
+    if (alternative.size() > tokens.size() - pos) {
+        return false;
+    }
+    for (size_t i = 0; i < alternative.size(); ++i) {
+        if (tokens[pos + i].symbol != alternative[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool matchPattern(const std::vector<RuleToken> &tokens, size_t pos,
+                  const std::vector<RuleItem> &items, size_t index,
+                  size_t &end) {
+    if (index == items.size()) {
+        end = pos;
+        return true;
+    }
+    const RuleItem &item = items[index];
+    if (item.boundary) {
+        return false;
+    }
+    for (const auto &alternative : item.alternatives) {
+        if (matchesAlternative(tokens, pos, alternative) &&
+            matchPattern(tokens, pos + alternative.size(), items, index + 1,
+                         end)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool matchBefore(const std::vector<RuleToken> &tokens, size_t end,
+                 const std::vector<RuleItem> &items, size_t remaining) {
+    if (remaining == 0) {
+        return true;
+    }
+    const RuleItem &item = items[remaining - 1];
+    if (item.boundary) {
+        return end == 0 && matchBefore(tokens, 0, items, remaining - 1);
+    }
+    for (const auto &alternative : item.alternatives) {
+        if (alternative.size() <= end &&
+            matchesAlternative(tokens, end - alternative.size(), alternative) &&
+            matchBefore(tokens, end - alternative.size(), items,
+                        remaining - 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool matchAfter(const std::vector<RuleToken> &tokens, size_t pos,
+                const std::vector<RuleItem> &items, size_t index) {
+    if (index == items.size()) {
+        return true;
+    }
+    const RuleItem &item = items[index];
+    if (item.boundary) {
+        return pos == tokens.size() &&
+               matchAfter(tokens, pos, items, index + 1);
+    }
+    for (const auto &alternative : item.alternatives) {
+        if (matchesAlternative(tokens, pos, alternative) &&
+            matchAfter(tokens, pos + alternative.size(), items, index + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<RuleToken> applyRewriteRule(const std::vector<RuleToken> &input,
+                                        const RewriteRule &rule,
+                                        std::vector<std::string> *trace,
+                                        std::string_view phase,
+                                        size_t ruleIndex) {
+    std::vector<RuleToken> output;
+    output.reserve(input.size());
+    size_t pos = 0;
+    while (pos < input.size()) {
+        size_t end = pos;
+        if (matchPattern(input, pos, rule.pattern, 0, end) && end > pos &&
+            matchBefore(input, pos, rule.before, rule.before.size()) &&
+            matchAfter(input, end, rule.after, 0)) {
+            if (trace != nullptr) {
+                trace->push_back(std::string(phase) + " " +
+                                 std::to_string(ruleIndex + 1) + " at " +
+                                 std::to_string(pos) + ": " + rule.text);
+            }
+            for (const std::string &unit : rule.replacement) {
+                output.push_back({unit, noRuleSource});
+            }
+            pos = end;
+        } else {
+            output.push_back(input[pos]);
+            ++pos;
+        }
+    }
+    return output;
+}
+
+std::vector<RuleToken>
+applyRules(std::vector<RuleToken> tokens, const std::vector<std::string> &rules,
+           bool graphemePhase, const RuleClasses &classes,
+           std::vector<std::string> *trace, std::string_view phase) {
+    for (size_t i = 0; i < rules.size(); ++i) {
+        const RewriteRule rule = compileRule(rules[i], graphemePhase, classes);
+        tokens = applyRewriteRule(tokens, rule, trace, phase, i);
+    }
+    return tokens;
+}
+
+std::string applyGraphemeRules(std::string_view word,
+                               const LanguageDefinition &language,
+                               std::vector<std::string> *trace) {
+    if (language.graphemeRules.empty()) {
+        return std::string(word);
+    }
+    std::vector<RuleToken> tokens;
+    for (const std::string &unit : splitGraphemeUnits(word)) {
+        tokens.push_back({unit, noRuleSource});
+    }
+    tokens = applyRules(std::move(tokens), language.graphemeRules, true,
+                        language.classes, trace, "grapheme-rule");
+    std::string result;
+    for (const RuleToken &token : tokens) {
+        result += token.symbol;
+    }
+    return result;
+}
+
+std::vector<Phoneme> applyPhonemeRules(const std::vector<Phoneme> &input,
+                                       const LanguageDefinition &language,
+                                       std::vector<std::string> *trace) {
+    if (language.phonemeRules.empty()) {
+        return input;
+    }
+    std::vector<RuleToken> tokens;
+    tokens.reserve(input.size());
+    for (size_t i = 0; i < input.size(); ++i) {
+        tokens.push_back({input[i].name, i});
+    }
+    tokens = applyRules(std::move(tokens), language.phonemeRules, false,
+                        language.classes, trace, "phoneme-rule");
+
+    std::vector<Phoneme> result;
+    for (const RuleToken &token : tokens) {
+        if (token.source != noRuleSource) {
+            result.push_back(input[token.source]);
+            continue;
+        }
+        try {
+            const std::vector<Phoneme> replacement = parseIpa(token.symbol);
+            result.insert(result.end(), replacement.begin(), replacement.end());
+        } catch (const std::invalid_argument &error) {
+            throw std::invalid_argument(
+                "invalid IPA in phoneme-rule replacement \"" + token.symbol +
+                "\": " + error.what());
+        }
+    }
+    return result;
+}
+
+void finalizeConlangPhonemes(std::vector<Phoneme> &phonemes,
+                             const LanguageDefinition &language) {
     for (Phoneme &phoneme : phonemes) {
         const auto found = language.phonemes.find(phoneme.name);
         if (found != language.phonemes.end()) {
@@ -595,56 +923,61 @@ std::vector<Phoneme> conlangIpa(std::string_view ipa,
                                         language.name + " inventory");
         }
     }
-    return phonemes;
 }
 
 std::vector<Phoneme> mapConlangWord(std::string_view word,
-                                    const LanguageDefinition &language) {
+                                    const LanguageDefinition &language,
+                                    std::vector<std::string> *trace) {
     const std::string key = asciiLower(word);
+    std::vector<Phoneme> result;
     if (const auto found = language.words.find(key);
         found != language.words.end()) {
-        return conlangIpa(found->second, language);
-    }
+        result = parseIpa(found->second);
+    } else {
+        const std::string spelled = applyGraphemeRules(key, language, trace);
 
-    size_t longest = 0;
-    for (const auto &entry : language.graphemes) {
-        longest = std::max(longest, entry.first.size());
-    }
+        size_t longest = 0;
+        for (const auto &entry : language.graphemes) {
+            longest = std::max(longest, entry.first.size());
+        }
 
-    std::vector<Phoneme> result;
-    size_t pos = 0;
-    while (pos < key.size()) {
-        bool matched = false;
-        const size_t limit = std::min(longest, key.size() - pos);
-        for (size_t length = limit; length > 0; --length) {
-            const auto found = language.graphemes.find(key.substr(pos, length));
-            if (found == language.graphemes.end()) {
+        size_t pos = 0;
+        while (pos < spelled.size()) {
+            bool matched = false;
+            const size_t limit = std::min(longest, spelled.size() - pos);
+            for (size_t length = limit; length > 0; --length) {
+                const auto found =
+                    language.graphemes.find(spelled.substr(pos, length));
+                if (found == language.graphemes.end()) {
+                    continue;
+                }
+                const std::vector<Phoneme> mapped = parseIpa(found->second);
+                result.insert(result.end(), mapped.begin(), mapped.end());
+                pos += length;
+                matched = true;
+                break;
+            }
+            if (matched) {
                 continue;
             }
-            const std::vector<Phoneme> mapped =
-                conlangIpa(found->second, language);
-            result.insert(result.end(), mapped.begin(), mapped.end());
-            pos += length;
-            matched = true;
-            break;
-        }
-        if (matched) {
-            continue;
-        }
 
-        size_t length = 1;
-        while (pos + length < key.size() &&
-               (static_cast<unsigned char>(key[pos + length]) & 0xC0u) ==
-                   0x80u) {
-            ++length;
+            size_t length = 1;
+            while (pos + length < spelled.size() &&
+                   (static_cast<unsigned char>(spelled[pos + length]) &
+                    0xC0u) == 0x80u) {
+                ++length;
+            }
+            if (language.strictInventory) {
+                throw std::invalid_argument("no grapheme mapping for \"" +
+                                            spelled.substr(pos, length) +
+                                            "\" in " + language.name);
+            }
+            pos += length;
         }
-        if (language.strictInventory) {
-            throw std::invalid_argument("no grapheme mapping for \"" +
-                                        key.substr(pos, length) + "\" in " +
-                                        language.name);
-        }
-        pos += length;
     }
+
+    result = applyPhonemeRules(result, language, trace);
+    finalizeConlangPhonemes(result, language);
     return result;
 }
 
@@ -667,7 +1000,8 @@ bool isConlangSeparator(uint32_t codePoint) {
 }
 
 std::vector<Phoneme> conlangPhonemes(std::string_view text,
-                                     const LanguageDefinition &language) {
+                                     const LanguageDefinition &language,
+                                     std::vector<std::string> *trace) {
     std::vector<Phoneme> result;
     std::string word;
     size_t pos = 0;
@@ -682,7 +1016,8 @@ std::vector<Phoneme> conlangPhonemes(std::string_view text,
         if (word.empty()) {
             return;
         }
-        const std::vector<Phoneme> mapped = mapConlangWord(word, language);
+        const std::vector<Phoneme> mapped =
+            mapConlangWord(word, language, trace);
         if (!mapped.empty()) {
             result.insert(result.end(), mapped.begin(), mapped.end());
             if (const Phoneme *gapPhoneme = findPhoneme("_")) {
@@ -783,6 +1118,8 @@ std::vector<Phoneme> phonemize(std::string_view text, Language language) {
 
 LanguageDefinition parseLanguageDefinition(std::string_view text) {
     LanguageDefinition definition;
+    std::vector<std::pair<std::string, size_t>> graphemeRuleLines;
+    std::vector<std::pair<std::string, size_t>> phonemeRuleLines;
     size_t lineNumber = 0;
     size_t pos = 0;
 
@@ -793,9 +1130,25 @@ LanguageDefinition parseLanguageDefinition(std::string_view text) {
         }
         std::string_view line = text.substr(pos, end - pos);
         ++lineNumber;
-        if (const size_t comment = line.find('#');
-            comment != std::string_view::npos) {
-            line = line.substr(0, comment);
+        line = trimView(line);
+        // '#' is the word-boundary token inside a rule, so rule lines reserve
+        // it and keep comments on their own lines. The directive may be
+        // followed by any whitespace, not just a space.
+        const auto startsWithRule = [&](std::string_view directive) {
+            if (line.substr(0, directive.size()) != directive) {
+                return false;
+            }
+            return line.size() == directive.size() ||
+                   std::isspace(
+                       static_cast<unsigned char>(line[directive.size()])) != 0;
+        };
+        const bool ruleLine =
+            startsWithRule("grapheme-rule") || startsWithRule("phoneme-rule");
+        if (!ruleLine) {
+            if (const size_t comment = line.find('#');
+                comment != std::string_view::npos) {
+                line = line.substr(0, comment);
+            }
         }
         line = trimView(line);
 
@@ -886,6 +1239,31 @@ LanguageDefinition parseLanguageDefinition(std::string_view text) {
                 } else {
                     definition.words[key] = ipa;
                 }
+            } else if (directive == "class") {
+                if (fields.size() < 2) {
+                    languageFileError(lineNumber, "class needs a name");
+                }
+                if (fields[1] == "#") {
+                    languageFileError(lineNumber, "class name '#' is reserved");
+                }
+                if (fields.size() == 2) {
+                    languageFileError(lineNumber, "class " + fields[1] +
+                                                      " needs at least one "
+                                                      "member");
+                }
+                definition.classes[fields[1]] =
+                    std::vector<std::string>(fields.begin() + 2, fields.end());
+            } else if (directive == "grapheme-rule" ||
+                       directive == "phoneme-rule") {
+                std::string body = joinFields(fields, 1);
+                if (body.empty()) {
+                    languageFileError(lineNumber, directive + " needs a rule");
+                }
+                if (directive == "grapheme-rule") {
+                    graphemeRuleLines.emplace_back(std::move(body), lineNumber);
+                } else {
+                    phonemeRuleLines.emplace_back(std::move(body), lineNumber);
+                }
             } else {
                 languageFileError(lineNumber,
                                   "unknown directive: " + directive);
@@ -901,12 +1279,33 @@ LanguageDefinition parseLanguageDefinition(std::string_view text) {
     if (definition.name.empty()) {
         throw std::invalid_argument("language definition has no name");
     }
+
+    const auto validateRules = [&](const auto &lines, bool graphemePhase,
+                                   const char *phase) {
+        for (const auto &[body, line] : lines) {
+            try {
+                (void)compileRule(body, graphemePhase, definition.classes);
+            } catch (const std::invalid_argument &error) {
+                languageFileError(line, std::string(phase) +
+                                            " rule: " + error.what());
+            }
+        }
+    };
+    validateRules(graphemeRuleLines, true, "grapheme");
+    validateRules(phonemeRuleLines, false, "phoneme");
+    for (auto &entry : graphemeRuleLines) {
+        definition.graphemeRules.push_back(std::move(entry.first));
+    }
+    for (auto &entry : phonemeRuleLines) {
+        definition.phonemeRules.push_back(std::move(entry.first));
+    }
     return definition;
 }
 
 std::vector<Phoneme> phonemize(std::string_view text,
-                               const LanguageDefinition &language) {
-    return conlangPhonemes(text, language);
+                               const LanguageDefinition &language,
+                               std::vector<std::string> *trace) {
+    return conlangPhonemes(text, language, trace);
 }
 
 } // namespace formant

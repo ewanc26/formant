@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-23
+
+### Added
+
+- Ordered rewrite-rule engine for conlang romanisation and allophony. Language files can declare `class` sets and `grapheme-rule` / `phoneme-rule` bodies of the form `pattern > replacement / before _ after`; rules run in file order, `0` deletes, `#` anchors word edges, and classes match their longest member. Grapheme rules run before grapheme lookup and phoneme rules after mapping, so both phases feed the existing universal IPA and synthesis path.
+- `--trace` for `--lang-file` renders, and an optional trace vector on `phonemize(text, definition, trace)`, reporting every rule application with stable rule numbers and positions. `--trace` is rejected without `--lang-file`.
+- `examples/velta.lang` now demonstrates context-sensitive romanisation (`c` before front vowels), intervocalic tapping, class-based environments and word-final deletion; `examples/velta.txt` exercises them. `docs/language-files.md` documents the grammar, precedence, comments and the supported SCA-like subset.
+
 ## [0.6.0] - 2026-11-23
 
 ### Added

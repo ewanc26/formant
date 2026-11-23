@@ -363,4 +363,39 @@ if(NOT bad_language_file_error MATCHES "language definition has no name")
     message(FATAL_ERROR "unexpected language-file error: ${bad_language_file_error}")
 endif()
 
+# Trace mode reports ordered rule applications from the same engine.
+set(FORMANT_TRACE_FILE "${CMAKE_CURRENT_BINARY_DIR}/trace.lang")
+file(WRITE "${FORMANT_TRACE_FILE}" [=[name Trace
+ phoneme a
+ phoneme t
+ grapheme a a
+ grapheme t t
+ phoneme-rule t > t / # _
+]=])
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${FORMANT_TRACE_FILE}" --trace
+        --text "ta" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE trace_result
+    OUTPUT_VARIABLE trace_output
+    ERROR_VARIABLE trace_error
+)
+if(NOT trace_result EQUAL 0)
+    message(FATAL_ERROR "formant trace render failed: ${trace_error}")
+endif()
+if(NOT trace_output MATCHES "trace: phoneme-rule 1 at 0: t > t / # _")
+    message(FATAL_ERROR "unexpected trace output: ${trace_output}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --trace --text "a" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE trace_mode_result
+    ERROR_VARIABLE trace_mode_error
+)
+if(trace_mode_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted --trace without --lang-file")
+endif()
+if(NOT trace_mode_error MATCHES "--trace only applies with --lang-file")
+    message(FATAL_ERROR "unexpected --trace mode message: ${trace_mode_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

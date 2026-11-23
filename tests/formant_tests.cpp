@@ -1394,7 +1394,74 @@ int main() {
         CHECK(rejects("name X\nunknown y\n"));
         CHECK(rejects("name X\nphoneme a duration-scale=zero\n"));
         CHECK(rejects("name X\ngrapheme\n"));
+        CHECK(rejects("name X\nphoneme-rule a > b / V\n"));
+        CHECK(rejects("name X\nphoneme-rule > b\n"));
+        CHECK(rejects("name X\nphoneme-rule a >\n"));
+        CHECK(rejects("name X\nclass V\n"));
+        CHECK(rejects("name X\nphoneme-rule # > a\n"));
     }
+
+    // Ordered grapheme rules rewrite romanisation before longest-match lookup.
+    const LanguageDefinition orthography =
+        parseLanguageDefinition("name Orthography\n"
+                                "grapheme a a\n"
+                                "grapheme e e\n"
+                                "grapheme k k\n"
+                                "grapheme s s\n"
+                                "grapheme-rule c > s / _ e\n"
+                                "grapheme-rule c > s / _ i\n"
+                                "grapheme-rule c > k\n");
+    std::vector<std::string> trace;
+    CHECK(names(phonemize("ceca", orthography, &trace)) ==
+          std::vector<std::string>({"s", "e", "k", "a"}));
+    // The first rule wins at the first c; the third handles the second c, and
+    // the trace reports both applications with stable rule numbers.
+    CHECK(trace.size() == 2);
+    CHECK(trace[0].find("grapheme-rule 1") != std::string::npos);
+    CHECK(trace[0].find("c > s / _ e") != std::string::npos);
+    CHECK(trace[1].find("grapheme-rule 3") != std::string::npos);
+
+    // Phoneme rules run after mapping and fire only in their environments.
+    const LanguageDefinition allophony =
+        parseLanguageDefinition("name Allophony\n"
+                                "strict\n"
+                                "class V a\n"
+                                "phoneme a\n"
+                                "phoneme t\n"
+                                "phoneme \u027E\n"
+                                "grapheme a a\n"
+                                "grapheme t t\n"
+                                "phoneme-rule t > \u027E / V _ V\n");
+    CHECK(names(phonemize("tata", allophony)) ==
+          std::vector<std::string>({"t", "a", "\u027E", "a"}));
+    // Rule-derived phonemes still render through the one deterministic PCM
+    // path; the same input produces byte-identical audio.
+    CHECK(Synthesizer(voicePreset("neutral"))
+              .render(phonemize("tata", allophony), 8000) ==
+          Synthesizer(voicePreset("neutral"))
+              .render(phonemize("tata", allophony), 8000));
+
+    // Rules are ordered: the first matching rule at a position wins.
+    const LanguageDefinition ordered =
+        parseLanguageDefinition("name Ordered\n"
+                                "grapheme a a\n"
+                                "phoneme-rule a > e\n"
+                                "phoneme-rule a > o\n");
+    CHECK(names(phonemize("a", ordered)) == std::vector<std::string>({"e"}));
+
+    // '#' anchors environments to word edges; 0 deletes a match.
+    const LanguageDefinition boundaries =
+        parseLanguageDefinition("name Boundaries\n"
+                                "class C n\n"
+                                "grapheme a a\n"
+                                "grapheme n n\n"
+                                "grapheme ' \u0294\n"
+                                "phoneme-rule a > e / # _\n"
+                                "phoneme-rule \u0294 > 0 / C _ #\n");
+    CHECK(names(phonemize("a", boundaries)) == std::vector<std::string>({"e"}));
+    CHECK(names(phonemize("n'", boundaries)) ==
+          std::vector<std::string>({"n"}));
+
     // A language file is deterministic and feeds the shared renderer.
     CHECK(Synthesizer(voicePreset("neutral"))
               .render(phonemize("velta", velta), 8000) ==

@@ -129,11 +129,11 @@ The language module only decides how text becomes phonemes. Formant tables, IPA 
 
 #### Conlangs and user languages
 
-A language definition file supplies a language as data: grapheme-to-IPA mappings, a word lexicon, an optional inventory and per-phoneme realization overrides. No C++ or rebuild is needed.
+A language definition file supplies a language as data: grapheme-to-IPA mappings, a word lexicon, an optional inventory, per-phoneme realization overrides and ordered context-sensitive rewrite rules. No C++ or rebuild is needed.
 
 ```sh
-build/formant --lang-file examples/velta.lang --text "Velta shael, toran." --output velta.wav
-build/formant --lang-file examples/velta.lang --text "vel'ta" --output glottal.wav
+build/formant --lang-file examples/velta.lang --text "Velta tata, celta, toran'." --output velta.wav
+build/formant --lang-file examples/velta.lang --trace --text "tata" --output tata.wav
 ```
 
 ```cpp
@@ -141,7 +141,9 @@ const auto velta = formant::parseLanguageDefinition(source);
 const auto phonemes = formant::phonemize("Velta shael.", velta);
 ```
 
-See [docs/language-files.md](docs/language-files.md) for the grammar, matching rules and override semantics. [`examples/velta.lang`](examples/velta.lang) is a complete example.
+Rewrite rules use SCA-style `pattern > replacement / environment` bodies, class sets for vowels, consonants or arbitrary categories, `#` word edges, and `0` for deletion. Grapheme rules run before lookup; phoneme rules run after mapping and before realization overrides. `--trace` reports every application.
+
+See [docs/language-files.md](docs/language-files.md) for the grammar, rule matching, trace output and override semantics. [`examples/velta.lang`](examples/velta.lang) is a complete example.
 
 ### Customisation
 

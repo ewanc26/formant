@@ -37,6 +37,7 @@ Options:
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
   --lang TAG              Text language: en (English), es (Spanish)
   --lang-file FILE        Speak text with a user-defined language definition
+  --trace                 Print rewrite-rule applications (with --lang-file)
   --voice NAME            Built-in voice: neutral, alto, bass, child, robot, whisper
   --list-voices           List available voices and exit
   --list-phonemes         List available phonemes and exit
@@ -141,6 +142,7 @@ struct Options {
     bool useStdin = false;
     bool useLanguage = false;
     bool useLanguageFile = false;
+    bool trace = false;
 };
 
 // Accepts both "--flag value" and "--flag=value".
@@ -199,6 +201,10 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--stdin") {
             options.useStdin = true;
+            continue;
+        }
+        if (arg == "--trace") {
+            options.trace = true;
             continue;
         }
 
@@ -313,6 +319,10 @@ int main(int argc, char **argv) {
                 "--lang-file only applies to text input; --phonemes, --ipa "
                 "and --xsampa are language-independent");
         }
+        if (options.trace && !options.useLanguageFile) {
+            throw std::invalid_argument("--trace only applies with "
+                                        "--lang-file");
+        }
 
         formant::LanguageDefinition languageDefinition;
         if (options.useLanguageFile) {
@@ -351,6 +361,7 @@ int main(int argc, char **argv) {
                                         "and harmonics must not be negative");
         }
 
+        std::vector<std::string> trace;
         std::vector<formant::Phoneme> phonemes;
         if (options.usePhonemes) {
             phonemes = formant::parsePhonemes(options.phonemes);
@@ -359,7 +370,11 @@ int main(int argc, char **argv) {
         } else if (options.useXsampa) {
             phonemes = formant::parseXsampa(options.xsampa);
         } else if (options.useLanguageFile) {
-            phonemes = formant::phonemize(text, languageDefinition);
+            phonemes = formant::phonemize(text, languageDefinition,
+                                          options.trace ? &trace : nullptr);
+            for (const std::string &line : trace) {
+                std::cout << "trace: " << line << "\n";
+            }
         } else {
             phonemes = formant::phonemize(text, options.language);
         }
