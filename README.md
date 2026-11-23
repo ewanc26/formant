@@ -112,6 +112,9 @@ build/formant --text "Hello, world." --intonation-file script.intonation --outpu
 # Read text from stdin
 echo "Are you there?" | build/formant --stdin --output question.wav
 
+# Generate the MRT intelligibility battery for listening tests
+build/formant --mrt /tmp/mrt-neutral --voice neutral --rate 1.0 --pitch 120
+
 # Inspect what is available
 build/formant --list-voices
 build/formant --list-voice-parameters

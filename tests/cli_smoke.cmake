@@ -1284,6 +1284,27 @@ if(gib_badstyle_result EQUAL 0 OR NOT gib_badstyle_error MATCHES "unknown gibber
     message(FATAL_ERROR "bad gibberish style was not rejected: ${gib_badstyle_error}")
 endif()
 
+# #105: MRT intelligibility battery generation.
+set(MRT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mrt-smoke")
+file(REMOVE_RECURSE "${MRT_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --mrt "${MRT_DIR}" --voice neutral --rate 1.0 --pitch 120
+    RESULT_VARIABLE mrt_result
+    ERROR_VARIABLE mrt_error
+)
+if(NOT mrt_result EQUAL 0)
+    message(FATAL_ERROR "--mrt failed: ${mrt_error}")
+endif()
+foreach(mrt_file response_sheet.csv answer_key.csv README.txt mrt_001_e01_initial_went.wav mrt_300_e50_initial_nun.wav)
+    if(NOT EXISTS "${MRT_DIR}/${mrt_file}")
+        message(FATAL_ERROR "missing MRT file: ${mrt_file}")
+    endif()
+endforeach()
+file(READ "${MRT_DIR}/response_sheet.csv" mrt_response)
+if(NOT mrt_response MATCHES "trial,wav,ensemble,focus,target,response,correct,voice,rate,pitch")
+    message(FATAL_ERROR "MRT response sheet header missing")
+endif()
+
 # The exact transcription-mode error text is a compatibility contract.
 execute_process(
     COMMAND "${FORMANT_CLI}" --ipa "a" --phonemes "[a]" --output "${GIB_DIR}/contract.wav"
