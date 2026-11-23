@@ -1,0 +1,7 @@
+# PHOIBLE 2.0 segment coverage (generated)
+# category	total	direct	approx	direct_percent
+vowel	573	564	9	98.4
+pulmonic	1095	894	201	81.6
+non-pulmonic	297	236	61	79.5
+diacritic	197	129	68	65.5
+ALL	2162	1823	339	84.3
