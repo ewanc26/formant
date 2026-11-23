@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "formant/formant.h"
+#include "../src/prosody.h"
 
 namespace {
 
@@ -2164,6 +2165,105 @@ int main() {
                       .size() ==
                   formant::estimateEnvelope(rendered, rate, options).size());
         }
+    }
+
+    // Issue #108: a raised-cosine fade removes partials before the hard
+    // Nyquist break, so a gliding F0 cannot pop them. The window is exactly
+    // unity below the band and reaches zero at the ceiling.
+    {
+        const int rate = 44100;
+        const double ceiling = detail::kHarmonicCeiling * rate;
+        const double start = ceiling * (1.0 - detail::kCeilingTaper);
+        CHECK(detail::ceilingGain(1000.0, rate) == 1.0);
+        CHECK(detail::ceilingGain(start, rate) == 1.0);
+        CHECK(detail::ceilingGain(ceiling, rate) == 0.0);
+        double previous = 2.0;
+        for (int i = 0; i <= 64; ++i) {
+            const double f = start + (ceiling - start) * i / 64.0;
+            const double g = detail::ceilingGain(f, rate);
+            CHECK(g >= 0.0 && g <= 1.0 && g <= previous);
+            previous = g;
+        }
+        CHECK(detail::capGain(1) == 1.0);
+        CHECK(detail::capGain(detail::kMaxHarmonics) == 0.0);
+
+        // A sustained vowel with a strong F4 just below the ceiling and a
+        // rising F0. The same voice rendered without the fade keeps full
+        // amplitude until the hard break, so it retains more high-band
+        // energy in the second half of the glide.
+        Phoneme glide;
+        glide.name = "ceiling-glide";
+        glide.kind = PhonemeKind::Voiced;
+        glide.duration = 1.0;
+        glide.voiced = true;
+        glide.pitchStart = 1.0;
+        glide.pitchEnd = 1.2;
+        glide.bands[3] = FormantBand{ceiling, 2.0, 50.0};
+
+        Voice glideVoice;
+        glideVoice.pitch = 95.0;
+        glideVoice.harmonics = 240;
+        glideVoice.declination = 0.0;
+        glideVoice.vibratoRate = 0.0;
+        glideVoice.vibratoDepth = 0.0;
+        glideVoice.breathiness = 0.0;
+        glideVoice.attack = 0.002;
+        glideVoice.release = 0.002;
+        glideVoice.gain = 1.0;
+
+        glideVoice.taperCeiling = true;
+        const std::vector<float> faded =
+            Synthesizer(glideVoice).render({glide}, rate);
+        glideVoice.taperCeiling = false;
+        const std::vector<float> abrupt =
+            Synthesizer(glideVoice).render({glide}, rate);
+        CHECK(faded.size() == static_cast<size_t>(rate));
+        CHECK(faded == faded);
+        CHECK(faded != abrupt);
+
+        double fadedEnergy = 0.0;
+        double abruptEnergy = 0.0;
+        for (size_t n = static_cast<size_t>(rate) / 2; n < faded.size(); ++n) {
+            fadedEnergy += static_cast<double>(faded[n]) * faded[n];
+            abruptEnergy += static_cast<double>(abrupt[n]) * abrupt[n];
+        }
+        CHECK(fadedEnergy < 0.8 * abruptEnergy);
+
+        // Per-sample delta of an eight-sample high-frequency envelope stays
+        // within twice the mean envelope level with the fade active. The
+        // untapered render breaks that bound when the partial is removed.
+        auto envelope = [](const std::vector<float> &signal) {
+            constexpr int width = 8;
+            std::vector<double> magnitude(signal.size(), 0.0);
+            for (size_t n = 1; n < signal.size(); ++n) {
+                magnitude[n] = std::abs(static_cast<double>(signal[n]) -
+                                        static_cast<double>(signal[n - 1]));
+            }
+            double maxDelta = 0.0;
+            double mean = 0.0;
+            size_t count = 0;
+            for (size_t n = width; n + width < signal.size(); ++n) {
+                double before = 0.0;
+                double after = 0.0;
+                for (int k = 0; k < width; ++k) {
+                    before += magnitude[n + k];
+                    after += magnitude[n + k + 1];
+                }
+                before /= width;
+                after /= width;
+                if (n > signal.size() / 20 && n < signal.size() * 19 / 20) {
+                    maxDelta = std::max(maxDelta, std::abs(before - after));
+                    mean += before;
+                    ++count;
+                }
+            }
+            return std::pair<double, double>{maxDelta, mean / count};
+        };
+        const auto fadedEnvelope = envelope(faded);
+        const auto abruptEnvelope = envelope(abrupt);
+        const double bound = 2.0 * fadedEnvelope.second;
+        CHECK(fadedEnvelope.first <= bound);
+        CHECK(abruptEnvelope.first > bound);
     }
 
     // The English paths remain byte-for-byte unchanged.

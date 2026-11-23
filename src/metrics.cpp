@@ -563,15 +563,25 @@ EnvelopeTrack expectedEnvelope(const std::vector<Phoneme> &phonemes,
 
             std::vector<double> sourcePower;
             sourcePower.reserve(harmonics.size());
+            const bool capped = voice.harmonics >= detail::kMaxHarmonics;
             int harmonicNumber = 0;
             for (double frequency : harmonics) {
                 ++harmonicNumber;
                 double amplitude = 0.0;
                 if (harmonicNumber <= voice.harmonics &&
-                    frequency <= sampleRate * 0.49) {
+                    frequency < sampleRate * detail::kHarmonicCeiling) {
+                    double gain =
+                        voice.taperCeiling
+                            ? detail::ceilingGain(frequency, sampleRate)
+                            : 1.0;
+                    if (capped) {
+                        gain *= voice.taperCeiling
+                                    ? detail::capGain(harmonicNumber)
+                                    : 1.0;
+                    }
                     amplitude = detail::formantResponse(frequency, bands,
                                                         voice.formantScale) /
-                                static_cast<double>(harmonicNumber) *
+                                static_cast<double>(harmonicNumber) * gain *
                                 segment->phoneme->amplitude;
                 }
                 sourcePower.push_back(

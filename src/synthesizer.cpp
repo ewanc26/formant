@@ -14,13 +14,6 @@
 namespace formant {
 namespace {
 
-constexpr double kHarmonicCeiling = 0.49; // fraction of the sample rate
-// Hard cap on voiced partials. The Nyquist break normally stops the harmonic
-// loop much earlier, but a near-zero fundamental never reaches it; without a
-// cap such a voice would iterate billions of times per sample. Beyond this
-// count the 1/h weighting makes each partial inaudible.
-constexpr int kMaxHarmonics = 4096;
-
 struct Segment {
     const Phoneme *phoneme = nullptr;
     int start = 0;
@@ -167,17 +160,30 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
             if (fundamental > 0.0 && voice_.harmonics > 0) {
                 // The ceiling bounds the useful partials, but a very small
                 // fundamental can keep every partial below it. Cap the count
-                // so a pathological voice cannot render without bound.
-                const int limit = std::min(voice_.harmonics, kMaxHarmonics);
+                // so a pathological voice cannot render without bound. Both
+                // bounds fade their last few percent before the hard stop.
+                const int limit =
+                    std::min(voice_.harmonics, detail::kMaxHarmonics);
+                const bool capped = voice_.harmonics >= detail::kMaxHarmonics;
                 for (int h = 1; h <= limit; ++h) {
                     const double frequency =
                         fundamental * static_cast<double>(h);
-                    if (frequency > sampleRate * kHarmonicCeiling) {
+                    if (frequency >= sampleRate * detail::kHarmonicCeiling) {
                         break;
+                    }
+                    double gain =
+                        voice_.taperCeiling
+                            ? detail::ceilingGain(frequency, sampleRate)
+                            : 1.0;
+                    if (capped) {
+                        gain *= voice_.taperCeiling ? detail::capGain(h) : 1.0;
+                    }
+                    if (gain <= 0.0) {
+                        continue;
                     }
                     voiced += detail::formantResponse(frequency, bands,
                                                       voice_.formantScale) /
-                              static_cast<double>(h) *
+                              static_cast<double>(h) * gain *
                               std::sin(static_cast<double>(h) * phase);
                 }
             }

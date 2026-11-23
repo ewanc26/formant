@@ -242,6 +242,7 @@ voice.pitch = 200.0;          // Hz
 voice.formantScale = 1.15;    // longer vocal tract
 voice.vibratoDepth = 10.0;    // cents
 voice.breathiness = 0.08;     // sine-noise under voiced sounds
+voice.taperCeiling = true;    // fade partials before Nyquist (default)
 
 const auto samples = formant::synthesizeText("Hello, world.", voice, 44100);
 formant::writeWav("hello.wav", samples, 44100);
