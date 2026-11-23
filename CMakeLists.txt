@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.22.0
+  VERSION 0.23.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -133,6 +133,22 @@ if(FORMANT_BUILD_TESTS)
         endif()
     endif()
 endif()
+
+# Offline formant-trajectory verification (issue #104). Deliberately opt-in:
+# EXCLUDE_FROM_ALL keeps the default build unchanged, there is no add_test, and
+# the golden fixture is only rewritten by an explicit --write-golden run.
+add_executable(formant_verify_tool EXCLUDE_FROM_ALL tests/formant_verify.cpp)
+target_link_libraries(formant_verify_tool PRIVATE formant_core)
+target_include_directories(formant_verify_tool PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(formant_verify_tool PRIVATE
+    FORMANT_TRAJECTORY_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/tests/formant_trajectory_golden.txt")
+add_custom_target(formant_verify
+    COMMAND $<TARGET_FILE:formant_verify_tool>
+            --report ${CMAKE_CURRENT_BINARY_DIR}/formant-verify-report.txt
+    DEPENDS formant_verify_tool
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Offline formant-trajectory drift report")
 
 if(FORMANT_INSTALL)
     include(GNUInstallDirs)

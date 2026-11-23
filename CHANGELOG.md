@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-23
+
+### Added
+
+- An offline formant-trajectory verification harness via the opt-in `formant_verify` CMake target. It samples the intended F1–F4 trajectory from the same shared prosody model the synthesiser uses, measures the rendered audio with the built-in harmonic peak picker, and reports per-band Hz RMS drift against a committed golden fixture. A `--self-test-broken` dry run proves a broken formant table is caught; fixtures only change through an explicit `--write-golden`. The target is `EXCLUDE_FROM_ALL` and not registered with CTest, so the default build and fast dependency-free test suite are unchanged. Documented in `docs/trajectory-verification.md`.
+
 ## [0.22.0] - 2026-11-23
 
 ### Added
