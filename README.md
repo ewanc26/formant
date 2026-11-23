@@ -87,6 +87,10 @@ build/formant --ssml-file script.ssml --output ssml.wav
 # Layer exact F0, duration and amplitude targets over the default prosody
 build/formant --text "Hello, world." --prosody-file script.prosody --output exact.wav
 
+# Expand symbolic ToBI intonation (named tune and/or annotation file)
+build/formant --text "Are you there?" --intonation-tune yesno --output question.wav
+build/formant --text "Hello, world." --intonation-file script.intonation --output intoned.wav
+
 # Read text from stdin
 echo "Are you there?" | build/formant --stdin --output question.wav
 

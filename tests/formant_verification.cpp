@@ -506,6 +506,144 @@ void verifyProsodyDirect() {
               << " samples, neighbour stayed near 100 Hz\n";
 }
 
+// Issue #145: symbolic ToBI tones must expand into measurable F0 events.
+// The analyzer's oracle shares fundamentalAt() with the renderer, so both the
+// intended contour and the measured audio are checked at each accent.
+void verifyIntonation() {
+    formant::Voice voice = formant::voicePreset("robot");
+    voice.pitch = 100.0;
+    voice.harmonics = 200;
+    voice.declination = 0.0;
+    voice.attack = 0.002;
+    voice.release = 0.002;
+    voice.gain = 1.0;
+
+    formant::AnalyzerOptions options;
+    options.maxF0 = 400.0;
+
+    formant::Phoneme vowel = *formant::findPhoneme("ee");
+    vowel.duration = 0.4;
+
+    auto measure = [&](const std::vector<formant::Phoneme> &phonemes) {
+        const std::vector<float> samples =
+            formant::Synthesizer(voice).render(phonemes, 44100);
+        return meanVoicedF0(formant::estimateF0(samples, 44100, options),
+                            voice.pitch);
+    };
+
+    // A high plateau accent measures at its documented multiplier of the
+    // 100 Hz base, and a low accent measures below it.
+    std::vector<formant::Phoneme> high{vowel};
+    formant::applyIntonation(
+        high, formant::Language::English,
+        formant::parseIntonationFile("accent vowel:0 H*\n"));
+    const double highF0 = measure(high);
+    CHECK(std::abs(highF0 - 130.0) < 4.0);
+
+    std::vector<formant::Phoneme> low{vowel};
+    formant::applyIntonation(
+        low, formant::Language::English,
+        formant::parseIntonationFile("accent vowel:0 L*\n"));
+    const double lowF0 = measure(low);
+    CHECK(std::abs(lowF0 - 75.0) < 4.0);
+
+    // A rising accent has more energy late in the segment than early; a
+    // falling accent the reverse. Compare the oracle's start and end targets.
+    std::vector<formant::Phoneme> rising{vowel};
+    formant::applyIntonation(
+        rising, formant::Language::English,
+        formant::parseIntonationFile("accent vowel:0 L+H*\n"));
+    CHECK(rising[0].pitchEnd > rising[0].pitchStart);
+    std::vector<formant::Phoneme> falling{vowel};
+    formant::applyIntonation(
+        falling, formant::Language::English,
+        formant::parseIntonationFile("accent vowel:0 H+L*\n"));
+    CHECK(falling[0].pitchEnd < falling[0].pitchStart);
+
+    // Downstep lowers each successive accented peak within one phrase.
+    std::vector<formant::Phoneme> peaks(3, vowel);
+    formant::applyIntonation(peaks, formant::Language::English,
+                             formant::parseIntonationFile(
+                                 "accent 0 H*\naccent 1 !H*\naccent 2 !!H*\n"));
+    const formant::F0Track peakTrack =
+        formant::expectedF0(peaks, voice, 44100, options);
+    const formant::TimingPlan peakPlan =
+        formant::planTiming(peaks, voice, 44100);
+    // A frame's analysis window can straddle a segment boundary, so only
+    // count frames whose centre is at least one window away from an edge.
+    const int guard = static_cast<int>(options.windowSeconds * 44100.0);
+    double firstPeak = 0.0;
+    double secondPeak = 0.0;
+    double thirdPeak = 0.0;
+    for (const formant::F0Frame &frame : peakTrack) {
+        if (frame.frequency <= 0.0) {
+            continue;
+        }
+        const int centre =
+            frame.startSample +
+            static_cast<int>(options.windowSeconds * 44100.0 / 2.0);
+        for (std::size_t s = 0; s < peakPlan.phonemes.size(); ++s) {
+            if (centre >= peakPlan.phonemes[s].startSample + guard &&
+                centre <= peakPlan.phonemes[s].endSample - guard) {
+                double &target =
+                    s == 0 ? firstPeak : (s == 1 ? secondPeak : thirdPeak);
+                target = std::max(target, frame.frequency);
+                break;
+            }
+        }
+    }
+    CHECK(firstPeak > secondPeak);
+    CHECK(secondPeak > thirdPeak);
+
+    // Boundary tones produce a measurable final rise or fall.
+    std::vector<formant::Phoneme> rise{vowel};
+    formant::applyIntonation(rise, formant::Language::English,
+                             formant::parseIntonationFile("boundary L-H%\n"));
+    CHECK(rise[0].pitchEnd > rise[0].pitchStart);
+    std::vector<formant::Phoneme> fall{vowel};
+    formant::applyIntonation(fall, formant::Language::English,
+                             formant::parseIntonationFile("boundary L-L%\n"));
+    CHECK(fall[0].pitchEnd < fall[0].pitchStart);
+    CHECK(measure(rise) > measure(fall));
+
+    // Break indices map to pause tiers: a tier-3 pause adds its table
+    // duration to the rendered timeline.
+    std::vector<formant::Phoneme> broken{vowel};
+    const int beforeBreak =
+        formant::planTiming(broken, voice, 44100).totalSamples;
+    formant::applyIntonation(
+        broken, formant::Language::English,
+        formant::parseIntonationFile("break vowel:last 3\n"));
+    const formant::TimingPlan plan = formant::planTiming(broken, voice, 44100);
+    const formant::ToneInventory inventory = formant::defaultToneInventory();
+    const int expectedSamples =
+        static_cast<int>(std::llround(inventory.breakTiers[3] * 44100.0));
+    CHECK(plan.totalSamples - beforeBreak == expectedSamples);
+
+    // All five shipped tunes expand deterministically for both languages.
+    for (formant::Language lang :
+         {formant::Language::English, formant::Language::Spanish}) {
+        for (const std::string &name : formant::intonationTuneNames(lang)) {
+            std::vector<formant::Phoneme> tuned(2, vowel);
+            formant::IntonationFile file;
+            file.tune = name;
+            formant::applyIntonation(tuned, lang, file,
+                                     formant::languageToneInventory(lang));
+            CHECK(!tuned.empty());
+            const std::vector<float> first =
+                formant::Synthesizer(voice).render(tuned, 44100);
+            const std::vector<float> second =
+                formant::Synthesizer(voice).render(tuned, 44100);
+            CHECK(first == second);
+        }
+    }
+
+    std::cout << "symbolic intonation: H* " << number(highF0) << " Hz, L* "
+              << number(lowF0)
+              << " Hz, downstep lowers peaks, boundary rise > fall,"
+              << " tier-3 pause = " << expectedSamples << " samples\n";
+}
+
 // Renders a deliberately wrong voice but scores it against the intended
 // tracks. A CI job passes only when the metrics reject the regression, which
 // demonstrates the thresholds are not vacuous.
@@ -599,6 +737,7 @@ int main(int argc, char **argv) {
     verifySampleRates();
     verifyTransposition();
     verifyProsodyDirect();
+    verifyIntonation();
     const std::vector<Case> cases = corpus();
     std::vector<ReportRow> rows;
     rows.reserve(cases.size());

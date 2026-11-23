@@ -158,6 +158,58 @@ if(NOT prosody_bad_error MATCHES "prosody line 1")
     message(FATAL_ERROR "unexpected prosody error message: ${prosody_bad_error}")
 endif()
 
+# --intonation-file expands symbolic ToBI tones; --intonation-tune selects a
+# built-in tune. Both compose with every front end and stay deterministic.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/smoke.intonation" "# symbolic tones\naccent vowel:0 L+H*\naccent vowel:1 !H*\nboundary L-H%\nbreak vowel:last 2\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --intonation-file "${CMAKE_CURRENT_BINARY_DIR}/smoke.intonation" --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE intonation_result
+    ERROR_VARIABLE intonation_error
+)
+if(NOT intonation_result EQUAL 0)
+    message(FATAL_ERROR "formant CLI intonation render failed (${intonation_result}): ${intonation_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT}" intonation_size)
+if(intonation_size LESS 44)
+    message(FATAL_ERROR "intonation WAV output is too short: ${intonation_size} bytes")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hello world." --intonation-tune yesno --sample-rate 22050 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE tune_result
+    ERROR_VARIABLE tune_error
+)
+if(NOT tune_result EQUAL 0)
+    message(FATAL_ERROR "formant CLI intonation tune failed (${tune_result}): ${tune_error}")
+endif()
+
+# Malformed intonation directives fail with the source line number.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bad.intonation" "wobble 0 1\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --intonation-file "${CMAKE_CURRENT_BINARY_DIR}/bad.intonation" --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE intonation_bad_result
+    ERROR_VARIABLE intonation_bad_error
+)
+if(intonation_bad_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted a malformed intonation file")
+endif()
+if(NOT intonation_bad_error MATCHES "intonation line 1")
+    message(FATAL_ERROR "unexpected intonation error message: ${intonation_bad_error}")
+endif()
+
+# An unknown named tune is rejected with its name.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --intonation-tune nope --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE tune_bad_result
+    ERROR_VARIABLE tune_bad_error
+)
+if(tune_bad_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted an unknown intonation tune")
+endif()
+if(NOT tune_bad_error MATCHES "unknown tune 'nope'")
+    message(FATAL_ERROR "unexpected tune error message: ${tune_bad_error}")
+endif()
+
 # --stdin must be ignored when a transcription mode supplies the phonemes.
 # An endless stdin source terminates via SIGPIPE only if the CLI never drains
 # it; the buggy version blocks reading it until the CMake timeout kills it.
