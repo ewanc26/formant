@@ -2,9 +2,9 @@
 # formant --benchmark-expected FILE.
 # Corpus: The quick brown fox jumps over the lazy dog. Formant speaks in sine waves only.
 case	voice	sample_rate	samples	audio_s	cpu_s	rtf	samples_s	f0_hz	harmonics	noise_partials	checksum	status
-neutral	neutral	44100	-	-	-	-	-	140.0	-	-	328b7c5b046864ef693cc8a41e2ae923900968812425b42b6993d344e89ba296	ok
-alto	alto	44100	-	-	-	-	-	210.0	-	-	1748cfbaa838ebbf419213ed932e3847560a6790b821fd194c6026a5ddad75a6	ok
-bass	bass	44100	-	-	-	-	-	95.0	-	-	69179226193bdc9d3fa925722744eba305251ebe65bcf85c7f99178465c3d28a	ok
-child	child	44100	-	-	-	-	-	270.0	-	-	44271574d4c4ffc0a34b6878b6b81a4b03a013bd38887211210c212feac75240	ok
-robot	robot	44100	-	-	-	-	-	120.0	-	-	2a90dcf45c151012c75f1a381ed50ab2cfc84f5243fdd62e28643b2454163ebf	ok
-whisper	whisper	44100	-	-	-	-	-	0.0	-	-	809375bd7af807ea30d1dc933f41c5e7ed8d432006432cc3e8af3dcf31a5d405	ok
+neutral	neutral	44100	-	-	-	-	-	140.0	-	-	f8162e87e86c7520a9c7d8663110011289d3c2238a15af78bb0964b0029d5af3	ok
+alto	alto	44100	-	-	-	-	-	210.0	-	-	5f6cb15b1a334cef6038d4f3d25573da31d322eb5bc4828b2cdcf651b60ba190	ok
+bass	bass	44100	-	-	-	-	-	95.0	-	-	c7289efa154a038a2729cba4a3cbe3139b313318bcac34002d0ee4489828028e	ok
+child	child	44100	-	-	-	-	-	270.0	-	-	9dee0f51802d490bb62df844da93fd2d63bdeaa4397e3b7aa07e44518589929e	ok
+robot	robot	44100	-	-	-	-	-	120.0	-	-	6cc88ae19b59919455bd2ed261829f8d9ee6ce2fec6a7dcfe60b60b2220ee753	ok
+whisper	whisper	44100	-	-	-	-	-	0.0	-	-	4adda038c58ae26cd777f7583017f294bf65c7fa9d52b9b64e6b919f3b8d55d9	ok

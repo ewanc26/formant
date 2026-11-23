@@ -41,8 +41,8 @@ struct BenchmarkResult {
 std::vector<BenchmarkCase> benchmarkCorpus();
 
 // Renders the case once as a warmup, then `repeats` timed renders and reports
-// the median CPU time. The checksum covers the little-endian PCM bits of the
-// first render, so it is platform-independent.
+// the median CPU time. The checksum covers the canonical 16-bit PCM bytes of
+// the first render, which is the project's byte-identity contract.
 BenchmarkResult runBenchmark(const BenchmarkCase &testCase, int repeats);
 
 std::string benchmarkReportHeader();

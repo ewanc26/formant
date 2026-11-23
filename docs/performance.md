@@ -32,8 +32,10 @@ fox jumps over the lazy dog. Formant speaks in sine waves only." under all six
 voice presets at 44.1 kHz. The corpus, sample rates and voices are constants in
 `benchmark/benchmark.cpp`, so results are comparable across machines and
 releases. Each case reports RTF, samples/second, the complexity breakdown, and
-a SHA-256 checksum of the rendered PCM bits (serialised little-endian so the
-hash is platform-independent).
+a SHA-256 checksum of the canonical 16-bit PCM bytes. Hashing the quantised
+stream rather than raw float bits keeps the checksum identical across compilers
+and sanitizer builds while still catching real rendering changes; it is the
+same byte-identity contract that fixes the default 16-bit WAV hash.
 
 The checksums are compiled into the harness and also published as data in
 `benchmark/expected.txt`. A mismatch is a hard failure: it means rendering
