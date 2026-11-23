@@ -93,6 +93,30 @@ build/formant --list-languages
 
 Run `build/formant --help` for the full option list. Every value flag also accepts `--flag=value`.
 
+### Output formats and streaming
+
+The default is still a deterministic 44-byte mono 16-bit PCM WAV. Additional
+encodings cover archive and pipeline use, and `--output -` writes bytes to
+stdout in fixed 4096-frame chunks with all status messages on stderr:
+
+```sh
+# 24-bit PCM WAV and 32-bit float WAV
+build/formant --text "Hello, world." --format wav24 --output hello-24.wav
+build/formant --text "Hello, world." --format wav32f --output hello-float.wav
+
+# Headerless PCM, piped live into a player (rate is not stored in raw output)
+build/formant --text "Hello." --format raw16 --sample-rate 44100 --output - \
+  | aplay -f S16_LE -c 1 -r 44100
+
+# Deterministic dither for integer output (same seed, same bytes)
+build/formant --text "Hello." --format wav16 --dither 42 --output dithered.wav
+```
+
+`--sample-rate` accepts any rate from 8 kHz upward; the harmonic ceiling is
+derived from it, so spectra scale safely up to 192 kHz and beyond. See
+[docs/audio-output.md](docs/audio-output.md) for the format table, WAV tags,
+dither semantics, CTest formant-verification harness and library API.
+
 ### Voices
 
 | Preset | Character |
@@ -217,9 +241,9 @@ CMakeLists.txt          – C++20 library, CLI and CTest targets
 include/formant/        – public headers (voice, phoneme, IPA, synthesizer, wav)
 src/                    – synthesis engine, language front ends and IPA implementation
 src/cli/                – command-line driver
-tests/                  – unit tests and the CLI smoke check
+tests/                  – unit tests, formant-verification harness and CLI smoke check
 examples/               – small text and phoneme inputs
-docs/                   – synthesis design notes, language-file grammar and release process
+docs/                   – synthesis design, audio output, language-file grammar and release process
 .github/workflows/      – CI on Linux and macOS
 ```
 
@@ -233,7 +257,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-The suite covers voice presets, English and Spanish text-to-phoneme conversion, language tags, user-defined language files, bracket parsing, the full IPA symbol inventory, X-SAMPA translation, stress/length/tone diacritics, deterministic rendering, WAV headers and a CLI end-to-end render. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
+The suite covers voice presets, English and Spanish text-to-phoneme conversion, language tags, user-defined language files, bracket parsing, the full IPA symbol inventory, X-SAMPA translation, stress/length/tone diacritics, deterministic rendering, WAV headers and encodings, deterministic dither, formant positions at five sample rates and CLI end-to-end renders. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
 
 ---
 

@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -46,7 +48,9 @@ Options:
   --list-phonemes         List available phonemes and exit
   --list-ipa              List recognised IPA symbols and exit
   --list-languages        List available text languages and exit
-  --output FILE           WAV output path (default: output.wav)
+  --output FILE           Audio output path, or - for stdout (default: output.wav)
+  --format NAME           wav16 (default), wav24, wav32f, raw16, raw24, raw32f
+  --dither SEED           Deterministic TPDF dither for 16/24-bit integers
   --timing FILE           Write word/phoneme timing (.json, .lrc, .srt, .vtt)
   --visemes FILE          Write a lip-sync viseme track as JSON
   --sample-rate HZ        PCM sample rate (default: 44100, minimum: 8000)
@@ -65,10 +69,12 @@ Options:
   --help, -h              Show this help and exit
 
 Every option with a value also accepts --option=value. Audio is rendered
-deterministically as floating-point PCM and written as 16-bit mono WAV.
+deterministically as floating-point PCM. Use --output - to stream audio to
+stdout; status and trace messages then go to stderr so stdout stays pure PCM.
 
 Example:
   formant --text "Hello, world." --voice alto --pitch 190 --output hello.wav
+  formant --ipa "ˈhəˈloʊ" --format raw16 --output - | aplay -f S16_LE -r 44100
 )";
 }
 
@@ -131,6 +137,48 @@ int integer(const std::string &flag, const std::string &value) {
     return static_cast<int>(parsed);
 }
 
+formant::AudioFormat audioFormat(const std::string &name) {
+    if (name == "wav16") {
+        return formant::AudioFormat::Pcm16;
+    }
+    if (name == "wav24") {
+        return formant::AudioFormat::Pcm24;
+    }
+    if (name == "wav32f") {
+        return formant::AudioFormat::Float32;
+    }
+    if (name == "raw16") {
+        return formant::AudioFormat::RawPcm16;
+    }
+    if (name == "raw24") {
+        return formant::AudioFormat::RawPcm24;
+    }
+    if (name == "raw32f") {
+        return formant::AudioFormat::RawFloat32;
+    }
+    throw std::invalid_argument("unknown audio format: " + name +
+                                " (use wav16, wav24, wav32f, raw16, raw24 or "
+                                "raw32f)");
+}
+
+uint32_t ditherSeed(const std::string &value) {
+    if (value.empty() || value[0] == '-') {
+        throw std::invalid_argument("expected an unsigned 32-bit seed for "
+                                    "--dither: " +
+                                    value);
+    }
+    char *end = nullptr;
+    errno = 0;
+    const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
+    if (errno == ERANGE || end != value.c_str() + value.size() ||
+        parsed > std::numeric_limits<uint32_t>::max()) {
+        throw std::invalid_argument("expected an unsigned 32-bit seed for "
+                                    "--dither: " +
+                                    value);
+    }
+    return static_cast<uint32_t>(parsed);
+}
+
 struct Options {
     Voice voice = voicePreset("neutral");
     Language language = Language::English;
@@ -141,6 +189,8 @@ struct Options {
     std::string languageFile;
     std::string lexiconFile;
     std::string output = "output.wav";
+    formant::AudioFormat format = formant::AudioFormat::Pcm16;
+    formant::AudioWriteOptions audioOptions;
     std::string timingFile;
     std::string visemesFile;
     int sampleRate = 44100;
@@ -281,6 +331,12 @@ Options parseOptions(int argc, char **argv) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
             options.output = takeValue(i, argc, argv, "--output");
+        } else if (arg == "--format" || arg.rfind("--format=", 0) == 0) {
+            options.format = audioFormat(takeValue(i, argc, argv, "--format"));
+        } else if (arg == "--dither" || arg.rfind("--dither=", 0) == 0) {
+            options.audioOptions.dither = true;
+            options.audioOptions.seed =
+                ditherSeed(takeValue(i, argc, argv, "--dither"));
         } else if (arg == "--timing" || arg.rfind("--timing=", 0) == 0) {
             options.timingFile = takeValue(i, argc, argv, "--timing");
         } else if (arg == "--visemes" || arg.rfind("--visemes=", 0) == 0) {
@@ -364,6 +420,17 @@ void writeTextFile(const std::string &path, const std::string &contents) {
 int main(int argc, char **argv) {
     try {
         const Options options = parseOptions(argc, argv);
+
+        // Writing audio to stdout must leave stdout byte-clean; every human
+        // message (including traces) goes to stderr in that mode.
+        const bool audioToStdout = options.output == "-";
+        std::ostream &status = audioToStdout ? std::cerr : std::cout;
+
+        if (options.audioOptions.dither &&
+            formant::isFloatAudioFormat(options.format)) {
+            throw std::invalid_argument(
+                "--dither only applies to 16-bit and 24-bit integer formats");
+        }
 
         const int inputModes = static_cast<int>(options.usePhonemes) +
                                static_cast<int>(options.useIpa) +
@@ -479,14 +546,14 @@ int main(int argc, char **argv) {
                                               options.trace ? &trace : nullptr);
             }
             for (const std::string &line : trace) {
-                std::cout << "trace: " << line << "\n";
+                status << "trace: " << line << "\n";
             }
         } else if (options.useLexicon) {
             phonemes =
                 formant::phonemize(text, options.language, pronunciationLexicon,
                                    options.trace ? &trace : nullptr);
             for (const std::string &line : trace) {
-                std::cout << "trace: " << line << "\n";
+                status << "trace: " << line << "\n";
             }
         } else {
             phonemes = formant::phonemize(text, options.language);
@@ -494,11 +561,17 @@ int main(int argc, char **argv) {
         const std::vector<float> samples =
             formant::Synthesizer(options.voice)
                 .render(phonemes, options.sampleRate);
-        formant::writeWav(options.output, samples, options.sampleRate);
+        if (audioToStdout) {
+            formant::writeAudio(std::cout, samples, options.sampleRate,
+                                options.format, options.audioOptions);
+        } else {
+            formant::writeAudioFile(options.output, samples, options.sampleRate,
+                                    options.format, options.audioOptions);
+        }
 
-        std::cout << "Wrote " << samples.size() << " samples to "
-                  << options.output << " (" << options.voice.name << ", "
-                  << options.sampleRate << " Hz)\n";
+        status << "Wrote " << samples.size() << " samples to "
+               << (audioToStdout ? "stdout" : options.output) << " ("
+               << options.voice.name << ", " << options.sampleRate << " Hz)\n";
 
         if (!options.timingFile.empty() || !options.visemesFile.empty()) {
             // Text modes supply their source words; transcription modes use
@@ -519,12 +592,12 @@ int main(int argc, char **argv) {
             if (!options.timingFile.empty()) {
                 writeTextFile(options.timingFile,
                               formatTiming(plan, visemes, options.timingFile));
-                std::cout << "Wrote timing to " << options.timingFile << "\n";
+                status << "Wrote timing to " << options.timingFile << "\n";
             }
             if (!options.visemesFile.empty()) {
                 writeTextFile(options.visemesFile,
                               formant::timingVisemesJson(plan, visemes));
-                std::cout << "Wrote visemes to " << options.visemesFile << "\n";
+                status << "Wrote visemes to " << options.visemesFile << "\n";
             }
         }
         return 0;

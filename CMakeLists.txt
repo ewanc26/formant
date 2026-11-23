@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.9.0
+  VERSION 0.10.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -62,6 +62,12 @@ if(FORMANT_BUILD_TESTS)
         add_executable(formant_tests tests/formant_tests.cpp)
         target_link_libraries(formant_tests PRIVATE formant_core)
         add_test(NAME formant_unit_tests COMMAND formant_tests)
+
+        add_executable(formant_formant_verification
+            tests/formant_verification.cpp)
+        target_link_libraries(formant_formant_verification PRIVATE formant_core)
+        add_test(NAME formant_formant_verification
+            COMMAND formant_formant_verification)
 
         add_test(NAME formant_cli_help COMMAND formant --help)
         add_test(NAME formant_cli_voices COMMAND formant --list-voices)

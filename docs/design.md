@@ -60,13 +60,19 @@ A language definition file extends this without C++: it supplies grapheme routes
 
 Because durations are assigned to phonemes before synthesis, timing is not a post-hoc analysis of the waveform. `src/schedule.cpp` owns the single cumulative scheduler that rounds `duration * sampleRate / rate` at each phoneme boundary; `Synthesizer::render()` and `planTiming()` both consume it, so emitted `startSample`/`endSample` values describe the exact buffer that was rendered, including fast rates and zero-length segments. Word units group phonemes around `|` gaps, fold pauses into the preceding word, and use source-text labels when available. Visemes are a separate data table keyed by phoneme name with a `PhonemeKind` fallback; both are pure transforms of the plan. This keeps the usual rule that data lives in tables and nothing mutates global state. See [docs/timing.md](timing.md) for formats and the public API.
 
+## Output encodings
+
+All renderers produce the same floating-point buffer before an output writer touches it. `src/wav.cpp` owns one chunked encoder for 16-bit PCM, packed 24-bit PCM and 32-bit IEEE float, with WAV and raw variants. The original `writeWav()` call delegates to that encoder with the original options, so its bytes are unchanged. Optional triangular dither is seeded explicitly and belongs only to integer quantization; it never feeds back into synthesis. WAV headers use the canonical 44-byte layout and derive byte rate and block align from the selected format. Raw stdout output routes status text to stderr, keeping the byte stream usable by a pipe. See [docs/audio-output.md](audio-output.md) for the format table and examples.
+
+The voiced Nyquist ceiling is `0.49 * sampleRate`, and the deterministic sine partials used for fricatives stop at `0.45 * sampleRate`. Both come from the caller's rate rather than a stored constant, so changing `--sample-rate` scales the spectrum and the number of admissible partials together. `tests/formant_verification.cpp` measures F1 and F2 with a Hann-windowed Goertzel filter at five rates, including a harmonic count that reaches past Nyquist at 22.05 kHz.
+
 ## Possible extensions
 
 - More language front ends (French, German, Italian) behind the same registry.
 - Language detection and per-span tags for mixed-language text.
 - A larger English lexicon or an external pronunciation file.
-- Stereo and streaming output.
-- Real-time playback adapters (Core Audio, PipeWire, SDL).
+- Stereo output.
+- Callback-driven playback adapters (Core Audio, PipeWire, SDL) fed from the same chunk clock.
 - Per-phoneme overrides in a voice file.
 
 The engine deliberately does not own an audio device. It returns `std::vector<float>` so callers decide what to do with it.
