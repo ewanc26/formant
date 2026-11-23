@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-23
+
+### Added
+
+- Additional audio output paths through one dependency-free encoder: `wav24` (packed 24-bit PCM), `wav32f` (IEEE float), `raw16`, `raw24` and `raw32f` alongside the original `wav16`. WAV files use the canonical 44-byte header with the correct format tag, byte rate and block align; raw files contain samples only. Integer samples clamp at their exact full scale and float samples clamp to `[-1, 1]`; byte order is little-endian on every host.
+- `--output -` streams audio to stdout in fixed 4096-frame chunks with no temporary file or platform shim. Status and `--trace` messages move to stderr so stdout stays byte-clean for `aplay`, `ffmpeg` or any other consumer. The default 16-bit WAV writer remains byte-identical to earlier releases.
+- Deterministic triangular dither for integer output via `--dither SEED` (also `AudioWriteOptions` in the library). A fixed 32-bit seed produces one stable sequence for the whole render, independent of chunk boundaries, previous renders or wall-clock state. Dither lives only in the output encoder, so synthesis remains sine-only; float formats reject it rather than silently ignoring it.
+- New `AudioFormat`, `AudioWriteOptions`, `audioFormatSampleBytes()`, `isRawAudioFormat()`, `isFloatAudioFormat()`, `writeAudio()` and `writeAudioFile()` API in [docs/audio-output.md](docs/audio-output.md), with README examples and WAV validation details.
+- `formant_formant_verification` CTest target. It renders a steady vowel at 22050, 44100, 48000, 96000 and 192000 Hz, measures F1/F2 with a Hann-windowed Goertzel filter on the harmonic grid, and checks that each peak matches the phoneme table and dominates nearby off-formant harmonics. A 200-harmonic voice reaches past Nyquist at the lowest rate, confirming the rate-derived ceiling composes with the existing tapers.
+
 ## [0.9.0] - 2026-11-23
 
 ### Added

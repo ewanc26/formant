@@ -532,4 +532,170 @@ if(NOT timing_first_hash STREQUAL timing_second_hash)
     message(FATAL_ERROR "timing output is not deterministic: ${timing_first_hash} vs ${timing_second_hash}")
 endif()
 
+# Audio output formats: the default WAV path remains byte-identical in shape,
+# while 24-bit and float WAV files advertise their format in the fmt chunk and
+# raw files contain samples only. All sizes derive from one baseline render.
+get_filename_component(FORMANT_OUTPUT_DIR "${FORMANT_OUTPUT}" DIRECTORY)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sample-rate 22050
+        --output "${FORMANT_OUTPUT_DIR}/format16.wav"
+    RESULT_VARIABLE format_result
+    ERROR_VARIABLE format_error
+)
+if(NOT format_result EQUAL 0)
+    message(FATAL_ERROR "default WAV render failed: ${format_error}")
+endif()
+file(SIZE "${FORMANT_OUTPUT_DIR}/format16.wav" wav16_bytes)
+math(EXPR audio_data_bytes "${wav16_bytes} - 44")
+math(EXPR audio_samples "${audio_data_bytes} / 2")
+if(audio_samples LESS 1)
+    message(FATAL_ERROR "default WAV render produced no samples")
+endif()
+
+foreach(format wav24 wav32f raw16 raw24 raw32f)
+    set(format_path "${FORMANT_OUTPUT_DIR}/format.${format}")
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa "a" --sample-rate 22050
+            --format "${format}" --output "${format_path}"
+        RESULT_VARIABLE format_result
+        ERROR_VARIABLE format_error
+    )
+    if(NOT format_result EQUAL 0)
+        message(FATAL_ERROR "--format ${format} render failed: ${format_error}")
+    endif()
+    file(SIZE "${format_path}" format_bytes)
+    if(format STREQUAL "wav24")
+        math(EXPR expected_bytes "44 + ${audio_samples} * 3")
+        file(READ "${format_path}" fmt_tag OFFSET 20 LIMIT 2 HEX)
+        file(READ "${format_path}" bits_per_sample OFFSET 34 LIMIT 2 HEX)
+        file(READ "${format_path}" block_align OFFSET 32 LIMIT 2 HEX)
+        if(NOT fmt_tag STREQUAL "0100" OR NOT bits_per_sample STREQUAL "1800" OR NOT block_align STREQUAL "0300")
+            message(FATAL_ERROR "invalid 24-bit WAV fmt chunk: ${fmt_tag} ${bits_per_sample} ${block_align}")
+        endif()
+    elseif(format STREQUAL "wav32f")
+        math(EXPR expected_bytes "44 + ${audio_samples} * 4")
+        file(READ "${format_path}" fmt_tag OFFSET 20 LIMIT 2 HEX)
+        file(READ "${format_path}" bits_per_sample OFFSET 34 LIMIT 2 HEX)
+        file(READ "${format_path}" block_align OFFSET 32 LIMIT 2 HEX)
+        if(NOT fmt_tag STREQUAL "0300" OR NOT bits_per_sample STREQUAL "2000" OR NOT block_align STREQUAL "0400")
+            message(FATAL_ERROR "invalid float WAV fmt chunk: ${fmt_tag} ${bits_per_sample} ${block_align}")
+        endif()
+    elseif(format STREQUAL "raw16")
+        math(EXPR expected_bytes "${audio_samples} * 2")
+    elseif(format STREQUAL "raw24")
+        math(EXPR expected_bytes "${audio_samples} * 3")
+    else()
+        math(EXPR expected_bytes "${audio_samples} * 4")
+    endif()
+    if(NOT format_bytes EQUAL expected_bytes)
+        message(FATAL_ERROR "--format ${format} wrote ${format_bytes} bytes, expected ${expected_bytes}")
+    endif()
+endforeach()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --format ogg --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE bad_format_result
+    ERROR_VARIABLE bad_format_error
+)
+if(bad_format_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted an unknown audio format")
+endif()
+if(NOT bad_format_error MATCHES "unknown audio format")
+    message(FATAL_ERROR "unexpected audio format error: ${bad_format_error}")
+endif()
+
+# Deterministic dither is reproducible for a fixed seed, changes the quantized
+# bytes, and is rejected for floating-point output before rendering.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sample-rate 22050 --format raw16
+        --dither 42 --output "${FORMANT_OUTPUT_DIR}/dither-a.raw"
+    RESULT_VARIABLE dither_result
+    ERROR_VARIABLE dither_error
+)
+if(NOT dither_result EQUAL 0)
+    message(FATAL_ERROR "dithered render failed: ${dither_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sample-rate 22050 --format raw16
+        --dither=42 --output "${FORMANT_OUTPUT_DIR}/dither-b.raw"
+    RESULT_VARIABLE dither_result
+    ERROR_VARIABLE dither_error
+)
+if(NOT dither_result EQUAL 0)
+    message(FATAL_ERROR "second dithered render failed: ${dither_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sample-rate 22050 --format raw16
+        --dither 43 --output "${FORMANT_OUTPUT_DIR}/dither-c.raw"
+    RESULT_VARIABLE dither_result
+    ERROR_VARIABLE dither_error
+)
+if(NOT dither_result EQUAL 0)
+    message(FATAL_ERROR "dithered render with another seed failed: ${dither_error}")
+endif()
+file(SHA256 "${FORMANT_OUTPUT_DIR}/dither-a.raw" dither_hash_a)
+file(SHA256 "${FORMANT_OUTPUT_DIR}/dither-b.raw" dither_hash_b)
+file(SHA256 "${FORMANT_OUTPUT_DIR}/dither-c.raw" dither_hash_c)
+file(SHA256 "${FORMANT_OUTPUT_DIR}/format.raw16" plain_hash)
+if(NOT dither_hash_a STREQUAL dither_hash_b)
+    message(FATAL_ERROR "dither is not deterministic for a fixed seed")
+endif()
+if(dither_hash_a STREQUAL dither_hash_c)
+    message(FATAL_ERROR "different dither seeds produced identical audio")
+endif()
+if(dither_hash_a STREQUAL plain_hash)
+    message(FATAL_ERROR "dither did not change the integer samples")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --format wav32f --dither 1
+        --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE dither_float_result
+    ERROR_VARIABLE dither_float_error
+)
+if(dither_float_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted --dither for float output")
+endif()
+if(NOT dither_float_error MATCHES "dither only applies")
+    message(FATAL_ERROR "unexpected dither format error: ${dither_float_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --dither -1 --output "${FORMANT_OUTPUT}"
+    RESULT_VARIABLE dither_seed_result
+    ERROR_VARIABLE dither_seed_error
+)
+if(dither_seed_result EQUAL 0)
+    message(FATAL_ERROR "formant accepted a negative dither seed")
+endif()
+if(NOT dither_seed_error MATCHES "unsigned 32-bit seed")
+    message(FATAL_ERROR "unexpected dither seed error: ${dither_seed_error}")
+endif()
+
+# Raw stdout is byte-clean: progress and trace messages go to stderr, and the
+# captured stream is exactly the same size as the equivalent raw file.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sample-rate 22050 --format raw16
+        --output -
+    RESULT_VARIABLE stdout_result
+    OUTPUT_FILE "${FORMANT_OUTPUT_DIR}/stdout.raw"
+    ERROR_FILE "${FORMANT_OUTPUT_DIR}/stdout.err"
+)
+if(NOT stdout_result EQUAL 0)
+    message(FATAL_ERROR "raw stdout render failed: ${stdout_result}")
+endif()
+file(SIZE "${FORMANT_OUTPUT_DIR}/stdout.raw" stdout_bytes)
+if(NOT stdout_bytes EQUAL audio_data_bytes)
+    message(FATAL_ERROR "stdout raw PCM is not byte-clean: ${stdout_bytes} vs ${audio_data_bytes}")
+endif()
+file(READ "${FORMANT_OUTPUT_DIR}/stdout.err" stdout_status)
+if(NOT stdout_status MATCHES "Wrote .* samples to stdout")
+    message(FATAL_ERROR "stdout render did not report on stderr: ${stdout_status}")
+endif()
+file(READ "${FORMANT_OUTPUT_DIR}/stdout.raw" stdout_head LIMIT 4 HEX)
+file(READ "${FORMANT_OUTPUT_DIR}/format.raw16" raw_head LIMIT 4 HEX)
+if(NOT stdout_head STREQUAL raw_head)
+    message(FATAL_ERROR "stdout PCM differs from file output: ${stdout_head} vs ${raw_head}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

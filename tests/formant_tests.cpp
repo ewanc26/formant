@@ -2,8 +2,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -60,11 +62,21 @@ double peak(const std::vector<float> &samples) {
     return result;
 }
 
+uint16_t littleEndian16(const std::vector<uint8_t> &bytes, size_t offset) {
+    return static_cast<uint16_t>(bytes[offset]) |
+           static_cast<uint16_t>(bytes[offset + 1] << 8);
+}
+
 uint32_t littleEndian32(const std::vector<uint8_t> &bytes, size_t offset) {
     return static_cast<uint32_t>(bytes[offset]) |
            (static_cast<uint32_t>(bytes[offset + 1]) << 8) |
            (static_cast<uint32_t>(bytes[offset + 2]) << 16) |
            (static_cast<uint32_t>(bytes[offset + 3]) << 24);
+}
+
+std::vector<uint8_t> bytesOf(std::ostringstream &stream) {
+    const std::string text = stream.str();
+    return {text.begin(), text.end()};
 }
 
 } // namespace
@@ -1027,6 +1039,235 @@ int main() {
         CHECK(std::fopen(invalidPath.c_str(), "rb") == nullptr);
     }
     std::remove(invalidPath.c_str());
+
+    // Output formats share one encoder with the default WAV path. The
+    // original 16-bit writer must remain byte-identical; the new formats only
+    // change the header fields and the per-sample encoding.
+    CHECK(audioFormatSampleBytes(AudioFormat::Pcm16) == 2);
+    CHECK(audioFormatSampleBytes(AudioFormat::Pcm24) == 3);
+    CHECK(audioFormatSampleBytes(AudioFormat::Float32) == 4);
+    CHECK(audioFormatSampleBytes(AudioFormat::RawPcm16) == 2);
+    CHECK(audioFormatSampleBytes(AudioFormat::RawPcm24) == 3);
+    CHECK(audioFormatSampleBytes(AudioFormat::RawFloat32) == 4);
+    CHECK(!isRawAudioFormat(AudioFormat::Pcm16));
+    CHECK(isRawAudioFormat(AudioFormat::RawPcm16));
+
+    const std::vector<uint8_t> header24 =
+        wavHeader(1000, 44100, AudioFormat::Pcm24);
+    CHECK(header24.size() == 44);
+    CHECK(std::string(header24.begin() + 8, header24.begin() + 12) == "WAVE");
+    CHECK(littleEndian16(header24, 20) == 1); // WAVE_FORMAT_PCM
+    CHECK(littleEndian16(header24, 22) == 1); // mono
+    CHECK(littleEndian32(header24, 24) == 44100);
+    CHECK(littleEndian32(header24, 28) == 44100u * 3u);
+    CHECK(littleEndian16(header24, 32) == 3);  // packed 24-bit block align
+    CHECK(littleEndian16(header24, 34) == 24); // bits per sample
+    CHECK(littleEndian32(header24, 40) == 3000);
+    CHECK(littleEndian32(header24, 4) == 36u + 3000u);
+
+    const std::vector<uint8_t> headerFloat =
+        wavHeader(1000, 44100, AudioFormat::Float32);
+    CHECK(headerFloat.size() == 44);
+    CHECK(littleEndian16(headerFloat, 20) == 3); // IEEE float
+    CHECK(littleEndian32(headerFloat, 24) == 44100);
+    CHECK(littleEndian32(headerFloat, 28) == 44100u * 4u);
+    CHECK(littleEndian16(headerFloat, 32) == 4);
+    CHECK(littleEndian16(headerFloat, 34) == 32);
+    CHECK(littleEndian32(headerFloat, 40) == 4000);
+
+    bool rawHeaderRejected = false;
+    try {
+        (void)wavHeader(10, 8000, AudioFormat::RawPcm16);
+    } catch (const std::invalid_argument &) {
+        rawHeaderRejected = true;
+    }
+    CHECK(rawHeaderRejected);
+
+    // A byte rate that would overflow the 32-bit WAV header is rejected.
+    bool byteRateRejected = false;
+    try {
+        (void)wavHeader(0, std::numeric_limits<int>::max(),
+                        AudioFormat::Float32);
+    } catch (const std::invalid_argument &) {
+        byteRateRejected = true;
+    }
+    CHECK(byteRateRejected);
+
+    // Integer encodings clamp exactly like the original 16-bit writer, with
+    // the asymmetric full-scale value that gives -32768 / -8388608 at -1.
+    std::ostringstream raw16;
+    writeAudio(raw16, {2.0f, -2.0f, 0.0f}, 8000, AudioFormat::RawPcm16);
+    const std::vector<uint8_t> pcm16Bytes = bytesOf(raw16);
+    CHECK(pcm16Bytes.size() == 6);
+    CHECK(littleEndian16(pcm16Bytes, 0) == 32767);
+    CHECK(littleEndian16(pcm16Bytes, 2) == 32768u); // -32768 as raw bits
+    CHECK(littleEndian16(pcm16Bytes, 4) == 0);
+
+    std::ostringstream raw24;
+    writeAudio(raw24, {2.0f, -2.0f, 0.0f}, 8000, AudioFormat::RawPcm24);
+    const std::vector<uint8_t> pcm24Bytes = bytesOf(raw24);
+    CHECK(pcm24Bytes.size() == 9);
+    CHECK(pcm24Bytes[0] == 0xff && pcm24Bytes[1] == 0xff &&
+          pcm24Bytes[2] == 0x7f);
+    CHECK(pcm24Bytes[3] == 0x00 && pcm24Bytes[4] == 0x00 &&
+          pcm24Bytes[5] == 0x80);
+    CHECK(pcm24Bytes[6] == 0x00 && pcm24Bytes[7] == 0x00 &&
+          pcm24Bytes[8] == 0x00);
+
+    std::ostringstream rawFloat;
+    writeAudio(rawFloat, {2.0f, -2.0f, 0.0f}, 8000, AudioFormat::RawFloat32);
+    const std::vector<uint8_t> floatBytes = bytesOf(rawFloat);
+    CHECK(floatBytes.size() == 12);
+    CHECK(littleEndian32(floatBytes, 0) == 0x3f800000u); // +1.0f
+    CHECK(littleEndian32(floatBytes, 4) == 0xbf800000u); // -1.0f
+    CHECK(littleEndian32(floatBytes, 8) == 0x00000000u);
+
+    // A WAV-format stream starts with a header; a raw stream contains only
+    // sample bytes. Both use the same writing path and fixed-size chunks.
+    std::ostringstream wav24Stream;
+    writeAudio(wav24Stream, {0.0f, 0.5f}, 8000, AudioFormat::Pcm24);
+    const std::vector<uint8_t> wav24Bytes = bytesOf(wav24Stream);
+    CHECK(wav24Bytes.size() == 44u + 6u);
+    CHECK(std::string(wav24Bytes.begin(), wav24Bytes.begin() + 4) == "RIFF");
+    std::ostringstream matchingRaw24;
+    writeAudio(matchingRaw24, {0.0f, 0.5f}, 8000, AudioFormat::RawPcm24);
+    const std::vector<uint8_t> raw24Bytes = bytesOf(matchingRaw24);
+    CHECK(std::equal(wav24Bytes.begin() + 44, wav24Bytes.end(),
+                     raw24Bytes.begin()));
+
+    std::vector<float> chunked(5000);
+    for (size_t i = 0; i < chunked.size(); ++i) {
+        chunked[i] = i % 2 == 0 ? 1.0f : -1.0f;
+    }
+    std::ostringstream bigRaw;
+    writeAudio(bigRaw, chunked, 8000, AudioFormat::RawPcm16);
+    const std::vector<uint8_t> bigBytes = bytesOf(bigRaw);
+    CHECK(bigBytes.size() == 10000);
+    CHECK(littleEndian16(bigBytes, 0) == 32767);
+    CHECK(littleEndian16(bigBytes, 4095u * 2u) == 32768u);
+    CHECK(littleEndian16(bigBytes, 4096u * 2u) == 32767);
+
+    // Non-finite samples are rejected before any bytes are written, for every
+    // format, so a failed render cannot leave a truncated file behind.
+    for (AudioFormat format :
+         {AudioFormat::Pcm16, AudioFormat::Pcm24, AudioFormat::Float32,
+          AudioFormat::RawPcm16, AudioFormat::RawPcm24,
+          AudioFormat::RawFloat32}) {
+        std::ostringstream stream;
+        bool nonFiniteRejected = false;
+        try {
+            writeAudio(stream, {0.0f, std::numeric_limits<float>::quiet_NaN()},
+                       8000, format);
+        } catch (const std::invalid_argument &) {
+            nonFiniteRejected = true;
+        }
+        CHECK(nonFiniteRejected);
+        CHECK(stream.str().empty());
+    }
+    const std::string rawPath = "formant_invalid_raw.raw";
+    std::remove(rawPath.c_str());
+    bool rawFileRejected = false;
+    try {
+        writeAudioFile(rawPath, {std::numeric_limits<float>::infinity()}, 8000,
+                       AudioFormat::RawPcm16);
+    } catch (const std::invalid_argument &) {
+        rawFileRejected = true;
+    }
+    CHECK(rawFileRejected);
+    CHECK(std::fopen(rawPath.c_str(), "rb") == nullptr);
+
+    // Optional dither is deterministic from a seed and affects only integer
+    // quantization. It is output noise, not a synthesis source: the oscillator
+    // path remains sine-only and unchanged.
+    CHECK(!isFloatAudioFormat(AudioFormat::Pcm16));
+    CHECK(isFloatAudioFormat(AudioFormat::Float32));
+    CHECK(isFloatAudioFormat(AudioFormat::RawFloat32));
+    std::vector<float> ditherSamples(1000, 0.12345f);
+    ditherSamples[0] = 1.0f;
+    ditherSamples[1] = -1.0f;
+    AudioWriteOptions dither42;
+    dither42.dither = true;
+    dither42.seed = 42;
+    AudioWriteOptions dither43 = dither42;
+    dither43.seed = 43;
+    AudioWriteOptions dither0 = dither42;
+    dither0.seed = 0;
+
+    std::ostringstream plainStream;
+    std::ostringstream ditherStreamA;
+    std::ostringstream ditherStreamB;
+    std::ostringstream ditherStreamC;
+    std::ostringstream ditherStreamZero;
+    writeAudio(plainStream, ditherSamples, 8000, AudioFormat::RawPcm16);
+    writeAudio(ditherStreamA, ditherSamples, 8000, AudioFormat::RawPcm16,
+               dither42);
+    writeAudio(ditherStreamB, ditherSamples, 8000, AudioFormat::RawPcm16,
+               dither42);
+    writeAudio(ditherStreamC, ditherSamples, 8000, AudioFormat::RawPcm16,
+               dither43);
+    writeAudio(ditherStreamZero, ditherSamples, 8000, AudioFormat::RawPcm16,
+               dither0);
+    const std::vector<uint8_t> plainDitherBytes = bytesOf(plainStream);
+    const std::vector<uint8_t> ditherBytesA = bytesOf(ditherStreamA);
+    const std::vector<uint8_t> ditherBytesB = bytesOf(ditherStreamB);
+    const std::vector<uint8_t> ditherBytesC = bytesOf(ditherStreamC);
+    const std::vector<uint8_t> ditherBytesZero = bytesOf(ditherStreamZero);
+    CHECK(ditherBytesA == ditherBytesB);
+    CHECK(ditherBytesA != ditherBytesC);
+    CHECK(ditherBytesA != ditherBytesZero);
+    CHECK(ditherBytesA != plainDitherBytes);
+    CHECK(ditherBytesA.size() == plainDitherBytes.size());
+    // Dither cannot push a full-scale sample outside the integer range.
+    CHECK(littleEndian16(ditherBytesA, 0) == 32767);
+    CHECK(littleEndian16(ditherBytesA, 2) <= 32768u);
+
+    std::ostringstream wavDitherStream;
+    writeAudio(wavDitherStream, ditherSamples, 8000, AudioFormat::Pcm24,
+               dither42);
+    const std::vector<uint8_t> wavDitherBytes = bytesOf(wavDitherStream);
+    const std::vector<uint8_t> expectedDitherHeader =
+        wavHeader(ditherSamples.size(), 8000, AudioFormat::Pcm24);
+    CHECK(std::equal(wavDitherBytes.begin(), wavDitherBytes.begin() + 44,
+                     expectedDitherHeader.begin()));
+    CHECK(wavDitherBytes.size() == 44u + ditherSamples.size() * 3u);
+
+    std::ostringstream dither24A;
+    std::ostringstream dither24B;
+    writeAudio(dither24A, ditherSamples, 8000, AudioFormat::RawPcm24, dither42);
+    writeAudio(dither24B, ditherSamples, 8000, AudioFormat::RawPcm24, dither42);
+    CHECK(bytesOf(dither24A) == bytesOf(dither24B));
+    CHECK(bytesOf(dither24A).size() == ditherSamples.size() * 3u);
+
+    // Float formats reject dither before writing anything.
+    for (AudioFormat format : {AudioFormat::Float32, AudioFormat::RawFloat32}) {
+        std::ostringstream stream;
+        bool ditherRejected = false;
+        try {
+            writeAudio(stream, ditherSamples, 8000, format, dither42);
+        } catch (const std::invalid_argument &) {
+            ditherRejected = true;
+        }
+        CHECK(ditherRejected);
+        CHECK(stream.str().empty());
+    }
+
+    // Arbitrary rates keep the sample-count contract and normalised peak, and
+    // their WAV headers describe the rate the samples were rendered at.
+    double vowelsDuration = 0.0;
+    for (const Phoneme &phoneme : vowels) {
+        vowelsDuration += phoneme.duration;
+    }
+    for (int rate : {22050, 48000, 96000, 192000}) {
+        const std::vector<float> rendered =
+            Synthesizer(voice).render(vowels, rate);
+        CHECK(rendered.size() == static_cast<size_t>(std::llround(
+                                     vowelsDuration * rate / voice.rate)));
+        CHECK(peak(rendered) <= 0.9001);
+        const std::vector<uint8_t> header =
+            wavHeader(rendered.size(), rate, AudioFormat::Pcm24);
+        CHECK(littleEndian32(header, 24) == static_cast<uint32_t>(rate));
+        CHECK(littleEndian32(header, 28) == static_cast<uint32_t>(rate) * 3u);
+    }
 
     // The IPA front end is independent of English: every advertised symbol
     // parses, including extensions and the full vowel chart.
