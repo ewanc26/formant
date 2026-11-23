@@ -121,9 +121,11 @@ Start at a preset and move one axis at a time through the safe band.
 | `release` | 0 | 2 | 0.002 | 0.1 | Seconds; long releases blur word boundaries. |
 | `gain` | 0.001 | 4 | 0.3 | 1 | Level before peak normalisation. |
 
-The resonance response clamps each formant band's total contribution at 2 and
-floors bandwidth scaling at 0.7, so extreme `formant-scale` values change
-timbre less than expected. The Nyquist taper in `Voice::taperCeiling` fades
+The resonance response limits each formant band's total contribution at 2
+with a C1 soft knee (it keeps slope 1 at the corner and saturates toward 2.25)
+and floors bandwidth scaling at 0.7, so extreme `formant-scale` values change
+timbre less than expected. Formant frequencies crossfade in log2 space, so a
+1.5x move sounds like the same interval at F1 and at F4. The Nyquist taper in `Voice::taperCeiling` fades
 the last 4% of the usable band before the hard harmonic break; leave it on
 unless you are deliberately A/B testing that fade. `--list-voice-parameters`
 prints the same table as machine-friendly tab-separated fields, so docs and

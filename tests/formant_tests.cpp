@@ -3525,6 +3525,96 @@ int main() {
         std::filesystem::remove_all(dir);
     }
 
+    // #109: formant frequencies glide in log2 space, the resonance total has
+    // a C1 soft knee instead of a hard clamp, and non-plosive amplitude ramps
+    // use smoothstep while plosives keep their documented linear bursts.
+    {
+        const FormantBand low{200.0, 1.0, 100.0};
+        const FormantBand high{800.0, 0.5, 50.0};
+        const FormantBand half = detail::blendBand(low, high, 0.5);
+        // The geometric mean is 400 Hz; a linear blend would say 500 Hz.
+        CHECK(std::abs(half.frequency - 400.0) < 1e-3);
+        CHECK(std::abs(half.amplitude - 0.75) < 1e-12);
+        CHECK(std::abs(half.bandwidth - 75.0) < 1e-12);
+        CHECK(detail::blendBand(low, high, 0.0).frequency == low.frequency);
+        CHECK(detail::blendBand(low, high, 1.0).frequency == high.frequency);
+        // A zero inherited band still fades in linearly; log2(0) is invalid.
+        CHECK(std::abs(
+                  detail::blendBand(detail::zeroBand(), high, 0.5).frequency -
+                  400.0) < 1e-12);
+
+        CHECK(detail::softResonanceLimit(1.5) == 1.5);
+        CHECK(detail::softResonanceLimit(detail::kResonanceClamp) ==
+              detail::kResonanceClamp);
+        double previousLimit = detail::softResonanceLimit(2.0);
+        for (double total = 2.25; total < 20.0; total += 0.25) {
+            const double limited = detail::softResonanceLimit(total);
+            CHECK(limited >= previousLimit - 1e-12);
+            CHECK(limited <= detail::kResonanceClamp +
+                                 detail::kResonanceKneeHeadroom + 1e-12);
+            previousLimit = limited;
+        }
+        // Slope is 1 on both sides of the corner; the old min() fell to 0.
+        const double epsilon = 1e-6;
+        const double slopeBelow = (detail::softResonanceLimit(2.0) -
+                                   detail::softResonanceLimit(2.0 - epsilon)) /
+                                  epsilon;
+        const double slopeAbove = (detail::softResonanceLimit(2.0 + epsilon) -
+                                   detail::softResonanceLimit(2.0)) /
+                                  epsilon;
+        CHECK(std::abs(slopeBelow - 1.0) < 1e-4);
+        CHECK(std::abs(slopeAbove - 1.0) < 1e-4);
+
+        std::array<FormantBand, 4> hot{};
+        hot[0] = FormantBand{1000.0, 5.0, 100.0};
+        CHECK(detail::formantResponse(1000.0, hot, 1.0) > 2.0);
+        CHECK(detail::formantResponse(1000.0, hot, 1.0) <= 2.25);
+
+        // Derived bound: smoothstep's maximum slope is 1.5 / ramp length, so
+        // no per-sample amplitude step may exceed that. Entering and leaving
+        // the sustain has a near-zero delta, i.e. no C0 corner at the join.
+        const int length = 4410;
+        const int attack = 441;
+        const int release = 441;
+        double maxDelta = 0.0;
+        for (int offset = 0; offset < length; ++offset) {
+            const double current = detail::amplitudeEnvelope(
+                offset, length, attack, release, false);
+            const double next =
+                offset + 1 < length
+                    ? detail::amplitudeEnvelope(offset + 1, length, attack,
+                                                release, false)
+                    : 0.0;
+            CHECK(current >= 0.0 && current <= 1.0);
+            maxDelta = std::max(maxDelta, std::abs(next - current));
+        }
+        CHECK(maxDelta <= 1.5 / static_cast<double>(attack) + 1e-12);
+        const auto deltaAt = [&](int offset) {
+            return std::abs(detail::amplitudeEnvelope(offset + 1, length,
+                                                      attack, release, false) -
+                            detail::amplitudeEnvelope(offset, length, attack,
+                                                      release, false));
+        };
+        // The first step is 3 / attack^2, not zero: smoothstep has zero
+        // derivative at t=0 but a finite discrete difference. It is still far
+        // below the 1.5 / attack maximum slope.
+        CHECK(deltaAt(0) < 3.0 / (attack * attack) + 1e-12);
+        CHECK(deltaAt(0) < 1.5 / attack);
+        CHECK(deltaAt(attack - 1) < 3.0 / (attack * attack) + 1e-12);
+        CHECK(deltaAt(length - release) < 3.0 / (release * release) + 1e-12);
+        CHECK(detail::amplitudeEnvelope(attack, length, attack, release,
+                                        false) == 1.0);
+
+        // Plosives deliberately keep the linear 3/4 ms burst: its first step
+        // is 1/attack, far above the smoothstep ramp's zero first step.
+        const double plosiveFirst =
+            detail::amplitudeEnvelope(1, length, attack, release, true);
+        const double smoothFirst =
+            detail::amplitudeEnvelope(1, length, attack, release, false);
+        CHECK(plosiveFirst > smoothFirst);
+        CHECK(std::abs(plosiveFirst - 1.0 / attack) < 1e-12);
+    }
+
     // #100: nasal phonemes carry spectral zeros (anti-formants) beside their
     // formants, and the IPA nasalization diacritic reaches the renderer.
     {
