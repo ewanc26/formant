@@ -157,7 +157,11 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
             throw std::invalid_argument("phoneme duration / rate out of range");
         }
         const int boundary = static_cast<int>(std::llround(wanted));
-        const int length = std::max(1, boundary - cursor);
+        // A segment can legitimately round to zero samples when rate is fast
+        // or two adjacent short segments share a boundary. Forcing a minimum
+        // of one sample here pushed the final cursor past the cumulative
+        // boundary and broke the documented exact sample-count contract.
+        const int length = std::max(0, boundary - cursor);
         if (cursor > std::numeric_limits<int>::max() - length) {
             throw std::invalid_argument("rendered audio is too long");
         }
