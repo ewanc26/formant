@@ -87,6 +87,12 @@ build/formant --ssml-file script.ssml --output ssml.wav
 # Layer exact F0, duration and amplitude targets over the default prosody
 build/formant --text "Hello, world." --prosody-file script.prosody --output exact.wav
 
+# Load a shareable voice definition and sweep or compare voice parameters
+build/formant --text "Hello, world." --voice-file examples/warm.voice --output warm.wav
+build/formant --text "Hello, world." \
+  --sweep "pitch=120:200:5,breathiness=0:0.08:3" --lab-dir lab
+build/formant --text "Hello, world." --pair "neutral,alto" --lab-dir ab
+
 # Expand symbolic ToBI intonation (named tune and/or annotation file)
 build/formant --text "Are you there?" --intonation-tune yesno --output question.wav
 build/formant --text "Hello, world." --intonation-file script.intonation --output intoned.wav
@@ -96,6 +102,7 @@ echo "Are you there?" | build/formant --stdin --output question.wav
 
 # Inspect what is available
 build/formant --list-voices
+build/formant --list-voice-parameters
 build/formant --list-phonemes
 build/formant --list-ipa
 build/formant --list-languages
@@ -154,6 +161,12 @@ is caught mechanically. The analyzer API is also public through
 | `child` | High pitch, shorter vocal tract, faster |
 | `robot` | Flat pitch, fast attack, few harmonics |
 | `whisper` | No voicing, sine-noise only |
+
+A voice can also be a file layered over one of these presets, and the lab can
+sweep parameters or render A/B pairs on identical text. See
+[docs/voice-files.md](docs/voice-files.md) for the schema, safe ranges and a
+tuning cookbook. `--list-voice-parameters` prints the same table as data, and
+`--dump-voice NAME` exports a preset as a byte-identical round-trippable file.
 
 ### Languages
 
@@ -315,7 +328,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

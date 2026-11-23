@@ -3,9 +3,11 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
@@ -23,7 +25,10 @@ constexpr const char *kVersion = FORMANT_VERSION;
 
 using formant::Language;
 using formant::languageFromTag;
+using formant::setVoiceParameter;
 using formant::Voice;
+using formant::voiceParameter;
+using formant::voiceParameters;
 using formant::voicePreset;
 using formant::voicePresetNames;
 
@@ -48,7 +53,14 @@ Options:
   --lexicon FILE          Apply user pronunciation entries and homograph rules
   --trace                 Print rewrite-rule applications (with --lang-file)
   --voice NAME            Built-in voice: neutral, alto, bass, child, robot, whisper
+  --voice-file FILE       Load a declarative voice definition over a base preset
   --list-voices           List available voices and exit
+  --list-voice-parameters List tunable parameters, safe ranges and exit
+  --dump-voice NAME       Print a voice definition for a preset or voice file
+  --sweep SPEC            Parameter lab: param=start:end:steps[,param=...]
+  --pair "A,B"            Render A/B voices on identical text for comparison
+  --lab-dir DIR           Output directory for sweeps and pairs (default: lab)
+  --lab-index FILE        Machine-readable lab index (default: DIR/index.json)
   --list-phonemes         List available phonemes and exit
   --list-ipa              List recognised IPA symbols and exit
   --list-languages        List available text languages and exit
@@ -90,6 +102,18 @@ void listVoices() {
         const Voice voice = voicePreset(name);
         std::cout << name << "\t" << voice.pitch << " Hz\tformants x"
                   << voice.formantScale << "\n";
+    }
+}
+
+void listVoiceParameters() {
+    std::cout << "name\thard-min\thard-max\tsafe-min\tsafe-max\ttype\t"
+                 "description\n";
+    for (const formant::VoiceParameter &parameter : voiceParameters()) {
+        std::cout << parameter.name << '\t' << parameter.minimum << '\t'
+                  << parameter.maximum << '\t' << parameter.safeMinimum << '\t'
+                  << parameter.safeMaximum << '\t'
+                  << (parameter.integer ? "integer" : "real") << '\t'
+                  << parameter.description << "\n";
     }
 }
 
@@ -199,6 +223,13 @@ struct Options {
     std::string prosodyFile;
     std::string intonationFile;
     std::string intonationTune;
+    std::string voiceFile;
+    formant::VoiceDefinition voiceDefinition;
+    bool useVoiceFile = false;
+    std::string sweepSpec;
+    std::string pairSpec;
+    std::string labDir = "lab";
+    std::string labIndex;
     std::string output = "output.wav";
     formant::AudioFormat format = formant::AudioFormat::Pcm16;
     formant::AudioWriteOptions audioOptions;
@@ -267,6 +298,26 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-voices") {
             listVoices();
+            std::exit(0);
+        }
+        if (arg == "--list-voice-parameters") {
+            listVoiceParameters();
+            std::exit(0);
+        }
+        if (arg == "--dump-voice" || arg.rfind("--dump-voice=", 0) == 0) {
+            const std::string name = takeValue(i, argc, argv, "--dump-voice");
+            bool preset = false;
+            for (const std::string &known : voicePresetNames()) {
+                if (known == name) {
+                    preset = true;
+                    break;
+                }
+            }
+            const Voice voice =
+                preset
+                    ? voicePreset(name)
+                    : formant::resolveVoice(formant::loadVoiceDefinition(name));
+            std::cout << formant::writeVoiceDefinition(voice);
             std::exit(0);
         }
         if (arg == "--list-phonemes") {
@@ -378,6 +429,22 @@ Options parseOptions(int argc, char **argv) {
                 takeValue(i, argc, argv, "--intonation-tune");
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
+            options.useVoiceFile = false;
+        } else if (arg == "--voice-file" ||
+                   arg.rfind("--voice-file=", 0) == 0) {
+            options.voiceFile = takeValue(i, argc, argv, "--voice-file");
+            options.voiceDefinition =
+                formant::loadVoiceDefinition(options.voiceFile);
+            baseVoice = formant::resolveVoice(options.voiceDefinition);
+            options.useVoiceFile = true;
+        } else if (arg == "--sweep" || arg.rfind("--sweep=", 0) == 0) {
+            options.sweepSpec = takeValue(i, argc, argv, "--sweep");
+        } else if (arg == "--pair" || arg.rfind("--pair=", 0) == 0) {
+            options.pairSpec = takeValue(i, argc, argv, "--pair");
+        } else if (arg == "--lab-dir" || arg.rfind("--lab-dir=", 0) == 0) {
+            options.labDir = takeValue(i, argc, argv, "--lab-dir");
+        } else if (arg == "--lab-index" || arg.rfind("--lab-index=", 0) == 0) {
+            options.labIndex = takeValue(i, argc, argv, "--lab-index");
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
             options.output = takeValue(i, argc, argv, "--output");
         } else if (arg == "--format" || arg.rfind("--format=", 0) == 0) {
@@ -464,6 +531,233 @@ void writeTextFile(const std::string &path, const std::string &contents) {
     }
 }
 
+std::string trimmed(std::string_view value) {
+    const std::size_t first = value.find_first_not_of(" \t");
+    if (first == std::string_view::npos) {
+        return "";
+    }
+    const std::size_t last = value.find_last_not_of(" \t");
+    return std::string(value.substr(first, last - first + 1));
+}
+
+void warnUnsafeParameter(std::string_view name, double value) {
+    for (const formant::VoiceParameter &parameter : voiceParameters()) {
+        if (parameter.name != name) {
+            continue;
+        }
+        if (value < parameter.safeMinimum || value > parameter.safeMaximum) {
+            std::cerr << "warning: " << parameter.name << " " << value
+                      << " is outside the safe range " << parameter.safeMinimum
+                      << ".." << parameter.safeMaximum << "\n";
+        }
+        return;
+    }
+}
+
+// One side of --pair: a preset name, a voice file path, and optionally
+// inline parameter assignments separated by ';'. For example
+// "neutral:pitch=180;rate=1.1" or "voices/warm.voice".
+Voice voiceFromSpec(const std::string &spec) {
+    const std::string value = trimmed(spec);
+    if (value.empty()) {
+        throw std::invalid_argument("empty voice specification");
+    }
+    const std::size_t colon = value.find(':');
+    const std::string target = trimmed(value.substr(0, colon));
+    bool preset = false;
+    for (const std::string &name : voicePresetNames()) {
+        if (name == target) {
+            preset = true;
+            break;
+        }
+    }
+    Voice voice =
+        preset ? voicePreset(target)
+               : formant::resolveVoice(formant::loadVoiceDefinition(target));
+    if (colon != std::string::npos) {
+        std::string assignments = value.substr(colon + 1);
+        std::size_t start = 0;
+        while (start <= assignments.size()) {
+            const std::size_t end = assignments.find(';', start);
+            const std::string item = trimmed(assignments.substr(
+                start,
+                end == std::string::npos ? std::string::npos : end - start));
+            const std::size_t equals = item.find('=');
+            if (item.empty() || equals == std::string::npos) {
+                throw std::invalid_argument("expected param=value in voice "
+                                            "specification: " +
+                                            item);
+            }
+            const std::string name = trimmed(item.substr(0, equals));
+            const double parsed =
+                number("--pair", trimmed(item.substr(equals + 1)));
+            setVoiceParameter(voice, name, parsed);
+            warnUnsafeParameter(name, parsed);
+            if (end == std::string::npos) {
+                break;
+            }
+            start = end + 1;
+        }
+    }
+    return voice;
+}
+
+struct SweepAxis {
+    std::string parameter;
+    double start = 0.0;
+    double end = 0.0;
+    int steps = 0;
+};
+
+double sweepValue(const SweepAxis &axis, int index) {
+    if (index == axis.steps - 1) {
+        return axis.end;
+    }
+    return axis.start + (axis.end - axis.start) * index / (axis.steps - 1);
+}
+
+std::vector<SweepAxis> parseSweepSpec(const std::string &spec) {
+    std::vector<SweepAxis> axes;
+    std::size_t start = 0;
+    while (start <= spec.size()) {
+        const std::size_t comma = spec.find(',', start);
+        const std::string part = trimmed(
+            spec.substr(start, comma == std::string::npos ? std::string::npos
+                                                          : comma - start));
+        const std::size_t equals = part.find('=');
+        const std::size_t firstColon = part.find(':', equals);
+        const std::size_t secondColon = firstColon == std::string::npos
+                                            ? std::string::npos
+                                            : part.find(':', firstColon + 1);
+        if (equals == std::string::npos || firstColon == std::string::npos ||
+            secondColon == std::string::npos) {
+            throw std::invalid_argument(
+                "invalid --sweep spec '" + part +
+                "' (use param=start:end:steps[,param=start:end:steps])");
+        }
+        SweepAxis axis;
+        axis.parameter = trimmed(part.substr(0, equals));
+        axis.start =
+            number("--sweep",
+                   trimmed(part.substr(equals + 1, firstColon - equals - 1)));
+        axis.end = number(
+            "--sweep",
+            trimmed(part.substr(firstColon + 1, secondColon - firstColon - 1)));
+        axis.steps = integer("--sweep", trimmed(part.substr(secondColon + 1)));
+        if (axis.steps < 2) {
+            throw std::invalid_argument("--sweep steps must be at least 2: " +
+                                        part);
+        }
+        if (axis.start > axis.end) {
+            throw std::invalid_argument("--sweep start must not exceed end: " +
+                                        part);
+        }
+        // Validate endpoints against the hard intervals now, before any file
+        // is created, and report values that leave the documented safe band.
+        Voice scratch;
+        for (int step = 0; step < axis.steps; ++step) {
+            // Intermediate values can violate the integer constraint even
+            // when both endpoints are valid, so reject the whole spec before
+            // writing any cell.
+            setVoiceParameter(scratch, axis.parameter, sweepValue(axis, step));
+        }
+        warnUnsafeParameter(axis.parameter, axis.start);
+        warnUnsafeParameter(axis.parameter, axis.end);
+        for (const SweepAxis &existing : axes) {
+            if (existing.parameter == axis.parameter) {
+                throw std::invalid_argument("duplicate --sweep parameter: " +
+                                            axis.parameter);
+            }
+        }
+        axes.push_back(axis);
+        if (axes.size() > 2) {
+            throw std::invalid_argument(
+                "--sweep supports at most two parameters");
+        }
+        if (comma == std::string::npos) {
+            break;
+        }
+        start = comma + 1;
+    }
+    if (axes.empty()) {
+        throw std::invalid_argument("--sweep needs at least one parameter");
+    }
+    long long cells = 1;
+    for (const SweepAxis &axis : axes) {
+        cells *= axis.steps;
+        if (cells > 10000) {
+            throw std::invalid_argument(
+                "--sweep produces too many cells (limit 10000)");
+        }
+    }
+    return axes;
+}
+
+std::string jsonString(std::string_view text) {
+    std::string out = "\"";
+    for (unsigned char c : text) {
+        switch (c) {
+        case '"':
+            out += "\\\"";
+            break;
+        case '\\':
+            out += "\\\\";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            if (c < 0x20) {
+                std::ostringstream escape;
+                escape << "\\u00" << std::hex << std::setw(2)
+                       << std::setfill('0') << static_cast<int>(c);
+                out += escape.str();
+            } else {
+                out += static_cast<char>(c);
+            }
+        }
+    }
+    out += '"';
+    return out;
+}
+
+std::string jsonNumber(double value) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(6) << value;
+    std::string text = out.str();
+    if (text == "-0.000000") {
+        text = "0.000000";
+    }
+    return text;
+}
+
+std::string labelNumber(double value) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(6) << value;
+    std::string text = out.str();
+    std::replace(text.begin(), text.end(), '.', 'p');
+    std::replace(text.begin(), text.end(), '-', 'm');
+    return text;
+}
+
+std::string cellLabel(const std::vector<SweepAxis> &axes,
+                      const std::vector<double> &values) {
+    std::string label;
+    for (std::size_t i = 0; i < axes.size(); ++i) {
+        if (!label.empty()) {
+            label += "_";
+        }
+        label += axes[i].parameter + "-" + labelNumber(values[i]);
+    }
+    return label;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -525,6 +819,36 @@ int main(int argc, char **argv) {
             // Fail before rendering (and before writing a WAV) on a typo in
             // the timing filename extension.
             (void)timingFormatFor(options.timingFile);
+        }
+
+        const bool labMode =
+            !options.sweepSpec.empty() || !options.pairSpec.empty();
+        if (!options.sweepSpec.empty() && !options.pairSpec.empty()) {
+            throw std::invalid_argument("use only one of --sweep and --pair");
+        }
+        if (labMode && options.output == "-") {
+            throw std::invalid_argument(
+                "--sweep and --pair write multiple files and cannot use "
+                "--output -");
+        }
+        if (labMode &&
+            (!options.timingFile.empty() || !options.visemesFile.empty())) {
+            throw std::invalid_argument(
+                "--timing and --visemes cannot be combined with --sweep or "
+                "--pair (each render would overwrite the same file)");
+        }
+        if (labMode && options.labDir.empty()) {
+            throw std::invalid_argument("--lab-dir cannot be empty");
+        }
+        if (options.useVoiceFile) {
+            // Warn only about values this file actually changes: the built-in
+            // presets deliberately use some extremes and round-trip quietly.
+            const Voice base = voicePreset(options.voiceDefinition.base);
+            for (const auto &entry : options.voiceDefinition.values) {
+                if (entry.second != voiceParameter(base, entry.first)) {
+                    warnUnsafeParameter(entry.first, entry.second);
+                }
+            }
         }
 
         formant::LanguageDefinition languageDefinition;
@@ -694,6 +1018,144 @@ int main(int argc, char **argv) {
             formant::applyProsodyFile(phonemes, file);
             status << "Applied " << file.directives.size()
                    << " prosody override(s)\n";
+        }
+
+        if (labMode) {
+            struct LabRender {
+                Voice voice;
+                std::string file;
+                std::string label;
+                std::vector<std::pair<std::string, double>> values;
+            };
+            std::vector<LabRender> renders;
+            std::vector<SweepAxis> axes;
+            if (!options.sweepSpec.empty()) {
+                axes = parseSweepSpec(options.sweepSpec);
+                std::vector<int> counters(axes.size(), 0);
+                while (true) {
+                    Voice voice = options.voice;
+                    std::vector<double> values;
+                    for (std::size_t i = 0; i < axes.size(); ++i) {
+                        const double value = sweepValue(axes[i], counters[i]);
+                        setVoiceParameter(voice, axes[i].parameter, value);
+                        values.push_back(value);
+                    }
+                    const std::string label = cellLabel(axes, values);
+                    voice.name = label;
+                    LabRender render;
+                    render.voice = voice;
+                    render.label = label;
+                    std::ostringstream prefix;
+                    prefix << std::setw(3) << std::setfill('0')
+                           << (renders.size() + 1);
+                    render.file = prefix.str() + "-" + label + ".wav";
+                    for (std::size_t i = 0; i < axes.size(); ++i) {
+                        render.values.emplace_back(axes[i].parameter,
+                                                   values[i]);
+                    }
+                    renders.push_back(render);
+                    std::size_t axis = axes.size();
+                    while (axis > 0 &&
+                           ++counters[axis - 1] == axes[axis - 1].steps) {
+                        counters[axis - 1] = 0;
+                        --axis;
+                    }
+                    if (axis == 0) {
+                        break;
+                    }
+                }
+            } else {
+                const std::size_t comma = options.pairSpec.find(',');
+                if (comma == std::string::npos) {
+                    throw std::invalid_argument(
+                        "--pair needs two voice specifications separated by "
+                        "a comma");
+                }
+                const std::string first =
+                    trimmed(options.pairSpec.substr(0, comma));
+                const std::string second =
+                    trimmed(options.pairSpec.substr(comma + 1));
+                renders.push_back({voiceFromSpec(first), "a.wav", first, {}});
+                renders.push_back({voiceFromSpec(second), "b.wav", second, {}});
+            }
+
+            const std::filesystem::path directory(options.labDir);
+            std::error_code error;
+            std::filesystem::create_directories(directory, error);
+            if (error) {
+                throw std::runtime_error(
+                    "cannot create lab directory: " + options.labDir + ": " +
+                    error.message());
+            }
+            const std::filesystem::path indexPath =
+                options.labIndex.empty()
+                    ? directory / "index.json"
+                    : std::filesystem::path(options.labIndex);
+            if (indexPath.has_parent_path()) {
+                std::filesystem::create_directories(indexPath.parent_path(),
+                                                    error);
+                if (error) {
+                    throw std::runtime_error(
+                        "cannot create lab index directory: " +
+                        error.message());
+                }
+            }
+
+            std::vector<std::size_t> sampleCounts;
+            for (const LabRender &render : renders) {
+                const std::vector<float> rendered =
+                    formant::Synthesizer(render.voice)
+                        .render(phonemes, options.sampleRate);
+                const std::filesystem::path output = directory / render.file;
+                formant::writeAudioFile(output.string(), rendered,
+                                        options.sampleRate, options.format,
+                                        options.audioOptions);
+                sampleCounts.push_back(rendered.size());
+                status << "Wrote " << output.string() << " (" << render.label
+                       << ", " << rendered.size() << " samples)\n";
+            }
+
+            std::ostringstream index;
+            index << "{\n  \"mode\": "
+                  << jsonString(!options.sweepSpec.empty() ? "sweep" : "pair")
+                  << ",\n  \"sample-rate\": " << options.sampleRate << ",\n";
+            if (!options.sweepSpec.empty()) {
+                index << "  \"parameters\": [";
+                for (std::size_t i = 0; i < axes.size(); ++i) {
+                    if (i != 0) {
+                        index << ", ";
+                    }
+                    index << jsonString(axes[i].parameter);
+                }
+                index << "],\n  \"cells\": [\n";
+                for (std::size_t i = 0; i < renders.size(); ++i) {
+                    const LabRender &render = renders[i];
+                    index << "    {\"file\": " << jsonString(render.file)
+                          << ", \"label\": " << jsonString(render.label)
+                          << ", \"samples\": " << sampleCounts[i]
+                          << ", \"values\": {";
+                    for (std::size_t v = 0; v < render.values.size(); ++v) {
+                        if (v != 0) {
+                            index << ", ";
+                        }
+                        index << jsonString(render.values[v].first) << ": "
+                              << jsonNumber(render.values[v].second);
+                    }
+                    index << "}}" << (i + 1 == renders.size() ? "" : ",")
+                          << "\n";
+                }
+                index << "  ]\n}\n";
+            } else {
+                index << "  \"a\": {\"label\": " << jsonString(renders[0].label)
+                      << ", \"file\": " << jsonString(renders[0].file)
+                      << ", \"samples\": " << sampleCounts[0] << "},\n"
+                      << "  \"b\": {\"label\": " << jsonString(renders[1].label)
+                      << ", \"file\": " << jsonString(renders[1].file)
+                      << ", \"samples\": " << sampleCounts[1] << "}\n}\n";
+            }
+            writeTextFile(indexPath.string(), index.str());
+            status << "Wrote lab index to " << indexPath.string() << "\n";
+            return 0;
         }
 
         const std::vector<float> samples =

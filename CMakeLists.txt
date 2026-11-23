@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.17.0
+  VERSION 0.18.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -22,6 +22,7 @@ option(FORMANT_INSTALL "Install the library and CLI" ON)
 
 add_library(formant_core STATIC
     src/voice.cpp
+    src/voice_file.cpp
     src/transpose.cpp
     src/phoneme.cpp
     src/language.cpp

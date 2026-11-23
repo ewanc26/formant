@@ -2948,6 +2948,103 @@ int main() {
         CHECK(rangeRejectedIntonation);
     }
 
+    // Issue #126: voice definition files are data, and the built-in presets
+    // are expressible as files that reproduce their audio byte-for-byte.
+    {
+        const std::vector<formant::VoiceParameter> parameters =
+            formant::voiceParameters();
+        CHECK(parameters.size() == 11);
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+            CHECK(!parameters[i].name.empty());
+            CHECK(parameters[i].minimum <= parameters[i].safeMinimum);
+            CHECK(parameters[i].safeMinimum <= parameters[i].safeMaximum);
+            CHECK(parameters[i].safeMaximum <= parameters[i].maximum);
+            CHECK(!parameters[i].description.empty());
+            for (std::size_t j = 0; j < i; ++j) {
+                CHECK(parameters[i].name != parameters[j].name);
+            }
+        }
+
+        const formant::VoiceDefinition definition =
+            formant::parseVoiceDefinition(
+                "# a warm voice\nschema 1\nname Warm Alto\n"
+                "base alto\npitch 196.5\nbreathiness 0.02\n"
+                "taper-ceiling false\n");
+        CHECK(definition.schema == 1);
+        CHECK(definition.name == "Warm Alto");
+        CHECK(definition.base == "alto");
+        CHECK(definition.values.size() == 2);
+        const formant::Voice voice = formant::resolveVoice(definition);
+        CHECK(voice.name == "Warm Alto");
+        CHECK(voice.pitch == 196.5);
+        CHECK(voice.breathiness == 0.02);
+        CHECK(voice.formantScale == formant::voicePreset("alto").formantScale);
+        CHECK(!voice.taperCeiling);
+
+        auto voiceRejected = [](std::string_view text,
+                                std::string_view fragment) {
+            try {
+                formant::resolveVoice(formant::parseVoiceDefinition(text));
+            } catch (const std::invalid_argument &error) {
+                return std::string(error.what()).find(fragment) !=
+                       std::string::npos;
+            }
+            return false;
+        };
+        CHECK(voiceRejected("name x\npitch 100\n", "requires 'schema 1'"));
+        CHECK(voiceRejected("schema 2\npitch 100\n", "voice line 1"));
+        CHECK(voiceRejected("schema 1\nwobble 1\n", "unknown parameter"));
+        CHECK(
+            voiceRejected("schema 1\npitch 3000\n", "invalid value for pitch"));
+        CHECK(voiceRejected("schema 1\nharmonics 20.5\n",
+                            "invalid value for harmonics"));
+        CHECK(voiceRejected("schema 1\npitch abc\n", "invalid number"));
+        CHECK(voiceRejected("schema 1\npitch 100 200\n", "unexpected extra"));
+        CHECK(voiceRejected("schema 1\nbase nosuch\n", "unknown voice preset"));
+
+        formant::Voice scratch;
+        bool unknownRejected = false;
+        try {
+            formant::setVoiceParameter(scratch, "nope", 1.0);
+        } catch (const std::invalid_argument &) {
+            unknownRejected = true;
+        }
+        CHECK(unknownRejected);
+        bool getterRejected = false;
+        try {
+            (void)formant::voiceParameter(scratch, "nope");
+        } catch (const std::invalid_argument &) {
+            getterRejected = true;
+        }
+        CHECK(getterRejected);
+
+        const std::vector<formant::Phoneme> roundTripSource =
+            formant::parseIpa("ˈhəˈloʊ");
+        for (const std::string &preset : formant::voicePresetNames()) {
+            const formant::Voice expected = formant::voicePreset(preset);
+            const std::string file = formant::writeVoiceDefinition(expected);
+            const formant::Voice actual =
+                formant::resolveVoice(formant::parseVoiceDefinition(file));
+            CHECK(actual.name == expected.name);
+            CHECK(actual.pitch == expected.pitch);
+            CHECK(actual.declination == expected.declination);
+            CHECK(actual.rate == expected.rate);
+            CHECK(actual.formantScale == expected.formantScale);
+            CHECK(actual.vibratoRate == expected.vibratoRate);
+            CHECK(actual.vibratoDepth == expected.vibratoDepth);
+            CHECK(actual.breathiness == expected.breathiness);
+            CHECK(actual.harmonics == expected.harmonics);
+            CHECK(actual.attack == expected.attack);
+            CHECK(actual.release == expected.release);
+            CHECK(actual.gain == expected.gain);
+            CHECK(actual.taperCeiling == expected.taperCeiling);
+            CHECK(formant::Synthesizer(actual).render(roundTripSource, 8000) ==
+                  formant::Synthesizer(expected).render(roundTripSource, 8000));
+        }
+        CHECK(formant::writeVoiceDefinition(formant::voicePreset("bass"))
+                  .find("base bass\n") != std::string::npos);
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 
