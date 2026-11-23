@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-23
+
+### Added
+
+- Voice definition files and a parameter lab via `--voice-file`, `--dump-voice`, `--list-voice-parameters`, `--sweep` and `--pair`, plus the `voiceParameters()` / `parseVoiceDefinition()` / `loadVoiceDefinition()` / `resolveVoice()` API. A versioned, line-oriented schema layers optional parameters over any built-in preset, validates before rendering with line-numbered errors and warns when a value leaves its documented safe neighbourhood. One- and two-parameter sweeps write labeled WAV cells and a deterministic JSON index; pair mode renders A/B voices on identical text from presets, files or inline assignments. All six built-in presets round-trip as voice files with byte-identical audio. Documented in `docs/voice-files.md`, with unit, CLI smoke and byte-identity coverage.
+
 ## [0.17.0] - 2026-11-23
 
 ### Added

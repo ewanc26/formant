@@ -808,4 +808,197 @@ if(NOT stdout_head STREQUAL raw_head)
     message(FATAL_ERROR "stdout PCM differs from file output: ${stdout_head} vs ${raw_head}")
 endif()
 
+# Issue #126: voice definition files and the parameter lab. The parameter
+# table and every built-in preset must be expressible as shareable data.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-voice-parameters
+    RESULT_VARIABLE voice_parameters_result
+    OUTPUT_VARIABLE voice_parameters_output
+    ERROR_VARIABLE voice_parameters_error
+)
+if(NOT voice_parameters_result EQUAL 0)
+    message(FATAL_ERROR "formant --list-voice-parameters failed: ${voice_parameters_error}")
+endif()
+if(NOT voice_parameters_output MATCHES "safe-min"
+   OR NOT voice_parameters_output MATCHES "pitch"
+   OR NOT voice_parameters_output MATCHES "harmonics")
+    message(FATAL_ERROR "voice parameter table is incomplete: ${voice_parameters_output}")
+endif()
+
+set(VOICE_LAB_DIR "${FORMANT_OUTPUT_DIR}/voice-lab")
+file(MAKE_DIRECTORY "${VOICE_LAB_DIR}")
+foreach(preset neutral alto bass child robot whisper)
+    set(voice_file "${VOICE_LAB_DIR}/${preset}.voice")
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --dump-voice "${preset}"
+        RESULT_VARIABLE dump_result
+        OUTPUT_FILE "${voice_file}"
+        ERROR_VARIABLE dump_error
+    )
+    if(NOT dump_result EQUAL 0)
+        message(FATAL_ERROR "--dump-voice ${preset} failed: ${dump_error}")
+    endif()
+    file(READ "${voice_file}" voice_source)
+    if(NOT voice_source MATCHES "schema 1" OR NOT voice_source MATCHES "base ${preset}")
+        message(FATAL_ERROR "voice file for ${preset} is not self-describing: ${voice_source}")
+    endif()
+
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --voice "${preset}" --sample-rate 22050
+            --output "${VOICE_LAB_DIR}/compiled.wav"
+        RESULT_VARIABLE compiled_result
+        ERROR_VARIABLE compiled_error
+    )
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --voice-file "${voice_file}" --sample-rate 22050
+            --output "${VOICE_LAB_DIR}/file.wav"
+        RESULT_VARIABLE file_result
+        ERROR_VARIABLE file_error
+    )
+    if(NOT compiled_result EQUAL 0 OR NOT file_result EQUAL 0)
+        message(FATAL_ERROR "preset/file render failed for ${preset}: ${compiled_error} ${file_error}")
+    endif()
+    file(SHA256 "${VOICE_LAB_DIR}/compiled.wav" compiled_hash)
+    file(SHA256 "${VOICE_LAB_DIR}/file.wav" file_hash)
+    if(NOT compiled_hash STREQUAL file_hash)
+        message(FATAL_ERROR "${preset} voice file does not round-trip byte-identically")
+    endif()
+endforeach()
+
+file(WRITE "${VOICE_LAB_DIR}/warm.voice"
+    "schema 1\nname Warm\nbase alto\npitch 196.5\nbreathiness 0.02\ntaper-ceiling false\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --voice-file "${VOICE_LAB_DIR}/warm.voice"
+        --output "${VOICE_LAB_DIR}/warm.wav"
+    RESULT_VARIABLE warm_result
+    ERROR_VARIABLE warm_error
+)
+if(NOT warm_result EQUAL 0)
+    message(FATAL_ERROR "layered voice file failed: ${warm_error}")
+endif()
+file(SHA256 "${VOICE_LAB_DIR}/warm.wav" warm_hash)
+file(SHA256 "${VOICE_LAB_DIR}/compiled.wav" whisper_hash)
+if(warm_hash STREQUAL whisper_hash)
+    message(FATAL_ERROR "voice file parameters had no effect")
+endif()
+
+file(WRITE "${VOICE_LAB_DIR}/bad-value.voice" "schema 1\npitch 3000\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --voice-file "${VOICE_LAB_DIR}/bad-value.voice"
+        --output "${VOICE_LAB_DIR}/bad.wav"
+    RESULT_VARIABLE bad_voice_result
+    ERROR_VARIABLE bad_voice_error
+)
+if(bad_voice_result EQUAL 0 OR NOT bad_voice_error MATCHES "voice line 2: invalid value for pitch")
+    message(FATAL_ERROR "bad voice value was not rejected early: ${bad_voice_error}")
+endif()
+if(EXISTS "${VOICE_LAB_DIR}/bad.wav")
+    message(FATAL_ERROR "bad voice file wrote audio before failing validation")
+endif()
+file(WRITE "${VOICE_LAB_DIR}/no-schema.voice" "pitch 120\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --voice-file "${VOICE_LAB_DIR}/no-schema.voice"
+        --output "${VOICE_LAB_DIR}/bad.wav"
+    RESULT_VARIABLE no_schema_result
+    ERROR_VARIABLE no_schema_error
+)
+if(no_schema_result EQUAL 0 OR NOT no_schema_error MATCHES "requires 'schema 1'")
+    message(FATAL_ERROR "unversioned voice file was accepted: ${no_schema_error}")
+endif()
+
+# One- and two-parameter sweeps write labeled renders and a deterministic
+# machine-readable index mapping each file to its parameter values.
+set(SWEEP_DIR "${VOICE_LAB_DIR}/sweep")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sweep "pitch=110:170:4,breathiness=0:0.03:2"
+        --lab-dir "${SWEEP_DIR}"
+    RESULT_VARIABLE sweep_result
+    ERROR_VARIABLE sweep_error
+)
+if(NOT sweep_result EQUAL 0)
+    message(FATAL_ERROR "two-parameter sweep failed: ${sweep_error}")
+endif()
+file(READ "${SWEEP_DIR}/index.json" sweep_index)
+if(NOT sweep_index MATCHES "\"mode\": \"sweep\""
+   OR NOT sweep_index MATCHES "\"pitch\""
+   OR NOT sweep_index MATCHES "\"breathiness\"")
+    message(FATAL_ERROR "sweep index is missing mode or parameters: ${sweep_index}")
+endif()
+foreach(cell 001 002 003 004 005 006 007 008)
+    file(GLOB cell_files "${SWEEP_DIR}/${cell}-*.wav")
+    list(LENGTH cell_files cell_count)
+    if(NOT cell_count EQUAL 1)
+        message(FATAL_ERROR "sweep cell ${cell} did not produce exactly one WAV")
+    endif()
+endforeach()
+file(SHA256 "${SWEEP_DIR}/index.json" sweep_index_hash)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sweep "pitch=110:170:4,breathiness=0:0.03:2"
+        --lab-dir "${SWEEP_DIR}"
+    RESULT_VARIABLE sweep_result_again
+    ERROR_VARIABLE sweep_error_again
+)
+if(NOT sweep_result_again EQUAL 0)
+    message(FATAL_ERROR "second sweep failed: ${sweep_error_again}")
+endif()
+file(SHA256 "${SWEEP_DIR}/index.json" sweep_index_hash_again)
+if(NOT sweep_index_hash_again STREQUAL sweep_index_hash)
+    message(FATAL_ERROR "sweep index is not deterministic")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --sweep "pitch=120:180:3" --pair "neutral,alto"
+        --lab-dir "${SWEEP_DIR}"
+    RESULT_VARIABLE lab_conflict_result
+    ERROR_VARIABLE lab_conflict_error
+)
+if(lab_conflict_result EQUAL 0 OR NOT lab_conflict_error MATCHES "use only one of --sweep and --pair")
+    message(FATAL_ERROR "sweep/pair conflict was not rejected: ${lab_conflict_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "a" --pair "neutral"
+        --lab-dir "${VOICE_LAB_DIR}"
+    RESULT_VARIABLE bad_pair_result
+    ERROR_VARIABLE bad_pair_error
+)
+if(bad_pair_result EQUAL 0 OR NOT bad_pair_error MATCHES "two voice specifications")
+    message(FATAL_ERROR "incomplete --pair spec was accepted: ${bad_pair_error}")
+endif()
+
+# Pair mode renders both sides on the identical phoneme sequence, so neutral
+# and alto differ while neutral against itself is byte-identical.
+set(PAIR_DIR "${VOICE_LAB_DIR}/pair")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --pair "neutral,alto"
+        --lab-dir "${PAIR_DIR}"
+    RESULT_VARIABLE pair_result
+    ERROR_VARIABLE pair_error
+)
+if(NOT pair_result EQUAL 0)
+    message(FATAL_ERROR "pair render failed: ${pair_error}")
+endif()
+file(READ "${PAIR_DIR}/index.json" pair_index)
+if(NOT pair_index MATCHES "\"mode\": \"pair\"" OR NOT pair_index MATCHES "\"a.wav\"")
+    message(FATAL_ERROR "pair index is incomplete: ${pair_index}")
+endif()
+file(SHA256 "${PAIR_DIR}/a.wav" pair_a_hash)
+file(SHA256 "${PAIR_DIR}/b.wav" pair_b_hash)
+if(pair_a_hash STREQUAL pair_b_hash)
+    message(FATAL_ERROR "pair A/B rendered identical audio for different voices")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ipa "ˈhəˈloʊ" --pair "neutral,neutral:pitch=200"
+        --lab-dir "${VOICE_LAB_DIR}/pair-inline"
+    RESULT_VARIABLE pair_inline_result
+    ERROR_VARIABLE pair_inline_error
+)
+if(NOT pair_inline_result EQUAL 0)
+    message(FATAL_ERROR "inline pair parameters failed: ${pair_inline_error}")
+endif()
+file(SHA256 "${VOICE_LAB_DIR}/pair-inline/a.wav" pair_same_hash)
+file(SHA256 "${VOICE_LAB_DIR}/pair-inline/b.wav" pair_tuned_hash)
+if(pair_same_hash STREQUAL pair_tuned_hash)
+    message(FATAL_ERROR "inline pair parameter had no effect")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

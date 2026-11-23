@@ -1,0 +1,7 @@
+# A warm, slightly breathy alto. Layered over the built-in alto preset.
+schema 1
+name Warm Alto
+base alto
+pitch 196.5
+breathiness 0.02
+vibrato-depth 10

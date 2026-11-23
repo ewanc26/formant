@@ -93,6 +93,31 @@ Synthesis and analysis must not drift apart, so both consume the same model: `sr
 
 The dependency-free analyzers live in `formant/src/metrics.cpp` and are exposed through `formant/metrics.h`. They measure F0 by normalised autocorrelation, the spectral envelope by harmonic Goertzel amplitudes mapped to a mel/cepstral representation, and formant position by peak-versus-guard energy on the harmonic grid. `compareF0()`, `compareEnvelope()` and `compareFormants()` are pure functions returning compact metric structs. The harness renders a fixed corpus, checks absolute quality thresholds and drift from checked-in baselines, and verifies that a deliberately mistuned render is rejected. Full definitions and limits are in [docs/metrics.md](metrics.md).
 
+## Voice definition files and the parameter lab
+
+Voices are data: `formant/voice_file.h` exposes an ordered parameter table with
+hard validation bounds and documented safe neighbourhoods, and a line-oriented
+versioned file layers a few of those numbers over a built-in preset. Every
+built-in voice can be exported with `--dump-voice` and loaded again with
+`--voice-file`; the exported file writes doubles with 17 significant digits so
+the resolved `Voice` reproduces compiled-in audio byte-for-byte. Parsing happens
+before any renderer or output file is created, so unknown parameters, malformed
+numbers, non-integral harmonic counts and out-of-range values fail early with
+line numbers. Values inside the hard bounds but outside the safe band are
+accepted with a warning. Safe bands, corner cases such as the formant resonance
+clamp and the Nyquist taper, and a tuning cookbook are in
+[docs/voice-files.md](voice-files.md).
+
+The lab uses that same resolver. `--sweep` enumerates one or two axes as
+parameter values, renders each cell through the ordinary `Synthesizer` on the
+same phoneme sequence, and writes a deterministic JSON index that maps labeled
+files to their values. `--pair` renders two independently resolved voices (a
+preset, a file, or a file/preset with inline assignments) on identical text for
+A/B listening. Neither mode adds a second synthesis path, global state or
+randomness, so byte comparisons between cells are meaningful. Lab modes write
+multiple files and therefore reject stdout audio and single-render exports
+before doing any work.
+
 ## Possible extensions
 
 - More language front ends (French, German, Italian) behind the same registry.
