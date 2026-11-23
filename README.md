@@ -84,6 +84,9 @@ build/formant --text "Ewan lead us" --lexicon names.lex --trace --output names.w
 # Speak an SSML document (breaks, inline IPA, say-as and prosody spans)
 build/formant --ssml-file script.ssml --output ssml.wav
 
+# Layer exact F0, duration and amplitude targets over the default prosody
+build/formant --text "Hello, world." --prosody-file script.prosody --output exact.wav
+
 # Read text from stdin
 echo "Are you there?" | build/formant --stdin --output question.wav
 

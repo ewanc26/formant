@@ -2618,6 +2618,147 @@ int main() {
         expectError("</speak>", "unexpected </speak>");
     }
 
+    // Issue #129: prosody-direct override files. Every field is optional, so
+    // a file can retune one segment while neighbours keep their defaults.
+    {
+        const ProsodyFile empty = parseProsodyFile("\n# nothing here\n  \n");
+        CHECK(empty.empty());
+        auto untouched = parseIpa("h ə l oʊ");
+        const auto before = untouched;
+        applyProsodyFile(untouched, empty);
+        CHECK(untouched == before); // an empty file is a strict no-op
+
+        const ProsodyFile file =
+            parseProsodyFile("# retune the second segment\n"
+                             "f0 1 200\n"
+                             "duration 2 0.25s\n"
+                             "amplitude 1 0.5\n");
+        CHECK(file.directives.size() == 3);
+        CHECK(file.directives[0].f0Hz == 200.0);
+        CHECK(file.directives[1].durationSeconds == 0.25);
+        CHECK(file.directives[2].amplitudeScale == 0.5);
+
+        auto phonemes = parseIpa("h ə l oʊ");
+        applyProsodyFile(phonemes, file);
+        CHECK(phonemes.size() == before.size());
+        CHECK(phonemes[1].f0StartHz == 200.0);
+        CHECK(phonemes[1].f0EndHz == 200.0);
+        CHECK(std::abs(phonemes[2].duration - 0.25) < 1e-12);
+        CHECK(std::abs(phonemes[1].amplitude / before[1].amplitude - 0.5) <
+              1e-12);
+        // Unspecified fields, including all other segments, are untouched.
+        CHECK(!phonemes[0].f0StartHz.has_value());
+        CHECK(!phonemes[3].f0StartHz.has_value());
+        CHECK(phonemes[0] == before[0]);
+        CHECK(phonemes[3] == before[3]);
+        CHECK(std::abs(phonemes[1].duration - before[1].duration) < 1e-12);
+
+        // Relative values keep the front-end contour and compose with it.
+        auto relative = parseIpa("h ə l oʊ");
+        applyProsodyFile(
+            relative, parseProsodyFile("f0 1 +1200c\nf0 2 +2st\nf0 3 +10%\n"));
+        CHECK(std::abs(relative[1].pitchStart / before[1].pitchStart - 2.0) <
+              1e-9);
+        CHECK(std::abs(relative[2].pitchEnd / before[2].pitchEnd -
+                       std::pow(2.0, 2.0 / 12.0)) < 1e-9);
+        CHECK(std::abs(relative[3].pitchStart / before[3].pitchStart - 1.1) <
+              1e-9);
+        CHECK(!relative[1].f0StartHz.has_value());
+
+        // A two-value directive is a linear absolute ramp; mixed units are
+        // rejected at parse time.
+        auto ramp = parseIpa("ee");
+        applyProsodyFile(ramp, parseProsodyFile("f0 0 150 210\n"));
+        CHECK(ramp[0].f0StartHz == 150.0);
+        CHECK(ramp[0].f0EndHz == 210.0);
+
+        // Duration scales and percentages multiply the front-end value.
+        auto scaled = parseIpa("h ə l oʊ");
+        applyProsodyFile(scaled,
+                         parseProsodyFile("duration 1 2x\nduration 2 +50%\n"));
+        CHECK(std::abs(scaled[1].duration / before[1].duration - 2.0) < 1e-12);
+        CHECK(std::abs(scaled[2].duration / before[2].duration - 1.5) < 1e-12);
+
+        // Time selectors resolve against the final timeline. Locate the
+        // midpoint of the second segment from the current durations.
+        auto timed = parseIpa("h ə l oʊ");
+        const double midpoint =
+            (timed[0].duration + timed[1].duration + timed[0].duration) / 2.0;
+        applyProsodyFile(
+            timed,
+            parseProsodyFile("f0 @" + std::to_string(midpoint) + "s 220\n"));
+        CHECK(timed[1].f0StartHz == 220.0);
+        CHECK(!timed[0].f0StartHz.has_value());
+
+        // Determinism and the phase-continuation contract still hold with
+        // overrides applied: the stored phonemes fully describe the render.
+        const Voice voice = voicePreset("neutral");
+        const auto overridden = [&] {
+            auto result = parseIpa("h ə l oʊ");
+            applyProsodyFile(result,
+                             parseProsodyFile("f0 1 200\nduration 2 0.2\n"));
+            return result;
+        };
+        const auto first = Synthesizer(voice).render(overridden(), 44100);
+        const auto second = Synthesizer(voice).render(overridden(), 44100);
+        CHECK(first == second);
+
+        const std::vector<Phoneme> whole = overridden();
+        const std::vector<Phoneme> head(whole.begin(), whole.begin() + 2);
+        const std::vector<Phoneme> tail(whole.begin() + 2, whole.end());
+        const auto expected = Synthesizer(voice).render(whole, 44100);
+        const RenderResult part1 =
+            Synthesizer(voice).renderContinued(head, 44100, {});
+        const RenderResult part2 =
+            Synthesizer(voice).renderContinued(tail, 44100, part1.state);
+        CHECK(part2.samples == expected);
+
+        auto expectError = [](std::string_view text, std::string_view needle) {
+            bool rejected = false;
+            try {
+                (void)parseProsodyFile(text);
+            } catch (const std::invalid_argument &error) {
+                rejected =
+                    std::string(error.what()).find(needle) != std::string::npos;
+            }
+            CHECK(rejected);
+        };
+        expectError("wobble 0 1", "unsupported directive");
+        expectError("f0 x 1", "invalid segment index");
+        expectError("f0 0 nonsense", "F0 in Hz");
+        expectError("f0 0 150 +2st", "cannot mix absolute and relative");
+        expectError("f0 0 -5", "F0 must be between");
+        expectError("f0 0 0", "F0 must be between");
+        expectError("duration 0 -1", "duration scale must be positive");
+        expectError("duration 0 0s", "duration must be between");
+        expectError("amplitude 0 -0.5", "amplitude must not be negative");
+        expectError("f0 @-1s 200", "time must be between");
+        expectError("f0 0 1 2 3", "unexpected extra value");
+        expectError("f0", "expected a directive and a selector");
+
+        // Out-of-range selectors are reported at application time with the
+        // source line, since the parser does not know the segment count.
+        bool rangeRejected = false;
+        try {
+            auto brief = parseIpa("ee");
+            applyProsodyFile(brief, parseProsodyFile("f0 5 200\n"));
+        } catch (const std::invalid_argument &error) {
+            rangeRejected = std::string(error.what()).find("prosody line 1") !=
+                            std::string::npos;
+        }
+        CHECK(rangeRejected);
+
+        bool timeRejected = false;
+        try {
+            auto brief = parseIpa("ee");
+            applyProsodyFile(brief, parseProsodyFile("f0 @100s 200\n"));
+        } catch (const std::invalid_argument &error) {
+            timeRejected = std::string(error.what()).find("past the end") !=
+                           std::string::npos;
+        }
+        CHECK(timeRejected);
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 

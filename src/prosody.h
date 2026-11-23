@@ -152,10 +152,21 @@ inline double fundamentalAt(const Voice &voice, const Phoneme &phoneme,
     const double progress =
         static_cast<double>(sample) / static_cast<double>(totalSamples);
 
-    double fundamental =
-        voice.pitch * (1.0 - voice.declination * progress) *
-        (phoneme.pitchStart +
-         (phoneme.pitchEnd - phoneme.pitchStart) * (elapsed / length));
+    // A prosody-direct target is an absolute Hz contour: it replaces the
+    // voice-relative multiplier and declination for this segment only. The
+    // optional branch is bypassed entirely for ordinary phonemes, so the
+    // default path keeps its exact floating-point result.
+    double fundamental;
+    if (phoneme.f0StartHz.has_value()) {
+        const double from = *phoneme.f0StartHz;
+        const double to = phoneme.f0EndHz.value_or(from);
+        fundamental = from + (to - from) * (elapsed / length);
+    } else {
+        fundamental =
+            voice.pitch * (1.0 - voice.declination * progress) *
+            (phoneme.pitchStart +
+             (phoneme.pitchEnd - phoneme.pitchStart) * (elapsed / length));
+    }
 
     if (rising) {
         const int riseStart =

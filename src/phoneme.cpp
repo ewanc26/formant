@@ -18,7 +18,17 @@ FormantBand band(double frequency, double amplitude, double bandwidth) {
 
 Phoneme phone(std::string name, PhonemeKind kind, bool voiced, double duration,
               std::array<FormantBand, 4> bands, bool pitchRise = false) {
-    return {std::move(name), kind, bands, duration, voiced, pitchRise};
+    // Assign fields explicitly rather than using aggregate initialisation:
+    // the optional prosody-direct fields must keep their empty defaults, and
+    // -Wmissing-field-initializers would otherwise reject the partial list.
+    Phoneme result;
+    result.name = std::move(name);
+    result.kind = kind;
+    result.bands = bands;
+    result.duration = duration;
+    result.voiced = voiced;
+    result.pitchRise = pitchRise;
+    return result;
 }
 
 Phoneme diphthong(std::string name, double duration,
@@ -321,10 +331,11 @@ std::vector<std::string> spellWord(std::string_view word) {
     // A regular contraction is its base word plus a suffix. The irregular n't
     // forms are explicit lexicon entries above.
     if (key.find('\'') != std::string::npos) {
-        static const std::pair<std::string_view, std::string_view> suffixes[] = {
-            {"'s", "s"}, {"'ll", "l"}, {"'re", "r"},
-            {"'ve", "v"}, {"'d", "d"},  {"'m", "m"},
-        };
+        static const std::pair<std::string_view, std::string_view> suffixes[] =
+            {
+                {"'s", "s"},  {"'ll", "l"}, {"'re", "r"},
+                {"'ve", "v"}, {"'d", "d"},  {"'m", "m"},
+            };
         for (const auto &[suffix, ending] : suffixes) {
             if (key.size() <= suffix.size() || !endsWith(key, suffix)) {
                 continue;
@@ -374,8 +385,8 @@ std::vector<std::string> spellWord(std::string_view word) {
         // Spell the base with its e so a silent e is handled normally, then
         // choose /s/, /z/ or a syllabic /ɪz/ from the base's final sound.
         if (endsWith(clean, "es") && clean.size() > 3) {
-            std::vector<std::string> base = spellWord(
-                std::string_view(clean).substr(0, clean.size() - 1));
+            std::vector<std::string> base =
+                spellWord(std::string_view(clean).substr(0, clean.size() - 1));
             if (!base.empty() && base.back() != "e") {
                 if (isSibilant(base.back())) {
                     base.emplace_back("uh");
@@ -391,8 +402,8 @@ std::vector<std::string> spellWord(std::string_view word) {
         // dogs, books, cars).
         if (!endsWith(clean, "ss") && !endsWith(clean, "us") &&
             !endsWith(clean, "is") && !isVowel(clean[clean.size() - 2])) {
-            std::vector<std::string> base = spellWord(
-                std::string_view(clean).substr(0, clean.size() - 1));
+            std::vector<std::string> base =
+                spellWord(std::string_view(clean).substr(0, clean.size() - 1));
             if (!base.empty()) {
                 const Phoneme *last = findPhoneme(base.back());
                 base.emplace_back(last && last->voiced ? "z" : "s");
@@ -401,8 +412,8 @@ std::vector<std::string> spellWord(std::string_view word) {
         }
         // A final s after y is a plural or third-person form (days, plays).
         if (clean[clean.size() - 2] == 'y') {
-            std::vector<std::string> base = spellWord(
-                std::string_view(clean).substr(0, clean.size() - 1));
+            std::vector<std::string> base =
+                spellWord(std::string_view(clean).substr(0, clean.size() - 1));
             if (!base.empty()) {
                 base.emplace_back("z");
                 return base;

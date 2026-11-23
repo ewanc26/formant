@@ -401,6 +401,111 @@ void verifyTransposition() {
               << number(widerF0) << " Hz\n";
 }
 
+// Issue #129: prosody-direct overrides must move the measured F0, change
+// rendered duration exactly, and leave unselected segments alone. The oracle
+// (expectedF0) shares the render's contour function, so both must agree.
+void verifyProsodyDirect() {
+    formant::Voice voice = formant::voicePreset("robot");
+    voice.pitch = 100.0;
+    voice.harmonics = 200;
+    voice.declination = 0.0;
+    voice.attack = 0.002;
+    voice.release = 0.002;
+    voice.gain = 1.0;
+
+    formant::AnalyzerOptions options;
+    options.maxF0 = 400.0;
+
+    formant::Phoneme vowel = *formant::findPhoneme("ee");
+    vowel.duration = 0.5;
+
+    auto measure = [&](const std::vector<formant::Phoneme> &phonemes) {
+        const std::vector<float> samples =
+            formant::Synthesizer(voice).render(phonemes, 44100);
+        return meanVoicedF0(formant::estimateF0(samples, 44100, options),
+                            voice.pitch);
+    };
+
+    std::vector<formant::Phoneme> flat{vowel};
+    formant::applyProsodyFile(flat, formant::parseProsodyFile("f0 0 180\n"));
+    const double flatF0 = measure(flat);
+    CHECK(std::abs(flatF0 - 180.0) < 3.0);
+    const auto expected = formant::expectedF0(flat, voice, 44100, options);
+    CHECK(std::abs(meanVoicedF0(expected, 0.0) - 180.0) < 0.25);
+
+    std::vector<formant::Phoneme> ramp{vowel};
+    formant::applyProsodyFile(ramp,
+                              formant::parseProsodyFile("f0 0 150 210\n"));
+    CHECK(std::abs(measure(ramp) - 180.0) < 5.0);
+
+    std::vector<formant::Phoneme> timed{vowel};
+    formant::applyProsodyFile(timed,
+                              formant::parseProsodyFile("duration 0 0.3s\n"));
+    const std::vector<float> timedSamples =
+        formant::Synthesizer(voice).render(timed, 44100);
+    CHECK(timedSamples.size() == 13230U);
+    const formant::TimingPlan plan = formant::planTiming(timed, voice, 44100);
+    CHECK(plan.totalSamples == 13230);
+
+    // A single override inside a longer utterance must not drag its neighbour.
+    std::vector<formant::Phoneme> pair{vowel, vowel};
+    formant::applyProsodyFile(pair, formant::parseProsodyFile("f0 0 200\n"));
+    const std::vector<float> pairSamples =
+        formant::Synthesizer(voice).render(pair, 44100);
+    const formant::F0Track pairTrack =
+        formant::estimateF0(pairSamples, 44100, options);
+    const formant::F0Track pairTarget =
+        formant::expectedF0(pair, voice, 44100, options);
+    const int midpoint = static_cast<int>(pairSamples.size() / 2);
+    double firstSum = 0.0;
+    double secondSum = 0.0;
+    double measuredFirst = 0.0;
+    double measuredSecond = 0.0;
+    int firstCount = 0;
+    int secondCount = 0;
+    int measuredFirstCount = 0;
+    int measuredSecondCount = 0;
+    for (std::size_t i = 0; i < pairTarget.size(); ++i) {
+        if (pairTarget[i].frequency <= 0.0) {
+            continue;
+        }
+        const int centre =
+            pairTarget[i].startSample +
+            static_cast<int>(options.windowSeconds * 44100.0 / 2.0);
+        const bool first = centre < midpoint;
+        double &sum = first ? firstSum : secondSum;
+        int &count = first ? firstCount : secondCount;
+        sum += pairTarget[i].frequency;
+        ++count;
+        const double measured = pairTrack[i].frequency;
+        if (measured > 0.0) {
+            if (first) {
+                measuredFirst += measured;
+                ++measuredFirstCount;
+            } else {
+                measuredSecond += measured;
+                ++measuredSecondCount;
+            }
+        }
+    }
+    CHECK(firstCount > 0);
+    CHECK(secondCount > 0);
+    // The oracle states the intended contour exactly, so a neighbouring
+    // segment that was not selected must still be at the voice's 100 Hz base.
+    CHECK(std::abs(firstSum / firstCount - 200.0) < 0.25);
+    CHECK(std::abs(secondSum / secondCount - 100.0) < 0.25);
+    // The measured track only has to show the two were rendered differently;
+    // 50 ms analysis windows straddle the boundary and blur the exact value.
+    CHECK(measuredFirstCount > 0);
+    CHECK(measuredSecondCount > 0);
+    CHECK(measuredFirst / measuredFirstCount >
+          measuredSecond / measuredSecondCount + 20.0);
+
+    std::cout << "prosody direct: F0 " << number(flatF0)
+              << " Hz for a 180 Hz target, 0.3 s -> " << timedSamples.size()
+              << " samples, neighbour stayed near 100 Hz\n";
+}
+
 // Renders a deliberately wrong voice but scores it against the intended
 // tracks. A CI job passes only when the metrics reject the regression, which
 // demonstrates the thresholds are not vacuous.
@@ -493,6 +598,7 @@ int main(int argc, char **argv) {
 
     verifySampleRates();
     verifyTransposition();
+    verifyProsodyDirect();
     const std::vector<Case> cases = corpus();
     std::vector<ReportRow> rows;
     rows.reserve(cases.size());

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,10 +41,18 @@ struct Phoneme {
     bool hasEndBands = false;
 
     // Prosody, primarily set by the IPA front end. 1.0 is neutral.
-    // pitchStart/pitchEnd describe a linear F0 contour across the segment.
+    // pitchStart/pitchEnd describe a linear F0 contour across the segment as
+    // multipliers of the voice's base pitch.
     double amplitude = 1.0;
     double pitchStart = 1.0;
     double pitchEnd = 1.0;
+
+    // Absolute F0 targets in Hz, used by prosody-direct override files. When
+    // f0StartHz is set it replaces the voice-relative contour above with a
+    // linear Hz ramp; the phrase-final rise and vibrato still apply on top.
+    // Empty by default, so ordinary renders are byte-for-byte unchanged.
+    std::optional<double> f0StartHz;
+    std::optional<double> f0EndHz;
 
     bool operator==(const Phoneme &) const = default;
 };
