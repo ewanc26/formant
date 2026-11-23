@@ -115,7 +115,24 @@ build/formant --text "Hello." --format wav16 --dither 42 --output dithered.wav
 `--sample-rate` accepts any rate from 8 kHz upward; the harmonic ceiling is
 derived from it, so spectra scale safely up to 192 kHz and beyond. See
 [docs/audio-output.md](docs/audio-output.md) for the format table, WAV tags,
-dither semantics, CTest formant-verification harness and library API.
+dither semantics and library API.
+
+### Objective metrics
+
+The verification harness measures F0 error, gain-independent mel-envelope
+distance, mel-cepstral distortion (MCD) and formant-position error against the
+*intended* prosody and resonance tracks, with no third-party dependency:
+
+```sh
+ctest --test-dir build --output-on-failure
+./build/formant_formant_verification --report /tmp/metrics-report.txt
+```
+
+CI compares a five-case corpus against checked-in baselines and runs a
+deliberate-regression check, so a synthesis change that shifts pitch or formants
+is caught mechanically. The analyzer API is also public through
+`formant/metrics.h`. Definitions, corpus details and thresholds are in
+[docs/metrics.md](docs/metrics.md).
 
 ### Voices
 
@@ -238,12 +255,12 @@ You can bypass the text layer entirely: call `parseIpa()`, `parseXsampa()` or `p
 
 ```
 CMakeLists.txt          – C++20 library, CLI and CTest targets
-include/formant/        – public headers (voice, phoneme, IPA, synthesizer, wav)
+include/formant/        – public headers (voice, phoneme, IPA, synthesizer, wav, metrics)
 src/                    – synthesis engine, language front ends and IPA implementation
 src/cli/                – command-line driver
-tests/                  – unit tests, formant-verification harness and CLI smoke check
+tests/                  – unit tests, objective-metric harness, baselines and CLI smoke check
 examples/               – small text and phoneme inputs
-docs/                   – synthesis design, audio output, language-file grammar and release process
+docs/                   – synthesis design, audio output, objective metrics, language files and release process
 .github/workflows/      – CI on Linux and macOS
 ```
 
@@ -257,7 +274,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-The suite covers voice presets, English and Spanish text-to-phoneme conversion, language tags, user-defined language files, bracket parsing, the full IPA symbol inventory, X-SAMPA translation, stress/length/tone diacritics, deterministic rendering, WAV headers and encodings, deterministic dither, formant positions at five sample rates and CLI end-to-end renders. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
+The suite covers voice presets, English and Spanish text-to-phoneme conversion, language tags, user-defined language files, bracket parsing, the full IPA symbol inventory, X-SAMPA translation, stress/length/tone diacritics, deterministic rendering, WAV headers and encodings, deterministic dither, formant positions at five sample rates, F0/envelope/MCD metrics against checked-in baselines, deliberate-regression detection and CLI end-to-end renders. An optional sanitizer build is available with `-DFORMANT_SANITIZE=ON`.
 
 ---
 
@@ -270,7 +287,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-23
+
+### Added
+
+- Dependency-free objective metrics in `formant_core`: deterministic F0 tracking by normalised autocorrelation with parabolic refinement, gain-independent mel-envelope distance and mel-cepstral distortion (MCD), and harmonic peak/guard formant-position checks. The new `formant/metrics.h` exposes `estimateF0()`, `expectedF0()`, `compareF0()`, `estimateEnvelope()`, `expectedEnvelope()`, `compareEnvelope()`, `estimateFormantPeaks()` and `compareFormants()`.
+- `src/prosody.h` now shares F0 contours, formant interpolation and the resonance response between `Synthesizer::render()` and the metric target tracks, so analysis cannot silently drift from synthesis. Default 16-bit WAV output remains byte-identical.
+- `formant_formant_verification` now measures F0 RMSE/correlation, envelope distance, MCD and formant error across a five-case built-in corpus, compares against `tests/metrics_baseline.txt`, and supports `--report`, `--baseline` and `--update-baseline`. A new `formant_metrics_regression` CTest deliberately renders a mistuned voice and passes only when the metrics reject it.
+- [docs/metrics.md](docs/metrics.md) documents the analyzers, corpus, formulas, research references and absolute/drift thresholds for external reproduction.
+
 ## [0.10.0] - 2026-11-23
 
 ### Added

@@ -2023,6 +2023,149 @@ int main() {
         CHECK(timingLrc(empty).find("<") == std::string::npos);
     }
 
+    // Objective-metric analyzers are pure transforms of their inputs.
+    {
+        constexpr double pi = 3.14159265358979323846;
+        constexpr int rate = 44100;
+        std::vector<float> sine(static_cast<size_t>(rate / 2));
+        for (size_t i = 0; i < sine.size(); ++i) {
+            sine[i] = static_cast<float>(
+                0.8 * std::sin(2.0 * pi * 100.0 * static_cast<double>(i) /
+                               static_cast<double>(rate)));
+        }
+
+        formant::AnalyzerOptions options;
+        const formant::F0Track estimated =
+            formant::estimateF0(sine, rate, options);
+        CHECK(!estimated.empty());
+        double frequencySum = 0.0;
+        size_t voicedFrames = 0;
+        for (const formant::F0Frame &frame : estimated) {
+            if (frame.frequency > 0.0) {
+                frequencySum += frame.frequency;
+                ++voicedFrames;
+            }
+        }
+        CHECK(voicedFrames > 0);
+        if (voicedFrames > 0) {
+            CHECK(std::abs(frequencySum / static_cast<double>(voicedFrames) -
+                           100.0) < 2.0);
+        }
+        CHECK(formant::estimateF0(sine, rate, options).size() ==
+              estimated.size());
+
+        const formant::F0Metrics identical =
+            formant::compareF0(estimated, estimated);
+        CHECK(identical.frames == voicedFrames);
+        CHECK(identical.rmseHz < 1e-9);
+        CHECK(identical.correlation > 0.999999);
+
+        formant::F0Track shifted = estimated;
+        for (formant::F0Frame &frame : shifted) {
+            frame.frequency *= 1.1;
+        }
+        const formant::F0Metrics changed =
+            formant::compareF0(estimated, shifted);
+        CHECK(changed.frames == voicedFrames);
+        CHECK(changed.rmseHz > 5.0);
+
+        // A shaped contour exercises Pearson's r; the pure-tone track above is
+        // constant, for which the metrics deliberately report no shape.
+        const formant::F0Track shape = {
+            {0, 100.0, 1.0}, {1, 110.0, 1.0}, {2, 105.0, 1.0}, {3, 125.0, 1.0}};
+        formant::F0Track noisy = shape;
+        noisy[1].frequency += 4.0;
+        noisy[2].frequency -= 3.0;
+        const formant::F0Metrics shaped = formant::compareF0(shape, noisy);
+        CHECK(shaped.frames == shape.size());
+        CHECK(shaped.rmseHz > 1.0);
+        CHECK(shaped.correlation > 0.8);
+
+        const formant::EnvelopeTrack envelope =
+            formant::estimateEnvelope(sine, rate, options);
+        CHECK(!envelope.empty());
+        CHECK(!envelope.front().logPower.empty());
+        CHECK(envelope.front().cepstra.size() == 14);
+        const formant::EnvelopeMetrics sameEnvelope =
+            formant::compareEnvelope(envelope, envelope);
+        CHECK(sameEnvelope.frames == envelope.size());
+        CHECK(sameEnvelope.logDistance < 1e-9);
+        CHECK(sameEnvelope.mcdDb < 1e-9);
+
+        formant::EnvelopeTrack louder = envelope;
+        for (formant::EnvelopeFrame &frame : louder) {
+            for (double &power : frame.logPower) {
+                power += 2.0;
+            }
+            if (!frame.cepstra.empty()) {
+                frame.cepstra[0] +=
+                    2.0 * std::sqrt(static_cast<double>(frame.logPower.size()));
+            }
+        }
+        const formant::EnvelopeMetrics gainOnly =
+            formant::compareEnvelope(envelope, louder);
+        CHECK(gainOnly.frames == envelope.size());
+        CHECK(gainOnly.logDistance < 1e-9);
+        CHECK(gainOnly.mcdDb < 1e-9);
+
+        bool threw = false;
+        formant::AnalyzerOptions bad = options;
+        bad.maxF0 = bad.minF0;
+        try {
+            (void)formant::estimateF0(sine, rate, bad);
+        } catch (const std::invalid_argument &) {
+            threw = true;
+        }
+        CHECK(threw);
+
+        threw = false;
+        bad = options;
+        bad.melBands = 1;
+        try {
+            (void)formant::estimateEnvelope(sine, rate, bad);
+        } catch (const std::invalid_argument &) {
+            threw = true;
+        }
+        CHECK(threw);
+
+        threw = false;
+        bad = options;
+        bad.maxHarmonic = 1;
+        try {
+            (void)formant::expectedEnvelope({}, formant::Voice(), rate, bad);
+        } catch (const std::invalid_argument &) {
+            threw = true;
+        }
+        CHECK(threw);
+
+        const formant::Phoneme *source = formant::findPhoneme("ee");
+        CHECK(source != nullptr);
+        if (source != nullptr) {
+            formant::Phoneme vowel = *source;
+            vowel.duration = 0.3;
+            formant::Voice voice;
+            voice.pitch = 100.0;
+            voice.harmonics = 100;
+            voice.vibratoRate = 0.0;
+            voice.vibratoDepth = 0.0;
+            voice.breathiness = 0.0;
+            voice.declination = 0.0;
+            const std::vector<float> rendered =
+                formant::Synthesizer(voice).render({vowel}, rate);
+            const formant::F0Track target =
+                formant::expectedF0({vowel}, voice, rate, options);
+            CHECK(target.size() ==
+                  formant::estimateF0(rendered, rate, options).size());
+            const formant::F0Metrics againstTarget = formant::compareF0(
+                formant::estimateF0(rendered, rate, options), target);
+            CHECK(againstTarget.frames > 0);
+            CHECK(againstTarget.rmseHz < 5.0);
+            CHECK(formant::expectedEnvelope({vowel}, voice, rate, options)
+                      .size() ==
+                  formant::estimateEnvelope(rendered, rate, options).size());
+        }
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 

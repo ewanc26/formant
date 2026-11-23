@@ -1,0 +1,6 @@
+# name f0_rmse_hz f0_rmse_cents f0_correlation envelope_log_distance mcd_db formant_error_hz formant_contrast
+steady-vowel 0.125872 2.177354 1.000000 0.066781 2.240614 70.000000 4.908626 # phoneme ee, 100 Hz, 200 harmonics, 44.1 kHz
+hello-world 0.138198 1.800686 0.999653 0.446803 13.670492 0.000000 0.000000 # text: Hello, world.
+question 0.216414 2.780743 0.997799 0.504909 16.501574 0.000000 0.000000 # text: Are you there?
+alto-vibrato 0.321572 2.757441 0.999147 0.405133 13.198276 0.000000 0.000000 # text: Formant is a voice engine. (alto preset)
+bass-vowel 0.122381 2.344225 0.999969 0.075900 2.604313 57.100000 4.153576 # phoneme ee, 95 Hz bass preset, 48 kHz

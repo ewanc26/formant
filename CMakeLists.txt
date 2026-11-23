@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.10.0
+  VERSION 0.11.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -30,6 +30,7 @@ add_library(formant_core STATIC
     src/schedule.cpp
     src/timing.cpp
     src/wav.cpp
+    src/metrics.cpp
 )
 add_library(formant::formant ALIAS formant_core)
 target_include_directories(formant_core PUBLIC
@@ -66,8 +67,14 @@ if(FORMANT_BUILD_TESTS)
         add_executable(formant_formant_verification
             tests/formant_verification.cpp)
         target_link_libraries(formant_formant_verification PRIVATE formant_core)
+        target_compile_definitions(formant_formant_verification PRIVATE
+            FORMANT_METRICS_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/tests/metrics_baseline.txt")
         add_test(NAME formant_formant_verification
-            COMMAND formant_formant_verification)
+            COMMAND formant_formant_verification
+                --report ${CMAKE_CURRENT_BINARY_DIR}/metrics-report.txt)
+
+        add_test(NAME formant_metrics_regression
+            COMMAND formant_formant_verification --regression-check)
 
         add_test(NAME formant_cli_help COMMAND formant --help)
         add_test(NAME formant_cli_voices COMMAND formant --list-voices)
