@@ -24,7 +24,7 @@ Three things are interpolated or enveloped to remove discontinuities:
 4. **Amplitude** — per-phoneme attack and release, with shorter values for plosives.
 5. **Nyquist ceiling** — the top 4% of the usable band uses a raised-cosine fade, so a gliding fundamental removes a partial before the hard break.
 
-The harmonic phase is a single accumulator across the whole utterance, so pitch changes do not reset the waveform.
+The harmonic phase is a single accumulator across the whole utterance, so pitch changes do not reset the waveform. For callers who render sentence by sentence, `Synthesizer::renderContinued()` carries that accumulator, the absolute sine-noise time base, inherited formant bands and utterance-wide prosody in a `RenderState` value. The state stores the accumulated phoneme sequence as its source of truth, so a chain of calls renders the whole sequence before normalisation and its final buffer is byte-identical to one `render()` of the concatenation. Every phoneme keeps its own attack and release and the scheduler's 35 ms crossfade, so the joint gets exactly the same smooth treatment as any interior boundary. Skipping those ramps at a splice was rejected: it would break byte-identity with the single-call result, which is the stronger guarantee for an embedder. The ceiling taper from issue #108 is stateless, so no extra carried field is needed.
 
 ## Intonation
 

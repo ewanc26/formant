@@ -28,6 +28,18 @@ struct NoisePartial {
     double phase = 0.0;
 };
 
+// The un-normalised waveform plus the continuous values that a continued
+// render carries into the next call. Keeping this separate from normalisation
+// means a chain can render the whole accumulated sequence before scaling, so
+// its final buffer is byte-identical to a single render() of that sequence.
+struct AudioDraft {
+    std::vector<double> raw;
+    double peak = 0.0;
+    double phase = 0.0;
+    int totalSamples = 0;
+    bool rising = false;
+};
+
 std::vector<NoisePartial> makeNoisePartials(int sampleRate) {
     std::vector<NoisePartial> partials;
     partials.reserve(12);
@@ -50,28 +62,29 @@ std::vector<NoisePartial> makeNoisePartials(int sampleRate) {
     return partials;
 }
 
-} // namespace
-
-Synthesizer::Synthesizer(Voice voice) : voice_(std::move(voice)) {}
-
-std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
-                                       int sampleRate) const {
+void validate(const Voice &voice, int sampleRate) {
     if (sampleRate < 8000) {
         throw std::invalid_argument("sample rate must be at least 8000 Hz");
     }
-    if (!std::isfinite(voice_.rate) || voice_.rate <= 0.0) {
+    if (!std::isfinite(voice.rate) || voice.rate <= 0.0) {
         throw std::invalid_argument("rate must be positive and finite");
     }
+}
+
+AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
+                       int sampleRate) {
+    validate(voice, sampleRate);
+    AudioDraft draft;
     if (phonemes.empty()) {
-        return {};
+        return draft;
     }
 
     // The documented contract is round(total duration * sampleRate / rate)
     // samples. Never clamp the caller's rate: a slow rate must really produce
     // slower audio. The shared scheduler applies that cumulative-boundary
     // rule, so timing reports use exactly the spans rendered here.
-    const double rate = voice_.rate;
-    const bool rising = detail::utteranceRises(phonemes);
+    const double rate = voice.rate;
+    draft.rising = detail::utteranceRises(phonemes);
     const std::vector<detail::ScheduledSpan> spans =
         detail::schedulePhonemes(phonemes, rate, sampleRate);
 
@@ -98,17 +111,16 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
         previousVoiced = phoneme.voiced;
         previousNoise = phoneme.kind == PhonemeKind::Silence
                             ? 0.0
-                            : (phoneme.voiced ? voice_.breathiness : 1.0);
+                            : (phoneme.voiced ? voice.breathiness : 1.0);
     }
 
-    const int totalSamples = spans.back().end;
+    draft.totalSamples = spans.back().end;
     // Accumulate in double precision. Converting each sample to float before
     // normalisation can overflow with a large gain, leaving an infinite peak
     // and NaN samples after the inf * 0 scaling step.
-    std::vector<double> raw(static_cast<size_t>(totalSamples), 0.0);
+    draft.raw.assign(static_cast<size_t>(draft.totalSamples), 0.0);
     const std::vector<NoisePartial> partials = makeNoisePartials(sampleRate);
 
-    double phase = 0.0;
     for (const Segment &segment : segments) {
         const Phoneme &phoneme = *segment.phoneme;
         if (phoneme.kind == PhonemeKind::Silence) {
@@ -119,27 +131,27 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
         const double attack = std::min(
             std::max(1.0, std::round((phoneme.kind == PhonemeKind::Plosive
                                           ? 0.003
-                                          : voice_.attack) *
+                                          : voice.attack) *
                                      sampleRate / rate)),
             length * 0.5);
         const double release = std::min(
             std::max(1.0, std::round((phoneme.kind == PhonemeKind::Plosive
                                           ? 0.004
-                                          : voice_.release) *
+                                          : voice.release) *
                                      sampleRate / rate)),
             length * 0.5);
 
         const double voicedTarget = phoneme.voiced ? 1.0 : 0.0;
-        const double noiseTarget = phoneme.voiced ? voice_.breathiness : 1.0;
+        const double noiseTarget = phoneme.voiced ? voice.breathiness : 1.0;
 
         for (int s = segment.start; s < segment.end; ++s) {
             const double elapsed = static_cast<double>(s - segment.start);
             const double mix = detail::smooth(
                 elapsed / static_cast<double>(
-                              detail::transitionSamples(voice_, sampleRate)));
+                              detail::transitionSamples(voice, sampleRate)));
             const std::array<FormantBand, 4> bands =
                 detail::bandsAt(phoneme, segment.from, s, segment.start,
-                                segment.end, voice_, sampleRate);
+                                segment.end, voice, sampleRate);
 
             const double voicedMix =
                 segment.wasVoiced + (voicedTarget - segment.wasVoiced) * mix;
@@ -150,21 +162,22 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                           static_cast<double>(segment.end - s) / release});
 
             const double fundamental = detail::fundamentalAt(
-                voice_, phoneme, s, segment.start, segment.end, totalSamples,
-                sampleRate, rising);
-            phase = std::fmod(phase + 2.0 * detail::kPi * fundamental /
-                                          static_cast<double>(sampleRate),
-                              2.0 * detail::kPi);
+                voice, phoneme, s, segment.start, segment.end,
+                draft.totalSamples, sampleRate, draft.rising);
+            draft.phase =
+                std::fmod(draft.phase + 2.0 * detail::kPi * fundamental /
+                                            static_cast<double>(sampleRate),
+                          2.0 * detail::kPi);
 
             double voiced = 0.0;
-            if (fundamental > 0.0 && voice_.harmonics > 0) {
+            if (fundamental > 0.0 && voice.harmonics > 0) {
                 // The ceiling bounds the useful partials, but a very small
                 // fundamental can keep every partial below it. Cap the count
                 // so a pathological voice cannot render without bound. Both
                 // bounds fade their last few percent before the hard stop.
                 const int limit =
-                    std::min(voice_.harmonics, detail::kMaxHarmonics);
-                const bool capped = voice_.harmonics >= detail::kMaxHarmonics;
+                    std::min(voice.harmonics, detail::kMaxHarmonics);
+                const bool capped = voice.harmonics >= detail::kMaxHarmonics;
                 for (int h = 1; h <= limit; ++h) {
                     const double frequency =
                         fundamental * static_cast<double>(h);
@@ -172,19 +185,19 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                         break;
                     }
                     double gain =
-                        voice_.taperCeiling
+                        voice.taperCeiling
                             ? detail::ceilingGain(frequency, sampleRate)
                             : 1.0;
                     if (capped) {
-                        gain *= voice_.taperCeiling ? detail::capGain(h) : 1.0;
+                        gain *= voice.taperCeiling ? detail::capGain(h) : 1.0;
                     }
                     if (gain <= 0.0) {
                         continue;
                     }
                     voiced += detail::formantResponse(frequency, bands,
-                                                      voice_.formantScale) /
+                                                      voice.formantScale) /
                               static_cast<double>(h) * gain *
-                              std::sin(static_cast<double>(h) * phase);
+                              std::sin(static_cast<double>(h) * draft.phase);
                 }
             }
 
@@ -196,38 +209,72 @@ std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
                 for (const NoisePartial &partial : partials) {
                     sum +=
                         detail::formantResponse(partial.frequency, bands,
-                                                voice_.formantScale) *
+                                                voice.formantScale) *
                         std::sin(2.0 * detail::kPi * partial.frequency * time +
                                  partial.phase);
                 }
                 noise = 0.6 * sum / static_cast<double>(partials.size());
             }
 
-            raw[static_cast<size_t>(s)] =
-                voice_.gain * envelope * phoneme.amplitude *
+            draft.raw[static_cast<size_t>(s)] =
+                voice.gain * envelope * phoneme.amplitude *
                 (voicedMix * voiced + noiseMix * noise);
         }
     }
 
-    double peak = 0.0;
-    for (double sample : raw) {
+    for (double sample : draft.raw) {
         if (!std::isfinite(sample)) {
             throw std::invalid_argument(
                 "voice parameters produce non-finite output");
         }
-        peak = std::max(peak, std::abs(sample));
+        draft.peak = std::max(draft.peak, std::abs(sample));
     }
-    std::vector<float> output(raw.size(), 0.0f);
-    if (peak > 0.0) {
+    return draft;
+}
+
+std::vector<float> normalize(const AudioDraft &draft) {
+    std::vector<float> output(draft.raw.size(), 0.0f);
+    if (draft.peak > 0.0) {
         // Divide each sample by the peak before scaling. Forming a reciprocal
         // first would overflow to infinity when the peak is subnormal, turning
         // finite samples into inf and zero samples into NaN. Since |raw| <=
         // peak, each ratio is within [-1, 1] and cannot overflow.
-        for (size_t i = 0; i < raw.size(); ++i) {
-            output[i] = static_cast<float>((raw[i] / peak) * 0.9);
+        for (size_t i = 0; i < draft.raw.size(); ++i) {
+            output[i] = static_cast<float>((draft.raw[i] / draft.peak) * 0.9);
         }
     }
     return output;
+}
+
+} // namespace
+
+Synthesizer::Synthesizer(Voice voice) : voice_(std::move(voice)) {}
+
+std::vector<float> Synthesizer::render(const std::vector<Phoneme> &phonemes,
+                                       int sampleRate) const {
+    return normalize(renderDraft(voice_, phonemes, sampleRate));
+}
+
+RenderResult Synthesizer::renderContinued(const std::vector<Phoneme> &phonemes,
+                                          int sampleRate,
+                                          RenderState state) const {
+    validate(voice_, sampleRate);
+    if (state.sampleRate != 0 && state.sampleRate != sampleRate) {
+        throw std::invalid_argument(
+            "continued render sample rate must match the state");
+    }
+
+    RenderState next = std::move(state);
+    next.sampleRate = sampleRate;
+    next.phonemes.insert(next.phonemes.end(), phonemes.begin(), phonemes.end());
+
+    const AudioDraft draft = renderDraft(voice_, next.phonemes, sampleRate);
+    next.phase = draft.phase;
+    next.noiseTimeBase = static_cast<double>(draft.totalSamples) /
+                         static_cast<double>(sampleRate);
+    next.totalSamples = draft.totalSamples;
+    next.rising = draft.rising;
+    return {normalize(draft), std::move(next)};
 }
 
 std::vector<float> synthesizeText(std::string_view text, const Voice &voice,

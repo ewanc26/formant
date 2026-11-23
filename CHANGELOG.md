@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-23
+
+### Added
+
+- `Synthesizer::renderContinued()` and the pure `RenderState`/`RenderResult` value types let embedders chain utterances without a phase reset or a fresh normalisation at every joint. The carried state exposes glottal phase, absolute sine-noise time, combined length and the final-rise flag; a regression fixture proves chained calls are byte-identical to one render of the concatenation and that the splice stays smooth. `Phoneme` and `FormantBand` now have defaulted equality so state assertions are straightforward.
+
 ## [0.12.0] - 2026-11-23
 
 ### Added

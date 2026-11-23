@@ -248,6 +248,18 @@ const auto samples = formant::synthesizeText("Hello, world.", voice, 44100);
 formant::writeWav("hello.wav", samples, 44100);
 ```
 
+For sentence-by-sentence rendering, carry the render state between calls so the glottal phase and noise time base continue across the splice. The final result is byte-identical to rendering the concatenated phonemes in one call:
+
+```cpp
+formant::Synthesizer synth(voice);
+formant::RenderResult result;
+for (const auto &sentence : sentences) {
+    result = synth.renderContinued(formant::phonemize(sentence), 44100,
+                                   std::move(result.state));
+}
+formant::writeWav("speech.wav", result.samples, 44100);
+```
+
 You can bypass the text layer entirely: call `parseIpa()`, `parseXsampa()` or `parsePhonemes()` and pass the result to `render()`. IPA is mapped from articulatory features (height, backness, rounding, place and manner) to four formant bands, so no language-specific dictionary is needed. The tables in `src/phoneme.cpp` and `src/ipa.cpp` are plain data, not hardcoded synthesis logic. To choose another text front end, call `phonemize(text, Language::Spanish)`; every front end returns the same `formant::Phoneme` sequence.
 
 ---
