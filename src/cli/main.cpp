@@ -37,6 +37,7 @@ Options:
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
   --lang TAG              Text language: en (English), es (Spanish)
   --lang-file FILE        Speak text with a user-defined language definition
+  --lexicon FILE          Apply user pronunciation entries and homograph rules
   --trace                 Print rewrite-rule applications (with --lang-file)
   --voice NAME            Built-in voice: neutral, alto, bass, child, robot, whisper
   --list-voices           List available voices and exit
@@ -134,6 +135,7 @@ struct Options {
     std::string ipa;
     std::string xsampa;
     std::string languageFile;
+    std::string lexiconFile;
     std::string output = "output.wav";
     int sampleRate = 44100;
     bool usePhonemes = false;
@@ -142,6 +144,7 @@ struct Options {
     bool useStdin = false;
     bool useLanguage = false;
     bool useLanguageFile = false;
+    bool useLexicon = false;
     bool trace = false;
 };
 
@@ -265,6 +268,9 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--lang-file" || arg.rfind("--lang-file=", 0) == 0) {
             options.languageFile = takeValue(i, argc, argv, "--lang-file");
             options.useLanguageFile = true;
+        } else if (arg == "--lexicon" || arg.rfind("--lexicon=", 0) == 0) {
+            options.lexiconFile = takeValue(i, argc, argv, "--lexicon");
+            options.useLexicon = true;
         } else if (arg == "--voice" || arg.rfind("--voice=", 0) == 0) {
             baseVoice = voicePreset(takeValue(i, argc, argv, "--voice"));
         } else if (arg == "--output" || arg.rfind("--output=", 0) == 0) {
@@ -319,9 +325,14 @@ int main(int argc, char **argv) {
                 "--lang-file only applies to text input; --phonemes, --ipa "
                 "and --xsampa are language-independent");
         }
-        if (options.trace && !options.useLanguageFile) {
+        if (options.useLexicon && inputModes > 0) {
+            throw std::invalid_argument(
+                "--lexicon only applies to text input; --phonemes, --ipa and "
+                "--xsampa are language-independent");
+        }
+        if (options.trace && !options.useLanguageFile && !options.useLexicon) {
             throw std::invalid_argument("--trace only applies with "
-                                        "--lang-file");
+                                        "--lang-file or --lexicon");
         }
 
         formant::LanguageDefinition languageDefinition;
@@ -342,6 +353,28 @@ int main(int argc, char **argv) {
                     formant::parseLanguageDefinition(source.str());
             } catch (const std::invalid_argument &error) {
                 throw std::invalid_argument(options.languageFile + ": " +
+                                            error.what());
+            }
+        }
+
+        formant::PronunciationLexicon pronunciationLexicon;
+        if (options.useLexicon) {
+            std::ifstream file(options.lexiconFile);
+            if (!file) {
+                throw std::runtime_error("cannot open lexicon file: " +
+                                         options.lexiconFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read lexicon file: " +
+                                         options.lexiconFile);
+            }
+            try {
+                pronunciationLexicon =
+                    formant::parsePronunciationLexicon(source.str());
+            } catch (const std::invalid_argument &error) {
+                throw std::invalid_argument(options.lexiconFile + ": " +
                                             error.what());
             }
         }
@@ -370,8 +403,21 @@ int main(int argc, char **argv) {
         } else if (options.useXsampa) {
             phonemes = formant::parseXsampa(options.xsampa);
         } else if (options.useLanguageFile) {
-            phonemes = formant::phonemize(text, languageDefinition,
-                                          options.trace ? &trace : nullptr);
+            if (options.useLexicon) {
+                phonemes = formant::phonemize(text, languageDefinition,
+                                              pronunciationLexicon,
+                                              options.trace ? &trace : nullptr);
+            } else {
+                phonemes = formant::phonemize(text, languageDefinition,
+                                              options.trace ? &trace : nullptr);
+            }
+            for (const std::string &line : trace) {
+                std::cout << "trace: " << line << "\n";
+            }
+        } else if (options.useLexicon) {
+            phonemes =
+                formant::phonemize(text, options.language, pronunciationLexicon,
+                                   options.trace ? &trace : nullptr);
             for (const std::string &line : trace) {
                 std::cout << "trace: " << line << "\n";
             }
