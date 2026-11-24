@@ -1,0 +1,40 @@
+# Built-in nonverbal vocalizations (#124).
+#
+# Format (whitespace-separated fields; blank lines and # comments are ignored):
+#   nvv NAME | DESCRIPTION
+#     IPA DURATION [PITCH_START] [PITCH_END] [AMPLITUDE]
+#   style NAME RATE_SCALE PITCH_SCALE AMPLITUDE_SCALE
+#
+# Each segment is an ordinary IPA phoneme with an explicit duration and F0
+# contour multiplier. Events are therefore plain data: the same deterministic
+# sine engine renders them, and a user file with matching nvv NAME entries
+# replaces any definition here. See docs/nvv.md.
+
+nvv laugh | A short burst of voiced pulses with a rising-then-falling contour
+a 0.07 1.00 1.18 1.05
+a 0.06 1.18 1.38 1.10
+a 0.07 1.38 1.12 1.00
+a 0.06 1.12 1.26 0.95
+a 0.08 1.26 0.92 0.85
+
+nvv sigh | A long falling breath with a gentle voiced release
+h 0.18 1.15 1.05 0.85
+a 0.30 1.10 0.68 0.95
+
+nvv breath-in | A quiet inhale with a rising intensity
+h 0.22 1.00 1.00 0.35
+h 0.14 1.00 1.00 1.10
+
+nvv breath-out | A longer exhale with a fading intensity
+h 0.26 1.00 1.00 1.10
+h 0.16 1.00 1.00 0.30
+
+nvv throat-clear | A low glottal clear followed by a short voiced release
+k 0.04 0.80 0.80 0.90
+ə 0.09 0.82 0.66 1.00
+h 0.05 0.80 0.80 0.55
+ə 0.08 0.70 0.58 0.90
+
+style neutral 1.0 1.0 1.0
+style nervous 1.18 1.22 1.04
+style warm 0.92 0.93 1.02

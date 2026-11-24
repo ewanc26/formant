@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.30.0
+  VERSION 0.31.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -37,6 +37,7 @@ add_library(formant_core STATIC
     src/prosody_file.cpp
     src/intonation.cpp
     src/mrt.cpp
+    src/nvv.cpp
     src/timing.cpp
     src/wav.cpp
     src/metrics.cpp
@@ -46,6 +47,9 @@ add_library(formant::formant ALIAS formant_core)
 target_include_directories(formant_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+)
+target_include_directories(formant_core PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -60,6 +64,15 @@ endif()
 configure_file(
     src/version.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/version.h
+    @ONLY
+)
+
+# #124: embed the shipped nonverbal-vocalization table so the CLI has no
+# runtime data dependency; user overrides are still loaded from a data file.
+file(READ data/nvv/nvvs.txt NVV_BUILTIN_DATA)
+configure_file(
+    src/nvv_data.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/nvv_data.h
     @ONLY
 )
 
@@ -177,4 +190,5 @@ if(FORMANT_INSTALL)
     )
     install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
     install(DIRECTORY data/phoible/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/phoible)
+    install(DIRECTORY data/nvv/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/nvv)
 endif()

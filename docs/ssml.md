@@ -10,6 +10,7 @@ Formant accepts a small, dependency-free subset of the W3C Speech Synthesis Mark
 | `<break/>` | `time="300ms"` or `time="0.5s"`, or `strength="weak\|medium\|strong"` | Inserts a silence phoneme. `time` is exact; the strengths map to 0.12 s, 0.28 s and 0.5 s. `time` takes precedence over `strength`. |
 | `<prosody>` | `rate`, `pitch`, `volume` | Scales the span's phonemes. Spans may nest and compose multiplicatively. |
 | `<phoneme/>` | `ph`, optional `alphabet="ipa\|x-sampa"` | Inline transcription, parsed by the same IPA/X-SAMPA reader as `--ipa`/`--xsampa`. Alphabet defaults to `ipa`. |
+| `<nvv/>` | `name` | Inserts a data-defined nonverbal vocalization (see [docs/nvv.md](nvv.md)). Composes with `<prosody>`; unknown names fail with the byte offset. |
 | `<say-as>` | `interpret-as="digits\|number\|date"` | Expands the contained text to words, then applies the text front end. `digits` and `date` spell each digit; `number` reads the integer. |
 | `<s>`, `<p>` | — | Containers that add a 0.28 s sentence or 0.55 s paragraph pause at their close. |
 

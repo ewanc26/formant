@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "formant/formant.h"
+#include "formant/nvv.h"
 #include "../src/prosody.h"
 
 namespace {
@@ -2687,6 +2688,107 @@ int main() {
         expectError("<speak><prosody pitch=\"150Hz\">a</prosody></speak>",
                     "pitch must use a relative unit");
         expectError("</speak>", "unexpected </speak>");
+    }
+
+    // Issue #124: data-defined nonverbal vocalizations.
+    {
+        NvvLibrary library(builtinNvvData());
+        CHECK(library.names().size() >= 5);
+        for (const char *name :
+             {"laugh", "sigh", "breath-in", "breath-out", "throat-clear"}) {
+            CHECK(library.has(name));
+            CHECK(!library.get(name).empty());
+        }
+        CHECK(library.styleNames().front() == "neutral");
+
+        // Styles deterministically scale duration, pitch and amplitude.
+        const auto plain = library.get("laugh");
+        library.setStyle("nervous");
+        const auto nervous = library.get("laugh");
+        CHECK(plain.size() == nervous.size());
+        CHECK(std::abs(nervous[0].duration / plain[0].duration - 1.18) < 1e-9);
+        CHECK(std::abs(nervous[0].pitchStart / plain[0].pitchStart - 1.22) <
+              1e-9);
+        library.setStyle("warm");
+        CHECK(library.get("laugh")[0].duration < plain[0].duration);
+
+        // Inline [name] tokens splice events between text runs at exact
+        // positions; unknown tokens fail loudly.
+        library.setStyle("neutral");
+        const auto withToken =
+            library.expand("hi [laugh] there", [](std::string_view run) {
+                if (run == "hi ") {
+                    return parseIpa("ha");
+                }
+                return parseIpa("a");
+            });
+        const auto withoutToken = parseIpa("ha");
+        CHECK(withToken.size() == withoutToken.size() +
+                                      library.get("laugh").size() +
+                                      parseIpa("a").size());
+        CHECK(names(withToken).front() == names(withoutToken).front());
+        CHECK(names(withToken).back() == names(parseIpa("a")).back());
+
+        bool unknownRejected = false;
+        try {
+            (void)library.get("nope");
+        } catch (const std::invalid_argument &error) {
+            unknownRejected =
+                std::string(error.what()).find("nope") != std::string::npos;
+        }
+        CHECK(unknownRejected);
+        bool styleRejected = false;
+        try {
+            library.setStyle("manic");
+        } catch (const std::invalid_argument &) {
+            styleRejected = true;
+        }
+        CHECK(styleRejected);
+
+        // User definitions override built-ins and add new events.
+        const char *user = "nvv laugh | override\n"
+                           "e 0.03 1.2 1.4\n"
+                           "e 0.04 1.4 0.9\n"
+                           "nvv snort | new event\n"
+                           "s 0.05\n"
+                           "a 0.06 1.1 0.8\n";
+        NvvLibrary custom(builtinNvvData(), user);
+        CHECK(custom.has("snort"));
+        CHECK(custom.get("laugh").size() == 2);
+        CHECK(std::abs(custom.get("laugh")[0].duration - 0.03) < 1e-9);
+
+        // SSML <nvv> resolves to the same sequence and composes with prosody.
+        const auto ssmlNvv = phonemizeSsml(
+            "<speak><nvv name=\"laugh\"/></speak>",
+            [](std::string_view) { return std::vector<Phoneme>{}; },
+            [&library](std::string_view name, size_t) {
+                return library.get(name);
+            });
+        CHECK(ssmlNvv == library.get("laugh"));
+        const auto fastNvv = phonemizeSsml(
+            "<speak><prosody rate=\"2\"><nvv name=\"laugh\"/>"
+            "</prosody></speak>",
+            [](std::string_view) { return std::vector<Phoneme>{}; },
+            [&library](std::string_view name, size_t) {
+                return library.get(name);
+            });
+        CHECK(std::abs(fastNvv[0].duration * 2.0 - ssmlNvv[0].duration) < 1e-9);
+
+        // Malformed data fails with a line number.
+        auto rejects = [](const char *text) {
+            try {
+                (void)NvvLibrary(text);
+            } catch (const std::invalid_argument &error) {
+                return std::string(error.what()).find("nvv line") !=
+                       std::string::npos;
+            }
+            return false;
+        };
+        CHECK(rejects("a 0.1\n")); // segment before any definition
+        CHECK(rejects("nvv x | d\n\u02C4 0.1\n")); // unknown IPA symbol
+        CHECK(rejects("nvv x | d\na 0\n"));        // non-positive duration
+        CHECK(rejects("style x 0 1 1\n"));         // non-positive rate scale
+        CHECK(rejects("nvv x | d\n"));             // no segments
     }
 
     // Issue #129: prosody-direct override files. Every field is optional, so

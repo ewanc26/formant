@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+// Generated from data/nvv/nvvs.txt by CMake. The shipped NVV table is data,
+// not synthesis code; embedding it here keeps the runtime dependency-free.
+namespace formant::detail {
+inline constexpr std::string_view kBuiltinNvvData = R"NVVDATA(@NVV_BUILTIN_DATA@)NVVDATA";
+} // namespace formant::detail

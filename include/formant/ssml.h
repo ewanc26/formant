@@ -21,6 +21,11 @@ namespace formant {
 using SsmlTextFrontEnd =
     std::function<std::vector<Phoneme>(std::string_view text)>;
 
+// Resolves <nvv name="..."/> to a phoneme sequence. `offset` is the byte
+// position of the element, included in error messages for unknown names.
+using SsmlNvvResolver =
+    std::function<std::vector<Phoneme>(std::string_view name, size_t offset)>;
+
 // Parses an SSML document (bare text without a <speak> wrapper is accepted)
 // into the shared Phoneme sequence. Inline <prosody> composes on top of the
 // voice-level rate/pitch/gain by scaling each phoneme's duration, amplitude and
@@ -28,6 +33,11 @@ using SsmlTextFrontEnd =
 // position for unsupported or malformed markup.
 std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
                                    const SsmlTextFrontEnd &phonemizeText);
+
+// As above, with explicit <nvv name="..."/> support for nonverbal events.
+std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
+                                   const SsmlTextFrontEnd &phonemizeText,
+                                   const SsmlNvvResolver &resolveNvv);
 
 // Convenience overload using one of the built-in language front ends.
 std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
