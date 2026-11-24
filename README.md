@@ -244,6 +244,7 @@ A language definition file supplies a language as data: grapheme-to-IPA mappings
 build/formant --lang-file examples/velta.lang --text "Velta tata, celta, toran'." --output velta.wav
 build/formant --lang-file examples/velta.lang --trace --text "tata" --output tata.wav
 build/formant --lang-file examples/thalen.lang --list-phonemes   # prints the conlang inventory
+build/formant --text "Hello [laugh] world." --output scene.wav   # nonverbal vocalizations
 ```
 
 ```cpp
@@ -297,6 +298,18 @@ build/formant --text "Hello, world." --output hello.wav --visemes hello.visemes.
 `--xsampa` and `--phonemes` the words are derived from the phoneme stream.
 See [docs/timing.md](docs/timing.md) for the file schemas, the documented
 viseme mapping and the `planTiming()` / `planVisemes()` library API.
+
+### Nonverbal vocalizations
+
+Inline `[name]` tokens place data-defined events — `[laugh]`, `[sigh]`,
+`[breath-in]`, `[breath-out]` and `[throat-clear]` — anywhere in text input or
+SSML (`<nvv name="laugh"/>`). Events are ordinary phoneme sequences with
+contour parameters, so they use the same sine engine, voice presets, prosody
+and deterministic renderer as speech. `--nvv-style` selects a named delivery
+style, and `--nvv-file` adds or overrides events from a plain data table.
+
+See [docs/nvv.md](docs/nvv.md) for the table format, styles, SSML usage and
+composition limits.
 
 ### Customisation
 

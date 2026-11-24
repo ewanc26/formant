@@ -19,6 +19,7 @@
 #include "benchmark/benchmark.h"
 
 #include "formant/formant.h"
+#include "formant/nvv.h"
 #include "formant/version.h"
 
 namespace {
@@ -80,6 +81,9 @@ Options:
   --list-phonemes         List available phonemes and exit
   --list-ipa              List recognised IPA symbols and exit
   --list-languages        List available text languages and exit
+  --list-nvv              List nonverbal vocalizations and styles and exit
+  --nvv-file FILE         Load custom/override nonverbal vocalizations
+  --nvv-style NAME        Style for nonverbal events (neutral, nervous, warm)
   --benchmark             Benchmark the built-in corpus and exit
   --benchmark-repeats N   Timed renders per benchmark case (default: 5)
   --benchmark-report FILE Write a machine-readable benchmark report (TSV)
@@ -289,6 +293,10 @@ struct Options {
     std::string gibberishStyleFile;
     std::string transcriptFile;
     std::string languageFile;
+    std::string nvvFile;
+    std::string nvvStyle = "neutral";
+    bool useNvvFile = false;
+    bool listNvv = false;
     std::string lexiconFile;
     std::string ssmlFile;
     std::string prosodyFile;
@@ -415,6 +423,10 @@ Options parseOptions(int argc, char **argv) {
         if (arg == "--list-languages") {
             listLanguages();
             std::exit(0);
+        }
+        if (arg == "--list-nvv") {
+            options.listNvv = true;
+            continue;
         }
         if (arg == "--list-pattern-help") {
             std::cout << formant::patternGrammarHelp();
@@ -547,6 +559,11 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--lang-file" || arg.rfind("--lang-file=", 0) == 0) {
             options.languageFile = takeValue(i, argc, argv, "--lang-file");
             options.useLanguageFile = true;
+        } else if (arg == "--nvv-file" || arg.rfind("--nvv-file=", 0) == 0) {
+            options.nvvFile = takeValue(i, argc, argv, "--nvv-file");
+            options.useNvvFile = true;
+        } else if (arg == "--nvv-style" || arg.rfind("--nvv-style=", 0) == 0) {
+            options.nvvStyle = takeValue(i, argc, argv, "--nvv-style");
         } else if (arg == "--lexicon" || arg.rfind("--lexicon=", 0) == 0) {
             options.lexiconFile = takeValue(i, argc, argv, "--lexicon");
             options.useLexicon = true;
@@ -1128,6 +1145,44 @@ int main(int argc, char **argv) {
             }
         }
 
+        // #124: build the nonverbal-vocalization library once. Built-ins are
+        // embedded in the binary; user files only add or override definitions.
+        std::string nvvUser;
+        if (options.useNvvFile) {
+            std::ifstream file(options.nvvFile);
+            if (!file) {
+                throw std::runtime_error("cannot open NVV file: " +
+                                         options.nvvFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read NVV file: " +
+                                         options.nvvFile);
+            }
+            nvvUser = source.str();
+        }
+        formant::NvvLibrary nvv(formant::builtinNvvData(), nvvUser);
+        nvv.setStyle(options.nvvStyle);
+        const auto withNvv = [&nvv](formant::SsmlTextFrontEnd base) {
+            return formant::SsmlTextFrontEnd(
+                [&nvv, base](std::string_view run) {
+                    return nvv.expand(run, base);
+                });
+        };
+
+        if (options.listNvv) {
+            status << "Nonverbal vocalizations:\n";
+            for (const std::string &name : nvv.names()) {
+                status << "  " << name << "\n";
+            }
+            status << "Styles:\n";
+            for (const std::string &name : nvv.styleNames()) {
+                status << "  " << name << "\n";
+            }
+            return 0;
+        }
+
         if (options.listPhonemes) {
             listPhonemes(options.useLanguageFile ? &languageDefinition
                                                  : nullptr);
@@ -1268,7 +1323,18 @@ int main(int argc, char **argv) {
                     return formant::phonemize(run, options.language);
                 };
             }
-            phonemes = formant::phonemizeSsml(ssmlSource, frontEnd);
+            phonemes = formant::phonemizeSsml(
+                ssmlSource, withNvv(frontEnd),
+                formant::SsmlNvvResolver(
+                    [&nvv](std::string_view name, size_t offset) {
+                        try {
+                            return nvv.get(name);
+                        } catch (const std::invalid_argument &error) {
+                            throw std::invalid_argument("SSML at byte " +
+                                                        std::to_string(offset) +
+                                                        ": " + error.what());
+                        }
+                    }));
             for (const std::string &line : trace) {
                 status << "trace: " << line << "\n";
             }
@@ -1281,27 +1347,35 @@ int main(int argc, char **argv) {
             phonemes = formant::parseXsampa(options.xsampa);
         } else if (options.useLanguageFile) {
             if (options.useLexicon) {
-                phonemes = formant::phonemize(
-                    text, languageDefinition, pronunciationLexicon,
-                    options.trace ? &trace : nullptr, &conlangWarnings);
+                phonemes = nvv.expand(text, [&](std::string_view run) {
+                    return formant::phonemize(
+                        run, languageDefinition, pronunciationLexicon,
+                        options.trace ? &trace : nullptr, &conlangWarnings);
+                });
             } else {
-                phonemes = formant::phonemize(text, languageDefinition,
+                phonemes = nvv.expand(text, [&](std::string_view run) {
+                    return formant::phonemize(run, languageDefinition,
                                               options.trace ? &trace : nullptr,
                                               &conlangWarnings);
+                });
             }
             for (const std::string &line : trace) {
                 status << "trace: " << line << "\n";
             }
             printConlangWarnings();
         } else if (options.useLexicon) {
-            phonemes =
-                formant::phonemize(text, options.language, pronunciationLexicon,
-                                   options.trace ? &trace : nullptr);
+            phonemes = nvv.expand(text, [&](std::string_view run) {
+                return formant::phonemize(run, options.language,
+                                          pronunciationLexicon,
+                                          options.trace ? &trace : nullptr);
+            });
             for (const std::string &line : trace) {
                 status << "trace: " << line << "\n";
             }
         } else {
-            phonemes = formant::phonemize(text, options.language);
+            phonemes = nvv.expand(text, [&](std::string_view run) {
+                return formant::phonemize(run, options.language);
+            });
         }
 
         if (!options.intonationFile.empty() ||

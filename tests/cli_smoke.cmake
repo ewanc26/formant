@@ -1395,4 +1395,128 @@ if(gib_contract_result EQUAL 0 OR NOT gib_contract_error MATCHES "use only one o
     message(FATAL_ERROR "mutual-exclusion message changed: ${gib_contract_error}")
 endif()
 
+# #124: data-defined nonverbal vocalizations.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-nvv
+    RESULT_VARIABLE nvv_list_result
+    OUTPUT_VARIABLE nvv_list_output
+    ERROR_VARIABLE nvv_list_error
+)
+if(NOT nvv_list_result EQUAL 0)
+    message(FATAL_ERROR "--list-nvv failed: ${nvv_list_error}")
+endif()
+foreach(nvv_name laugh sigh breath-in breath-out throat-clear)
+    if(NOT nvv_list_output MATCHES "${nvv_name}")
+        message(FATAL_ERROR "--list-nvv is missing ${nvv_name}: ${nvv_list_output}")
+    endif()
+endforeach()
+if(NOT nvv_list_output MATCHES "nervous")
+    message(FATAL_ERROR "--list-nvv is missing styles: ${nvv_list_output}")
+endif()
+
+set(NVV_DIR "${CMAKE_CURRENT_BINARY_DIR}/nvv")
+file(MAKE_DIRECTORY "${NVV_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hello [laugh] world."
+        --sample-rate 22050 --output "${NVV_DIR}/laugh.wav"
+    RESULT_VARIABLE nvv_inline_result
+    ERROR_VARIABLE nvv_inline_error
+)
+if(NOT nvv_inline_result EQUAL 0)
+    message(FATAL_ERROR "inline NVV render failed: ${nvv_inline_error}")
+endif()
+file(SIZE "${NVV_DIR}/laugh.wav" nvv_inline_size)
+if(nvv_inline_size LESS 100)
+    message(FATAL_ERROR "inline NVV WAV is too short")
+endif()
+
+# Styles change the rendered bytes, and equal inputs are byte-identical.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hi [sigh]" --nvv-style nervous
+        --sample-rate 22050 --output "${NVV_DIR}/nervous.wav"
+    RESULT_VARIABLE nvv_style_result
+    ERROR_VARIABLE nvv_style_error
+)
+if(NOT nvv_style_result EQUAL 0)
+    message(FATAL_ERROR "NVV style render failed: ${nvv_style_error}")
+endif()
+file(SHA256 "${NVV_DIR}/nervous.wav" nvv_nervous_hash)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hi [sigh]" --nvv-style nervous
+        --sample-rate 22050 --output "${NVV_DIR}/nervous2.wav"
+    RESULT_VARIABLE nvv_style2_result
+    ERROR_VARIABLE nvv_style2_error
+)
+if(NOT nvv_style2_result EQUAL 0)
+    message(FATAL_ERROR "NVV style rerun failed: ${nvv_style2_error}")
+endif()
+file(SHA256 "${NVV_DIR}/nervous2.wav" nvv_nervous2_hash)
+if(NOT nvv_nervous_hash STREQUAL nvv_nervous2_hash)
+    message(FATAL_ERROR "NVV render is not deterministic")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hi [sigh]" --nvv-style warm
+        --sample-rate 22050 --output "${NVV_DIR}/warm.wav"
+    RESULT_VARIABLE nvv_warm_result
+    ERROR_VARIABLE nvv_warm_error
+)
+if(NOT nvv_warm_result EQUAL 0)
+    message(FATAL_ERROR "NVV warm style failed: ${nvv_warm_error}")
+endif()
+file(SHA256 "${NVV_DIR}/warm.wav" nvv_warm_hash)
+if(nvv_warm_hash STREQUAL nvv_nervous_hash)
+    message(FATAL_ERROR "NVV styles produced identical audio")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Hi [nope]" --output "${NVV_DIR}/bad.wav"
+    RESULT_VARIABLE nvv_bad_result
+    ERROR_VARIABLE nvv_bad_error
+)
+if(nvv_bad_result EQUAL 0 OR NOT nvv_bad_error MATCHES "unknown nonverbal vocalization: 'nope'")
+    message(FATAL_ERROR "unknown NVV token was not rejected: ${nvv_bad_error}")
+endif()
+
+file(WRITE "${NVV_DIR}/smoke.ssml" "<speak>Hi <nvv name=\"laugh\"/> there.</speak>")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ssml-file "${NVV_DIR}/smoke.ssml"
+        --sample-rate 22050 --output "${NVV_DIR}/ssml.wav"
+    RESULT_VARIABLE nvv_ssml_result
+    ERROR_VARIABLE nvv_ssml_error
+)
+if(NOT nvv_ssml_result EQUAL 0)
+    message(FATAL_ERROR "SSML <nvv> render failed: ${nvv_ssml_error}")
+endif()
+file(WRITE "${NVV_DIR}/bad.ssml" "<speak><nvv name=\"nope\"/></speak>")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ssml-file "${NVV_DIR}/bad.ssml"
+        --output "${NVV_DIR}/ssmlbad.wav"
+    RESULT_VARIABLE nvv_ssml_bad_result
+    ERROR_VARIABLE nvv_ssml_bad_error
+)
+if(nvv_ssml_bad_result EQUAL 0 OR NOT nvv_ssml_bad_error MATCHES "SSML at byte")
+    message(FATAL_ERROR "unknown SSML NVV was not rejected: ${nvv_ssml_bad_error}")
+endif()
+
+file(WRITE "${NVV_DIR}/custom.nvv" "nvv snort | test\ns 0.05\na 0.06 1.1 0.8\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --nvv-file "${NVV_DIR}/custom.nvv"
+        --text "Hi [snort]" --sample-rate 22050
+        --output "${NVV_DIR}/custom.wav"
+    RESULT_VARIABLE nvv_custom_result
+    ERROR_VARIABLE nvv_custom_error
+)
+if(NOT nvv_custom_result EQUAL 0)
+    message(FATAL_ERROR "custom NVV render failed: ${nvv_custom_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --nvv-file "${NVV_DIR}/custom.nvv" --list-nvv
+    RESULT_VARIABLE nvv_custom_list_result
+    OUTPUT_VARIABLE nvv_custom_list_output
+    ERROR_VARIABLE nvv_custom_list_error
+)
+if(NOT nvv_custom_list_result EQUAL 0 OR NOT nvv_custom_list_output MATCHES "snort")
+    message(FATAL_ERROR "custom NVV not listed: ${nvv_custom_list_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

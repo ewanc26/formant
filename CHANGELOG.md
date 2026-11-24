@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.31.0] - 2026-11-24
+
+### Added
+
+- Data-defined nonverbal vocalizations (#124). Five built-in events (`laugh`, `sigh`, `breath-in`, `breath-out`, `throat-clear`) are shipped as a plain data table (`data/nvv/nvvs.txt`, embedded at build time and installed under `share/formant/nvv`). Inline `[name]` tokens in `--text`/`--stdin` and an `<nvv name="..."/>` SSML element place events at exact positions; `--nvv-style` selects named styles (neutral, nervous, warm) and `--nvv-file` adds or overrides events without code changes. Events are ordinary phoneme sequences with contour parameters, so they render deterministically through the existing sine engine with the same voice, prosody and timing paths. Default text rendering is byte-for-byte unchanged. Documented in `docs/nvv.md`.
+
 ## [0.30.0] - 2026-11-23
 
 ### Changed

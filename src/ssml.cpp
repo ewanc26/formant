@@ -344,8 +344,9 @@ struct Tag {
 
 class SsmlParser {
   public:
-    SsmlParser(std::string_view ssml, const SsmlTextFrontEnd &frontEnd)
-        : src_(ssml), frontEnd_(frontEnd) {}
+    SsmlParser(std::string_view ssml, const SsmlTextFrontEnd &frontEnd,
+               const SsmlNvvResolver *resolveNvv = nullptr)
+        : src_(ssml), frontEnd_(frontEnd), resolveNvv_(resolveNvv) {}
 
     std::vector<Phoneme> parse() {
         // A <speak> wrapper is just a container; bare text works too. Both
@@ -357,6 +358,7 @@ class SsmlParser {
   private:
     std::string_view src_;
     const SsmlTextFrontEnd &frontEnd_;
+    const SsmlNvvResolver *resolveNvv_ = nullptr;
     size_t pos_ = 0;
 
     [[noreturn]] void fail(const std::string &message, size_t at) const {
@@ -573,6 +575,19 @@ class SsmlParser {
             result.push_back(pause(*seconds, prosody.rate));
             return;
         }
+        if (tag.name == "nvv") {
+            if (resolveNvv_ == nullptr) {
+                fail("<nvv> is not available in this SSML context", tag.start);
+            }
+            const auto name = attribute(tag.attrs, "name");
+            if (!name) {
+                fail("nvv needs a name attribute", tag.start);
+            }
+            std::vector<Phoneme> chunk = (*resolveNvv_)(*name, tag.start);
+            applyProsody(chunk, prosody);
+            result.insert(result.end(), chunk.begin(), chunk.end());
+            return;
+        }
         if (tag.name == "phoneme") {
             const auto ph = attribute(tag.attrs, "ph");
             if (!ph) {
@@ -629,6 +644,13 @@ class SsmlParser {
 std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
                                    const SsmlTextFrontEnd &phonemizeText) {
     SsmlParser parser(ssml, phonemizeText);
+    return parser.parse();
+}
+
+std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
+                                   const SsmlTextFrontEnd &phonemizeText,
+                                   const SsmlNvvResolver &resolveNvv) {
+    SsmlParser parser(ssml, phonemizeText, &resolveNvv);
     return parser.parse();
 }
 
