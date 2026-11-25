@@ -424,6 +424,19 @@ inline double fundamentalAt(const Voice &voice, const Phoneme &phoneme,
             voice.vibratoDepth * sine(2.0 * kPi * voice.vibratoRate * time);
         fundamental *= centsToRatioFast(cents);
     }
+
+    // #125: jitter is a bounded, deterministic pitch perturbation. Two
+    // incommensurate sines give an irregular but reproducible contour without a
+    // PRNG or any clock state. The branch is skipped entirely at the neutral
+    // value, so the default voice follows the exact path it always has.
+    if (voice.jitterCents > 0.0) {
+        const double time =
+            static_cast<double>(sample) / static_cast<double>(sampleRate);
+        const double cents = voice.jitterCents *
+                             sine(2.0 * kPi * 11.0 * time + 0.37) *
+                             sine(2.0 * kPi * 0.73 * time + 1.13);
+        fundamental *= centsToRatioFast(cents);
+    }
     return std::max(0.0, fundamental);
 }
 

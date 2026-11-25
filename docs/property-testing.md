@@ -34,8 +34,9 @@ failure is immediately reproducible with:
 3. **Input rejection** — malformed and adversarial data files are rejected
    early with an instructive error and never crash or throw an unexpected
    exception. Seed-derived byte strings are fed to every public parser; the
-   language, voice, prosody, intonation, lexicon, SSML, IPA, X-SAMPA,
-   bracketed-phoneme and gibberish-pattern front ends are all covered. Song,
+   language, voice, affect, neural, breath, prosody, intonation, lexicon, SSML,
+   IPA, X-SAMPA, bracketed-phoneme and gibberish-pattern front ends are all
+   covered. Song,
    accent and dialogue files do not exist yet; when they are introduced their
    parsers must be appended to the `kParsers` table alongside the structured
    malformed cases so they gain the same hardening guarantee.

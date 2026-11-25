@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.33.0
+  VERSION 0.34.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -39,6 +39,7 @@ add_library(formant_core STATIC
     src/mrt.cpp
     src/nvv.cpp
     src/breath.cpp
+    src/affect.cpp
     src/neural.cpp
     src/timing.cpp
     src/wav.cpp
@@ -84,6 +85,15 @@ file(READ data/breath/breath_groups.txt BREATH_BUILTIN_DATA)
 configure_file(
     src/breath_data.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/breath_data.h
+    @ONLY
+)
+
+# #125: affect styles are also shipped as inspectable data. The mapping and
+# named presets are embedded; user files layer over them without code changes.
+file(READ data/affect/affect_styles.txt AFFECT_BUILTIN_DATA)
+configure_file(
+    src/affect_data.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/affect_data.h
     @ONLY
 )
 
@@ -203,4 +213,5 @@ if(FORMANT_INSTALL)
     install(DIRECTORY data/phoible/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/phoible)
     install(DIRECTORY data/nvv/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/nvv)
     install(DIRECTORY data/breath/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/breath)
+    install(DIRECTORY data/affect/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/affect)
 endif()

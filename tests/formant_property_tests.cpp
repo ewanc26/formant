@@ -208,8 +208,11 @@ void parseNeuralSamples(std::string_view text) {
 void parseNeuralState(std::string_view text) {
     (void)formant::GrowingNeuralNetwork::parse(text);
 }
+void parseAffect(std::string_view text) {
+    (void)formant::parseAffectData(formant::builtinAffectData(), text);
+}
 
-const std::array<ParserCase, 12> kParsers = {{
+const std::array<ParserCase, 13> kParsers = {{
     {"language", parseLanguage},
     {"voice", parseVoice},
     {"prosody", parseProsody},
@@ -222,6 +225,7 @@ const std::array<ParserCase, 12> kParsers = {{
     {"bracket", parseBracket},
     {"neural-samples", parseNeuralSamples},
     {"neural-state", parseNeuralState},
+    {"affect", parseAffect},
 }};
 
 void checkRejection(uint32_t seed) {

@@ -60,7 +60,8 @@ preset     = "neutral" | "alto" | "bass" | "child" | "robot" | "whisper" ;
 boolean    = "true" | "false" | "1" | "0" ;
 parameter  = "pitch" | "declination" | "rate" | "formant-scale"
            | "vibrato-rate" | "vibrato-depth" | "breathiness"
-           | "nasality" | "harmonics" | "attack" | "release" | "gain" ;
+           | "nasality" | "harmonics" | "attack" | "release" | "gain"
+           | "jitter-cents" | "shimmer" ;
 ```
 
 A minimal definition changes just one knob:
@@ -120,6 +121,8 @@ Start at a preset and move one axis at a time through the safe band.
 | `attack` | 0 | 1 | 0.002 | 0.05 | Seconds; very slow attacks soften plosives. |
 | `release` | 0 | 2 | 0.002 | 0.1 | Seconds; long releases blur word boundaries. |
 | `gain` | 0.001 | 4 | 0.3 | 1 | Level before peak normalisation. |
+| `jitter-cents` | 0 | 50 | 0 | 12 | Bounded F0 irregularity from two incommensurate sines; `0` disables the branch. |
+| `shimmer` | 0 | 0.25 | 0 | 0.08 | Bounded amplitude irregularity from the same sine-only source model. |
 
 The resonance response limits each formant band's total contribution at 2
 with a C1 soft knee (it keeps slope 1 at the corner and saturates toward 2.25)

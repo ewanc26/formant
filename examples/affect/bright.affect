@@ -1,0 +1,13 @@
+# Bright announcement style: a #125 overlay shipped as an example.
+# Layered over data/affect/affect_styles.txt, not a replacement table.
+schema 1
+name Bright
+author Formant contributors
+description A crisp, upbeat delivery for short announcements
+license AGPL-3.0-or-later
+version 1.0.0
+range -1 1
+map pitch 0.16 0.03 0.04
+emphasis strong 1.20 1.24 1.22
+style bright 0.55 0.65 0.25
+checksum bcfd070af550e53aa6664e67331e95b6ae20ca2ee35f149dd95caffa2fce71dc

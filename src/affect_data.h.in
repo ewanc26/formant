@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+// Generated from data/affect/affect_styles.txt by CMake. The shipped mapping is
+// data, not synthesis code; embedding it keeps the runtime dependency-free.
+namespace formant::detail {
+inline constexpr std::string_view kBuiltinAffectData = R"AFFECTDATA(@AFFECT_BUILTIN_DATA@)AFFECTDATA";
+} // namespace formant::detail

@@ -211,9 +211,10 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                     if (gain <= 0.0) {
                         continue;
                     }
-                    voiced += detail::formantResponse(frequency, formants) /
-                              static_cast<double>(h) * gain *
-                              detail::sine(static_cast<double>(h) * draft.phase);
+                    voiced +=
+                        detail::formantResponse(frequency, formants) /
+                        static_cast<double>(h) * gain *
+                        detail::sine(static_cast<double>(h) * draft.phase);
                 }
             }
 
@@ -232,9 +233,22 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                 noise = 0.6 * sum / static_cast<double>(partials.size());
             }
 
-            draft.raw[static_cast<size_t>(s)] =
-                voice.gain * envelope * phoneme.amplitude *
-                (voicedMix * voiced + noiseMix * noise);
+            double sample = voice.gain * envelope * phoneme.amplitude *
+                            (voicedMix * voiced + noiseMix * noise);
+            // #125: shimmer is a bounded, deterministic amplitude perturbation
+            // from the affect layer. It shares the sine-only source model and
+            // leaves the neutral path byte-for-byte unchanged.
+            if (voice.shimmerDepth > 0.0) {
+                const double time =
+                    static_cast<double>(s) / static_cast<double>(sampleRate);
+                const double modulation =
+                    1.0 +
+                    voice.shimmerDepth *
+                        detail::sine(2.0 * detail::kPi * 7.0 * time + 0.23) *
+                        detail::sine(2.0 * detail::kPi * 0.9 * time + 0.61);
+                sample *= modulation;
+            }
+            draft.raw[static_cast<size_t>(s)] = sample;
         }
     }
 

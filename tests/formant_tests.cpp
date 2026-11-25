@@ -3354,7 +3354,7 @@ int main() {
     {
         const std::vector<formant::VoiceParameter> parameters =
             formant::voiceParameters();
-        CHECK(parameters.size() == 12);
+        CHECK(parameters.size() == 14);
         for (std::size_t i = 0; i < parameters.size(); ++i) {
             CHECK(!parameters[i].name.empty());
             CHECK(parameters[i].minimum <= parameters[i].safeMinimum);
@@ -4143,6 +4143,251 @@ int main() {
         CHECK(applied[1] == beforeApply[1]);
         CHECK(applied[2] == beforeApply[2]);
         CHECK(applied[3] == beforeApply[3]);
+    }
+
+    {
+        // #125: affect is data, opt-in and deterministic. The built-in table
+        // exposes named PAD presets and low-level levers; no style means no
+        // waveform change.
+        const AffectData data = parseAffectData(builtinAffectData());
+        CHECK(data.schema == kCurrentAffectSchema);
+        CHECK(data.styles.size() == 6);
+        CHECK(data.styles.count("neutral") == 1);
+        CHECK(data.styles.count("calm") == 1);
+        CHECK(data.styles.count("excited") == 1);
+        CHECK(data.styles.count("sad") == 1);
+        CHECK(data.styles.count("whispering") == 1);
+        CHECK(data.styles.count("newsreader") == 1);
+        CHECK(data.emphasis.count("strong") == 1);
+        CHECK(data.emphasis.count("moderate") == 1);
+        CHECK(data.emphasis.count("reduced") == 1);
+
+        const AffectProfile neutral = resolveAffectProfile(data, "neutral");
+        CHECK(neutral.axes == AffectAxes{});
+        CHECK(std::abs(neutral.levers.pitch - 1.0) < 1e-12);
+        CHECK(std::abs(neutral.levers.range - 1.0) < 1e-12);
+        CHECK(std::abs(neutral.levers.rate - 1.0) < 1e-12);
+        CHECK(std::abs(neutral.levers.intensity - 1.0) < 1e-12);
+        CHECK(neutral.levers.jitterCents == 0.0);
+        CHECK(neutral.levers.shimmer == 0.0);
+
+        const AffectProfile calm = resolveAffectProfile(data, "calm");
+        const AffectProfile excited = resolveAffectProfile(data, "excited");
+        const AffectProfile whispering =
+            resolveAffectProfile(data, "whispering");
+        CHECK(calm.levers.rate < neutral.levers.rate);
+        CHECK(excited.levers.rate > neutral.levers.rate);
+        CHECK(excited.levers.pitch > calm.levers.pitch);
+        CHECK(excited.levers.intensity > calm.levers.intensity);
+        CHECK(whispering.levers.rate < neutral.levers.rate);
+
+        // A coordinate halfway between two presets interpolates their levers:
+        // the mapping is an affine function of the three axes.
+        const AffectProfile midpoint = resolveAffectProfile(
+            data, "", (calm.axes.arousal + excited.axes.arousal) / 2.0,
+            (calm.axes.valence + excited.axes.valence) / 2.0,
+            (calm.axes.dominance + excited.axes.dominance) / 2.0);
+        const auto near = [](double a, double b) {
+            return std::abs(a - b) < 1e-12;
+        };
+        CHECK(near(midpoint.axes.arousal,
+                   (calm.axes.arousal + excited.axes.arousal) / 2.0));
+        CHECK(near(midpoint.levers.pitch,
+                   (calm.levers.pitch + excited.levers.pitch) / 2.0));
+        CHECK(near(midpoint.levers.range,
+                   (calm.levers.range + excited.levers.range) / 2.0));
+        CHECK(near(midpoint.levers.rate,
+                   (calm.levers.rate + excited.levers.rate) / 2.0));
+        CHECK(near(midpoint.levers.intensity,
+                   (calm.levers.intensity + excited.levers.intensity) / 2.0));
+        CHECK(near(midpoint.levers.adduction,
+                   (calm.levers.adduction + excited.levers.adduction) / 2.0));
+
+        bool unknownRejected = false;
+        try {
+            (void)resolveAffectProfile(data, "manic");
+        } catch (const std::invalid_argument &error) {
+            unknownRejected =
+                std::string(error.what()).find("unknown affect style") !=
+                std::string::npos;
+        }
+        CHECK(unknownRejected);
+
+        // A shareable overlay keeps the built-in table and adds new data. Its
+        // checksum covers every non-checksum byte with LF line endings.
+        std::string overlay =
+            "schema 1\nname Bright\nauthor Test\ndescription Test overlay\n"
+            "license AGPL-3.0-or-later\nversion 1.0.0\n"
+            "map pitch 0.20 0.00 0.00\n"
+            "style bright 0.5 0.6 0.7\n"
+            "emphasis soft 0.80 0.90 0.95\n";
+        overlay += "checksum " + affectFileChecksum(overlay) + "\n";
+        const AffectData overlaid =
+            parseAffectData(builtinAffectData(), overlay);
+        CHECK(overlaid.name == "Bright");
+        CHECK(overlaid.styles.count("bright") == 1);
+        CHECK(overlaid.styles.count("calm") == 1);
+        CHECK(overlaid.emphasis.count("soft") == 1);
+        CHECK(std::abs(overlaid.mapping.pitch[0] - 0.2) < 1e-12);
+        const AffectProfile bright = resolveAffectProfile(overlaid, "bright");
+        CHECK(std::abs(bright.levers.pitch - 1.1) < 1e-12);
+
+        bool checksumRejected = false;
+        try {
+            (void)parseAffectData(builtinAffectData(), overlay + "# tamper\n");
+        } catch (const std::invalid_argument &error) {
+            checksumRejected =
+                std::string(error.what()).find("affect checksum mismatch") !=
+                std::string::npos;
+        }
+        CHECK(checksumRejected);
+
+        bool lineRejected = false;
+        try {
+            (void)parseAffectData(builtinAffectData(),
+                                  "schema 1\nbogus directive\n");
+        } catch (const std::invalid_argument &error) {
+            lineRejected = std::string(error.what()).find("affect line 2") !=
+                           std::string::npos;
+        }
+        CHECK(lineRejected);
+
+        const std::string dumped = writeAffectData(data, "calm");
+        const AffectData reloaded =
+            parseAffectData(builtinAffectData(), dumped);
+        CHECK(reloaded.checksum.has_value());
+        CHECK(writeAffectData(reloaded, "calm") == dumped);
+
+        // Voice perturbation levers are sweepable data. Their neutral values
+        // leave rendering byte-identical; active values stay finite and
+        // bounded.
+        const Voice base = voicePreset("neutral");
+        CHECK(base.jitterCents == 0.0);
+        CHECK(base.shimmerDepth == 0.0);
+        CHECK(std::abs(voiceParameter(base, "jitter-cents")) < 1e-12);
+        CHECK(std::abs(voiceParameter(base, "shimmer")) < 1e-12);
+        Voice neutralPerturbation = base;
+        setVoiceParameter(neutralPerturbation, "jitter-cents", 0.0);
+        setVoiceParameter(neutralPerturbation, "shimmer", 0.0);
+        const std::vector<Phoneme> shortPhrase{*findPhoneme("h"),
+                                               *findPhoneme("ee")};
+        CHECK(Synthesizer(base).render(shortPhrase, 22050) ==
+              Synthesizer(neutralPerturbation).render(shortPhrase, 22050));
+
+        Voice perturbed = voicePreset("alto");
+        applyAffectStyle(perturbed, excited);
+        CHECK(perturbed.pitch > voicePreset("alto").pitch);
+        CHECK(perturbed.rate > voicePreset("alto").rate);
+        CHECK(perturbed.gain > voicePreset("alto").gain);
+        CHECK(perturbed.jitterCents > 0.0);
+        CHECK(perturbed.shimmerDepth > 0.0);
+        const std::vector<float> excitedAudio =
+            Synthesizer(perturbed).render(shortPhrase, 22050);
+        CHECK(excitedAudio != Synthesizer(base).render(shortPhrase, 22050));
+        CHECK(excitedAudio ==
+              Synthesizer(perturbed).render(shortPhrase, 22050));
+        for (float sample : excitedAudio) {
+            CHECK(std::isfinite(sample));
+            CHECK(std::abs(sample) <= 0.9f + 1e-6f);
+        }
+
+        // Every corner of the declared PAD range must remain finite and clipped
+        // by the existing peak normaliser, including intensity stacking.
+        for (double a : {-1.0, 1.0}) {
+            for (double v : {-1.0, 1.0}) {
+                for (double d : {-1.0, 1.0}) {
+                    Voice extreme = voicePreset("neutral");
+                    applyAffectStyle(extreme,
+                                     resolveAffectProfile(data, "", a, v, d));
+                    CHECK(std::isfinite(extreme.pitch));
+                    CHECK(std::isfinite(extreme.rate));
+                    CHECK(std::isfinite(extreme.gain));
+                    CHECK(extreme.rate >= 0.01 && extreme.rate <= 5.0);
+                    CHECK(extreme.gain >= 0.001 && extreme.gain <= 4.0);
+                    CHECK(extreme.jitterCents <= 50.0);
+                    CHECK(extreme.shimmerDepth <= 0.25);
+                    const std::vector<float> audio =
+                        Synthesizer(extreme).render(shortPhrase, 22050);
+                    for (float sample : audio) {
+                        CHECK(std::isfinite(sample));
+                        CHECK(std::abs(sample) <= 0.9f + 1e-6f);
+                    }
+                }
+            }
+        }
+    }
+
+    {
+        // Word emphasis changes only the marked word. Gaps and surrounding
+        // <phoneme> elements keep their exact prosody and provenance.
+        const auto frontEnd = [](std::string_view text) {
+            std::vector<Phoneme> result;
+            if (text == "word") {
+                Phoneme word;
+                word.name = "word";
+                word.kind = PhonemeKind::Voiced;
+                word.duration = 0.1;
+                word.amplitude = 1.0;
+                word.pitchStart = 1.0;
+                word.pitchEnd = 1.0;
+                Phoneme gap;
+                gap.name = "|";
+                gap.kind = PhonemeKind::Silence;
+                gap.duration = 0.05;
+                result = {word, gap};
+            }
+            return result;
+        };
+        const auto findWord = [](const std::vector<Phoneme> &all,
+                                 std::string_view name) {
+            for (const Phoneme &phoneme : all) {
+                if (phoneme.name == name) {
+                    return phoneme;
+                }
+            }
+            return Phoneme{};
+        };
+        const std::string document =
+            "<speak><phoneme ph=\"h\"/>"
+            "<emphasis level=\"strong\">word</emphasis>"
+            "<phoneme ph=\"ee\"/></speak>";
+        const std::vector<Phoneme> plain =
+            phonemizeSsml("<speak><phoneme ph=\"h\"/>word"
+                          "<phoneme ph=\"ee\"/></speak>",
+                          frontEnd);
+        const std::vector<Phoneme> emphasized =
+            phonemizeSsml(document, frontEnd);
+        const Phoneme plainWord = findWord(plain, "word");
+        const Phoneme plainGap = findWord(plain, "|");
+        const Phoneme strongWord = findWord(emphasized, "word");
+        const Phoneme strongGap = findWord(emphasized, "|");
+        CHECK(strongWord.duration > plainWord.duration);
+        CHECK(strongWord.pitchStart > plainWord.pitchStart);
+        CHECK(strongWord.pitchEnd > plainWord.pitchEnd);
+        CHECK(strongWord.amplitude > plainWord.amplitude);
+        CHECK(strongWord.source == "style:emphasis");
+        CHECK(strongGap == plainGap);
+        CHECK(emphasized.front() == plain.front());
+        CHECK(emphasized.back() == plain.back());
+
+        const SsmlEmphasisLevels custom = {{"strong", {1.5, 1.6, 1.7}}};
+        const Phoneme customWord =
+            findWord(phonemizeSsml(document, frontEnd, custom), "word");
+        CHECK(customWord.duration > strongWord.duration);
+        CHECK(customWord.pitchStart > strongWord.pitchStart);
+        CHECK(customWord.amplitude > strongWord.amplitude);
+
+        bool levelRejected = false;
+        try {
+            (void)phonemizeSsml("<speak><emphasis level="
+                                "\"shout\">word</emphasis></speak>",
+                                frontEnd);
+        } catch (const std::invalid_argument &error) {
+            levelRejected =
+                std::string(error.what()).find("unsupported emphasis level") !=
+                std::string::npos;
+        }
+        CHECK(levelRejected);
     }
 
     // The English paths remain byte-for-byte unchanged.

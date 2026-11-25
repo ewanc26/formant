@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.34.0] - 2026-11-25
+
+### Added
+
+- Opt-in affect and style layer (#125). PAD coordinates (`--arousal`, `--valence`, `--dominance`) and named presets (`--style`) map through a versioned, inspectable data table onto existing synthesis levers: F0 and range, rate, intensity, deterministic jitter/shimmer, adduction and effort. `--style-file` layers custom rows over the built-ins, `--list-styles` reports resolved levers, `--dump-style` exports a checksummed shareable table, and `--inspect-style` verifies one. SSML `<emphasis level="strong|moderate|reduced">` scales F0, duration and amplitude on the marked word only and tags it `style:emphasis` so the neural layer cannot double-apply it. New `jitter-cents` and `shimmer` voice parameters are sweepable; all mappings are clamped and the peaks normalised. Unstyled rendering remains byte-identical and the sine-only, platform-stable kernel is unchanged. Documented in `docs/affect-styles.md`.
+
 ## [0.33.0] - 2026-11-25
 
 ### Added

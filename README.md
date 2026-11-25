@@ -89,8 +89,17 @@ build/formant --lang-file examples/velta.lang --text "Velta shael." --output vel
 # Apply a user pronunciation lexicon (names and homographs as data)
 build/formant --text "Ewan lead us" --lexicon names.lex --trace --output names.wav
 
-# Speak an SSML document (breaks, inline IPA, say-as and prosody spans)
+# Speak an SSML document (breaks, inline IPA, say-as, prosody and emphasis)
 build/formant --ssml-file script.ssml --output ssml.wav
+
+# Deliver a line with a named affect style or continuous PAD coordinates
+build/formant --text "I really like this." --style excited --output excited.wav
+build/formant --text "I really like this." \
+  --arousal 0.8 --valence 0.7 --dominance 0.5 --output coordinates.wav
+build/formant --list-styles
+build/formant --dump-style excited > excited.affect
+build/formant --style-file excited.affect --style excited \
+  --text "I really like this." --output shared.wav
 
 # Layer exact F0, duration and amplitude targets over the default prosody
 build/formant --text "Hello, world." --prosody-file script.prosody --output exact.wav
@@ -329,6 +338,22 @@ intonation/prosody directives still win.
 See [docs/breath-groups.md](docs/breath-groups.md) for the policy format,
 depth table, provenance rules and verification approach.
 
+### Affect and emphasis
+
+Delivery is a separate, opt-in layer over a voice. `--style` selects a named
+PAD preset (`neutral`, `calm`, `excited`, `sad`, `whispering`, `newsreader`), or
+`--arousal`, `--valence` and `--dominance` set continuous coordinates in
+`[-1, 1]`. A versioned data table maps those axes onto F0 mean/range, rate,
+intensity, deterministic jitter/shimmer, adduction and effort; `--style-file`
+layers custom rows, `--list-styles` inspects the table, `--dump-style` exports a
+checksummed preset and `--inspect-style` verifies a shared file. SSML
+`<emphasis level="strong|moderate|reduced">` changes pitch, duration and
+amplitude on the marked word only. No flag means no change at all, so default
+audio stays byte-identical and rendering remains sine-only.
+
+See [docs/affect-styles.md](docs/affect-styles.md) for the mapping, file format,
+limits and library API.
+
 ### Learned style corrections
 
 An optional deterministic growing neural network learns bounded pitch and
@@ -356,6 +381,8 @@ voice.formantScale = 1.15;    // longer vocal tract
 voice.vibratoDepth = 10.0;    // cents
 voice.breathiness = 0.08;     // sine-noise under voiced sounds
 voice.nasality = 0.15;        // pervasive nasal anti-formant, 0..1
+voice.jitterCents = 3.0;      // deterministic F0 irregularity
+voice.shimmerDepth = 0.02;    // deterministic amplitude irregularity
 voice.taperCeiling = true;    // fade partials before Nyquist (default)
 
 // Parameter-domain transposition: no audio post-processing.
@@ -422,7 +449,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 
