@@ -89,6 +89,13 @@ Options:
   --breath-file FILE      Load custom/override breath-group policy data
   --breath-style NAME     Breath policy style: narrative, formal, brisk
   --list-breath           List breath-group policies and exit
+  --neural-model FILE     Load a saved neural prosody state
+  --neural-train FILE     Train from line-oriented sample records
+  --neural-save FILE      Save the trained neural state
+  --neural-apply          Apply learned pitch/duration corrections
+  --neural-strength 0..1  Blend learned corrections (default: 1)
+  --neural-max-units N    Unit cap for a new model (default: 64)
+  --list-neural           Print neural state summary and exit
   --benchmark             Benchmark the built-in corpus and exit
   --benchmark-repeats N   Timed renders per benchmark case (default: 5)
   --benchmark-report FILE Write a machine-readable benchmark report (TSV)
@@ -307,6 +314,15 @@ struct Options {
     std::string breathStyle = "neutral";
     bool useBreathFile = false;
     bool listBreath = false;
+    std::string neuralModelFile;
+    std::string neuralTrainFile;
+    std::string neuralSaveFile;
+    double neuralStrength = 1.0;
+    std::size_t neuralMaxUnits = 0;
+    bool useNeuralModel = false;
+    bool useNeuralTrain = false;
+    bool neuralApply = false;
+    bool listNeural = false;
     std::string lexiconFile;
     std::string ssmlFile;
     std::string prosodyFile;
@@ -440,6 +456,14 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-breath") {
             options.listBreath = true;
+            continue;
+        }
+        if (arg == "--list-neural") {
+            options.listNeural = true;
+            continue;
+        }
+        if (arg == "--neural-apply") {
+            options.neuralApply = true;
             continue;
         }
         if (arg == "--list-pattern-help") {
@@ -587,6 +611,34 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--breath-style" ||
                    arg.rfind("--breath-style=", 0) == 0) {
             options.breathStyle = takeValue(i, argc, argv, "--breath-style");
+        } else if (arg == "--neural-model" ||
+                   arg.rfind("--neural-model=", 0) == 0) {
+            options.neuralModelFile =
+                takeValue(i, argc, argv, "--neural-model");
+            options.useNeuralModel = true;
+        } else if (arg == "--neural-train" ||
+                   arg.rfind("--neural-train=", 0) == 0) {
+            options.neuralTrainFile =
+                takeValue(i, argc, argv, "--neural-train");
+            options.useNeuralTrain = true;
+        } else if (arg == "--neural-save" ||
+                   arg.rfind("--neural-save=", 0) == 0) {
+            options.neuralSaveFile = takeValue(i, argc, argv, "--neural-save");
+        } else if (arg == "--neural-strength" ||
+                   arg.rfind("--neural-strength=", 0) == 0) {
+            options.neuralStrength =
+                number("--neural-strength",
+                       takeValue(i, argc, argv, "--neural-strength"));
+        } else if (arg == "--neural-max-units" ||
+                   arg.rfind("--neural-max-units=", 0) == 0) {
+            const int parsed =
+                integer("--neural-max-units",
+                        takeValue(i, argc, argv, "--neural-max-units"));
+            if (parsed <= 0) {
+                throw std::invalid_argument(
+                    "--neural-max-units must be a positive integer");
+            }
+            options.neuralMaxUnits = static_cast<std::size_t>(parsed);
         } else if (arg == "--lexicon" || arg.rfind("--lexicon=", 0) == 0) {
             options.lexiconFile = takeValue(i, argc, argv, "--lexicon");
             options.useLexicon = true;
@@ -748,6 +800,21 @@ void writeTextFile(const std::string &path, const std::string &contents) {
     if (!file) {
         throw std::runtime_error("cannot write output file: " + path);
     }
+}
+
+std::string readTextFile(const std::string &path, std::string_view kind) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        throw std::runtime_error("cannot open " + std::string(kind) +
+                                 " file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read " + std::string(kind) +
+                                 " file: " + path);
+    }
+    return source.str();
 }
 
 std::string trimmed(std::string_view value) {
@@ -1110,6 +1177,19 @@ int main(int argc, char **argv) {
             throw std::invalid_argument("--trace only applies with "
                                         "--lang-file or --lexicon");
         }
+        if (options.neuralStrength < 0.0 || options.neuralStrength > 1.0) {
+            throw std::invalid_argument("--neural-strength must be in [0, 1]");
+        }
+        if (options.neuralMaxUnits != 0 && options.useNeuralModel) {
+            throw std::invalid_argument(
+                "--neural-max-units applies only to a new model (without "
+                "--neural-model)");
+        }
+        if (options.neuralApply && !options.useNeuralModel &&
+            !options.useNeuralTrain) {
+            throw std::invalid_argument(
+                "--neural-apply requires --neural-model or --neural-train");
+        }
         if (!options.timingFile.empty()) {
             // Fail before rendering (and before writing a WAV) on a typo in
             // the timing filename extension.
@@ -1220,6 +1300,50 @@ int main(int argc, char **argv) {
                 breathPolicies.styleOverlays.end()) {
             throw std::invalid_argument("unknown breath style: '" +
                                         options.breathStyle + "'");
+        }
+
+        formant::NeuralConfig neuralConfig;
+        if (options.neuralMaxUnits != 0) {
+            neuralConfig.maxUnits = options.neuralMaxUnits;
+        }
+        formant::GrowingNeuralNetwork neural(neuralConfig);
+        if (options.useNeuralModel) {
+            try {
+                neural = formant::GrowingNeuralNetwork::parse(
+                    readTextFile(options.neuralModelFile, "neural model"));
+            } catch (const std::invalid_argument &error) {
+                throw std::invalid_argument(options.neuralModelFile + ": " +
+                                            error.what());
+            }
+        }
+        if (options.useNeuralTrain) {
+            const std::string sampleSource =
+                readTextFile(options.neuralTrainFile, "neural samples");
+            std::vector<formant::NeuralSample> samples;
+            try {
+                samples = formant::parseNeuralSamples(sampleSource);
+            } catch (const std::invalid_argument &error) {
+                throw std::invalid_argument(options.neuralTrainFile + ": " +
+                                            error.what());
+            }
+            neural.train(samples);
+            status << "Trained " << samples.size() << " neural sample(s)\n";
+        }
+        if (!options.neuralSaveFile.empty()) {
+            writeTextFile(options.neuralSaveFile, neural.serialize());
+            status << "Saved neural state to " << options.neuralSaveFile
+                   << "\n";
+        }
+        if (options.listNeural) {
+            const formant::NeuralSummary summary = neural.summary();
+            status << "Neural state:\n"
+                   << "  units " << summary.units << "\n"
+                   << "  edges " << summary.edges << "\n"
+                   << "  observations " << summary.observations << "\n"
+                   << "  growths " << summary.growths << "\n"
+                   << "  mean-error " << summary.meanError << "\n"
+                   << "  max-units " << neural.config().maxUnits << "\n";
+            return 0;
         }
 
         if (options.listBreath) {
@@ -1479,6 +1603,17 @@ int main(int argc, char **argv) {
                    << (breathing == formant::BreathMode::Silent ? " pause(s)"
                                                                 : " breath(es)")
                    << "\n";
+        }
+
+        if (options.neuralApply) {
+            // #177: learned corrections run after the front end and breath
+            // planner but before symbolic intonation and prosody-direct
+            // files, so explicit author contours still win.
+            formant::applyNeuralProsody(phonemes, neural,
+                                        options.neuralStrength);
+            const formant::NeuralSummary summary = neural.summary();
+            status << "Applied neural prosody from " << summary.units
+                   << " unit(s)\n";
         }
 
         if (!options.intonationFile.empty() ||

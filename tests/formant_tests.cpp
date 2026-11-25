@@ -4000,6 +4000,151 @@ int main() {
               Synthesizer(flat).render({oral}, 22050));
     }
 
+    {
+        // #177: the growing network is deterministic, bounded and opt-in.
+        const auto makeSample = [](std::array<double, 4> input,
+                                   std::array<double, 2> target) {
+            NeuralSample sample;
+            sample.input = input;
+            sample.target = target;
+            return sample;
+        };
+
+        GrowingNeuralNetwork empty;
+        CHECK(empty.units().empty());
+        CHECK((empty.predict({0.5, 0.5, 0.5, 0.5}) ==
+               std::array<double, 2>{1.0, 1.0}));
+        const std::string emptyState = empty.serialize();
+        CHECK(GrowingNeuralNetwork::parse(emptyState).serialize() ==
+              emptyState);
+
+        NeuralConfig growthConfig;
+        growthConfig.maxUnits = 4;
+        growthConfig.growthInterval = 1;
+        growthConfig.insertionError = 0.001;
+        std::vector<NeuralSample> training;
+        for (int i = 0; i < 12; ++i) {
+            const double corner = (i % 2 == 0) ? 0.0 : 1.0;
+            const double pitch = (i % 2 == 0) ? 0.65 : 1.55;
+            training.push_back(makeSample({corner, corner, corner, corner},
+                                          {pitch, 1.0 / pitch}));
+        }
+
+        GrowingNeuralNetwork first(growthConfig);
+        GrowingNeuralNetwork second(growthConfig);
+        first.train(training);
+        second.train(training);
+        CHECK(first.serialize() == second.serialize());
+        CHECK(first.units() == second.units());
+        CHECK(first.edges() == second.edges());
+        CHECK(first.summary().observations == training.size());
+        CHECK(first.units().size() == growthConfig.maxUnits);
+        CHECK(first.growthCount() == growthConfig.maxUnits - 1);
+
+        // Repeated explained samples never grow the topology.
+        NeuralConfig stableConfig;
+        stableConfig.maxUnits = 2;
+        stableConfig.growthInterval = 1;
+        GrowingNeuralNetwork stable(stableConfig);
+        const NeuralSample repeated =
+            makeSample({0.4, 0.2, 0.5, 1.0}, {1.0, 1.0});
+        for (int i = 0; i < 20; ++i) {
+            CHECK(!stable.observe(repeated));
+        }
+        CHECK(stable.units().size() == 1);
+        CHECK(stable.growthCount() == 0);
+
+        // Loading and continuing training replays the earlier state exactly.
+        NeuralConfig learningConfig = growthConfig;
+        learningConfig.maxUnits = 8;
+        GrowingNeuralNetwork original(learningConfig);
+        original.train({training.begin(), training.begin() + 4});
+        const std::string state = original.serialize();
+        const GrowingNeuralNetwork restored =
+            GrowingNeuralNetwork::parse(state);
+        CHECK(restored.serialize() == state);
+        CHECK(restored.units().size() >= original.units().size());
+
+        const std::vector<NeuralSample> laterSamples = {
+            makeSample({0.0, 0.0, 1.0, 0.0}, {0.7, 1.2}),
+            makeSample({1.0, 1.0, 0.0, 1.0}, {1.4, 0.8}),
+            makeSample({0.5, 0.5, 0.5, 1.0}, {1.1, 0.95}),
+            makeSample({0.0, 1.0, 0.0, 1.0}, {0.8, 1.3}),
+            makeSample({1.0, 0.0, 1.0, 0.0}, {1.3, 0.75}),
+            makeSample({0.25, 0.75, 0.5, 0.25}, {0.9, 1.15}),
+        };
+        GrowingNeuralNetwork continued = restored;
+        continued.train(laterSamples);
+        GrowingNeuralNetwork replay = GrowingNeuralNetwork::parse(state);
+        replay.train(laterSamples);
+        CHECK(continued.serialize() == replay.serialize());
+        CHECK(continued.units().size() >= restored.units().size());
+        CHECK(continued.units().size() <= continued.config().maxUnits);
+
+        bool sampleRejected = false;
+        std::string sampleError;
+        try {
+            (void)parseNeuralSamples("sample 0 0 0 0 1 1\nbogus\n");
+        } catch (const std::invalid_argument &error) {
+            sampleRejected = true;
+            sampleError = error.what();
+        }
+        CHECK(sampleRejected);
+        CHECK(sampleError.find("neural line 2") != std::string::npos);
+
+        bool stateRejected = false;
+        std::string stateError;
+        try {
+            (void)GrowingNeuralNetwork::parse("formant-neural 1\nbogus\n");
+        } catch (const std::invalid_argument &error) {
+            stateRejected = true;
+            stateError = error.what();
+        }
+        CHECK(stateRejected);
+        CHECK(stateError.find("neural line 2") != std::string::npos);
+
+        Phoneme h;
+        h.name = "h";
+        h.kind = PhonemeKind::Fricative;
+        Phoneme ee;
+        ee.name = "ee";
+        ee.kind = PhonemeKind::Voiced;
+        Phoneme comma;
+        comma.name = ",";
+        comma.kind = PhonemeKind::Silence;
+        std::vector<Phoneme> context{h, ee, comma, h};
+        for (std::size_t i = 0; i < context.size(); ++i) {
+            const std::array<double, 4> features = neuralFeatures(context, i);
+            for (const double value : features) {
+                CHECK(value >= 0.0 && value <= 1.0);
+            }
+        }
+        CHECK(neuralFeatures(context, 0)[0] == 0.0);
+        CHECK(neuralFeatures(context, 3)[0] == 1.0);
+        CHECK(neuralFeatures(context, 1)[2] == 0.5);
+
+        GrowingNeuralNetwork learned;
+        learned.observe(makeSample({0.0, 0.0, 0.0, 0.0}, {1.2, 1.4}));
+        std::vector<Phoneme> applied{
+            h,
+            h,
+            comma,
+            h,
+        };
+        applied[1].source = "breath:auto";
+        applied[3].f0StartHz = 120.0;
+        const std::vector<Phoneme> beforeApply = applied;
+        applyNeuralProsody(applied, learned, 0.0);
+        CHECK(applied == beforeApply);
+        applyNeuralProsody(applied, learned, 0.5);
+        CHECK(std::abs(applied[0].pitchStart - 1.1) < 1e-12);
+        CHECK(std::abs(applied[0].pitchEnd - 1.1) < 1e-12);
+        CHECK(std::abs(applied[0].duration - 0.12) < 1e-12);
+        CHECK(applied[1] == beforeApply[1]);
+        CHECK(applied[2] == beforeApply[2]);
+        CHECK(applied[3] == beforeApply[3]);
+    }
+
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
 

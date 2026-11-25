@@ -202,8 +202,14 @@ void parsePattern(std::string_view text) { formant::parsePatternGrammar(text); }
 void parseIpaText(std::string_view text) { formant::parseIpa(text); }
 void parseXsampaText(std::string_view text) { formant::parseXsampa(text); }
 void parseBracket(std::string_view text) { formant::parsePhonemes(text); }
+void parseNeuralSamples(std::string_view text) {
+    (void)formant::parseNeuralSamples(text);
+}
+void parseNeuralState(std::string_view text) {
+    (void)formant::GrowingNeuralNetwork::parse(text);
+}
 
-const std::array<ParserCase, 10> kParsers = {{
+const std::array<ParserCase, 12> kParsers = {{
     {"language", parseLanguage},
     {"voice", parseVoice},
     {"prosody", parseProsody},
@@ -214,6 +220,8 @@ const std::array<ParserCase, 10> kParsers = {{
     {"ipa", parseIpaText},
     {"xsampa", parseXsampaText},
     {"bracket", parseBracket},
+    {"neural-samples", parseNeuralSamples},
+    {"neural-state", parseNeuralState},
 }};
 
 void checkRejection(uint32_t seed) {

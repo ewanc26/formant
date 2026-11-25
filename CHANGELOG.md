@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.33.0] - 2026-11-25
+
+### Added
+
+- Opt-in deterministic growing neural prosody layer (#177). `formant::GrowingNeuralNetwork` is a supervised Growing Neural Gas variant with error-driven unit insertion, age-tracked edges, bounded topology, stable nearest-unit tie-breaking and a versioned 17-digit line-oriented state format. `--neural-model`, `--neural-train`, `--neural-save`, `--neural-apply`, `--neural-strength`, `--neural-max-units` and `--list-neural` train, continue, persist and apply bounded pitch/duration corrections after breath planning but before exact intonation and prosody overrides. Training samples and learned corrections are plain data; no randomness, clock or new runtime dependency enters rendering. Defaults remain byte-identical. Documented in `docs/growing-neural.md`.
+
 ## [0.32.0] - 2026-11-25
 
 ### Added
