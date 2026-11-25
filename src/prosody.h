@@ -7,6 +7,7 @@
 // parameters that actually produced the samples.
 
 #include "formant/phoneme.h"
+#include "formant/song.h"
 #include "formant/voice.h"
 #include "sine_kernel.h"
 
@@ -417,25 +418,40 @@ inline double fundamentalAt(const Voice &voice, const Phoneme &phoneme,
         }
     }
 
-    if (voice.vibratoRate > 0.0 && voice.vibratoDepth > 0.0) {
-        const double time =
-            static_cast<double>(sample) / static_cast<double>(sampleRate);
-        const double cents =
-            voice.vibratoDepth * sine(2.0 * kPi * voice.vibratoRate * time);
-        fundamental *= centsToRatioFast(cents);
-    }
+    // #123: a note-controlled segment owns its vibrato. The note-local envelope
+    // is exactly zero through the configured delay, so a voice preset that
+    // normally vibrates cannot leak modulation into the onset. Global jitter is
+    // suppressed for the same reason. Ordinary phonemes have no noteF0, so the
+    // original speech branches below keep their exact floating-point path.
+    if (phoneme.noteF0.has_value()) {
+        const NoteF0Control &control = *phoneme.noteF0;
+        const double noteTime = control.noteOffsetSeconds +
+                                elapsed / static_cast<double>(sampleRate);
+        const double cents = songVibratoCents(control, noteTime);
+        if (cents != 0.0) {
+            fundamental *= centsToRatioFast(cents);
+        }
+    } else {
+        if (voice.vibratoRate > 0.0 && voice.vibratoDepth > 0.0) {
+            const double time =
+                static_cast<double>(sample) / static_cast<double>(sampleRate);
+            const double cents =
+                voice.vibratoDepth * sine(2.0 * kPi * voice.vibratoRate * time);
+            fundamental *= centsToRatioFast(cents);
+        }
 
-    // #125: jitter is a bounded, deterministic pitch perturbation. Two
-    // incommensurate sines give an irregular but reproducible contour without a
-    // PRNG or any clock state. The branch is skipped entirely at the neutral
-    // value, so the default voice follows the exact path it always has.
-    if (voice.jitterCents > 0.0) {
-        const double time =
-            static_cast<double>(sample) / static_cast<double>(sampleRate);
-        const double cents = voice.jitterCents *
-                             sine(2.0 * kPi * 11.0 * time + 0.37) *
-                             sine(2.0 * kPi * 0.73 * time + 1.13);
-        fundamental *= centsToRatioFast(cents);
+        // #125: jitter is a bounded, deterministic pitch perturbation. Two
+        // incommensurate sines give an irregular but reproducible contour
+        // without a PRNG or any clock state. The branch is skipped entirely at
+        // the neutral value, so the default voice follows its original path.
+        if (voice.jitterCents > 0.0) {
+            const double time =
+                static_cast<double>(sample) / static_cast<double>(sampleRate);
+            const double cents = voice.jitterCents *
+                                 sine(2.0 * kPi * 11.0 * time + 0.37) *
+                                 sine(2.0 * kPi * 0.73 * time + 1.13);
+            fundamental *= centsToRatioFast(cents);
+        }
     }
     return std::max(0.0, fundamental);
 }

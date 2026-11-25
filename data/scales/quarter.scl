@@ -1,0 +1,33 @@
+# Built-in 24-tone quarter-tone scale for #123.
+# Degree names ending in q sit halfway between the adjacent semitone names.
+# This demonstrates that non-12-tone scales are data, not synthesis code.
+
+schema 1
+name quarter
+period 1200
+reference 900
+degree C 0
+degree Cq 50
+degree C# 100
+degree Dq 150
+degree D 200
+degree D#q 250
+degree D# 300
+degree Eq 350
+degree E 400
+degree Fq 450
+degree F 500
+degree F#q 550
+degree F# 600
+degree Gq 650
+degree G 700
+degree G#q 750
+degree G# 800
+degree Aq 850
+degree A 900
+degree A#q 950
+degree A# 1000
+degree Bq 1050
+degree B 1100
+degree B#q 1150
+checksum 182c81643f45b63d5b836c26596911b0a8040f79cf7d3870c266dca552983a92

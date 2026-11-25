@@ -109,6 +109,14 @@ build/formant --neural-train examples/neural/style.samples --neural-save style.s
 build/formant --text "Hello, world." --neural-model style.state \
   --neural-apply --neural-strength 0.7 --output learned.wav
 
+# Sing a note-quantized melody with legato, portamento and delayed vibrato
+build/formant --song twinkle --output twinkle.wav
+build/formant --song twinkle --a4 432 --output twinkle-432.wav
+build/formant --song-file my.song --scale quarter --output quarter.wav
+build/formant --list-songs
+build/formant --list-scales
+build/formant --inspect-song my.song
+
 # Load a shareable voice definition and sweep or compare voice parameters
 build/formant --text "Hello, world." --voice-file examples/warm.voice --output warm.wav
 # Inspect a distributed package and create one from a preset
@@ -368,6 +376,12 @@ sine-only.
 See [docs/growing-neural.md](docs/growing-neural.md) for the sample and state
 formats, growth rules, determinism contract and library API.
 
+### Singing mode
+
+Singing is an opt-in front end that quantises F0 to musical notes with deliberate legato/portamento transitions and vibrato that fades in *after* each note onset. A versioned `.song` document names notes by degree, MIDI number or cents; a data-defined `.scl` scale table supports non-12-tone tunings. `--song`/`--song-file` select the melody, `--scale`/`--scale-file` the tuning, and `--a4` retunes the reference pitch. The built-in `twinkle` demo and `chromatic`/`quarter` scales are discoverable with `--list-songs`/`--list-scales`, shareable with `--dump-song`/`--dump-scale`, and verifiable with `--inspect-song`/`--inspect-scale`. Song mode owns its F0 and is rejected when combined with text or other intonation layers; everything still renders through the same sine-only engine with one continuous phase accumulator. No song means no change to default audio.
+
+See [docs/singing.md](docs/singing.md) for the file formats, pitch spellings, note modifiers, checksum convention and library API.
+
 ### Customisation
 
 A voice is a plain `formant::Voice` struct. Change any field, or start from a preset:
@@ -449,7 +463,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

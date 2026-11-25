@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.34.0
+  VERSION 0.35.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -36,6 +36,7 @@ add_library(formant_core STATIC
     src/ssml.cpp
     src/prosody_file.cpp
     src/intonation.cpp
+    src/song.cpp
     src/mrt.cpp
     src/nvv.cpp
     src/breath.cpp
@@ -97,6 +98,18 @@ configure_file(
     @ONLY
 )
 
+# #123: the demo song and scale tables are inspectable data, embedded so the
+# CLI keeps its no-runtime-dependency contract. User files are parsed with the
+# same versioned format and checksum rules.
+file(READ data/songs/twinkle.song TWINKLE_SONG_DATA)
+file(READ data/scales/chromatic.scl CHROMATIC_SCALE_DATA)
+file(READ data/scales/quarter.scl QUARTER_SCALE_DATA)
+configure_file(
+    src/song_data.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/song_data.h
+    @ONLY
+)
+
 add_executable(formant src/cli/main.cpp benchmark/benchmark.cpp)
 target_link_libraries(formant PRIVATE formant_core)
 target_include_directories(formant PRIVATE
@@ -146,6 +159,7 @@ if(FORMANT_BUILD_TESTS)
             -DFORMANT_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/smoke.wav
             -DFORMANT_EXPECTED_VERSION=${PROJECT_VERSION}
             -DFORMANT_EXAMPLES_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples
+            -DFORMANT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_smoke.cmake)
 
         add_test(NAME formant_benchmark COMMAND
@@ -214,4 +228,6 @@ if(FORMANT_INSTALL)
     install(DIRECTORY data/nvv/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/nvv)
     install(DIRECTORY data/breath/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/breath)
     install(DIRECTORY data/affect/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/affect)
+    install(DIRECTORY data/songs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/songs)
+    install(DIRECTORY data/scales/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/scales)
 endif()

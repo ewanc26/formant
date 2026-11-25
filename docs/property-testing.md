@@ -35,11 +35,11 @@ failure is immediately reproducible with:
    early with an instructive error and never crash or throw an unexpected
    exception. Seed-derived byte strings are fed to every public parser; the
    language, voice, affect, neural, breath, prosody, intonation, lexicon, SSML,
-   IPA, X-SAMPA, bracketed-phoneme and gibberish-pattern front ends are all
-   covered. Song,
-   accent and dialogue files do not exist yet; when they are introduced their
-   parsers must be appended to the `kParsers` table alongside the structured
-   malformed cases so they gain the same hardening guarantee.
+   IPA, X-SAMPA, bracketed-phoneme, gibberish-pattern, song and scale front ends
+   are all covered. Structured malformed cases sit beside them in the
+   `kParsers` table; accent and dialogue files do not exist yet, and when they
+   are introduced their parsers must be appended there so they gain the same
+   hardening guarantee.
 4. **Idempotence** — text normalization is stable under repeated application,
    so feeding a normalized string back through the front end cannot change the
    phoneme sequence a second time.
