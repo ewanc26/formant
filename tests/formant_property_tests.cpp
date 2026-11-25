@@ -217,8 +217,11 @@ void parseScale(std::string_view text) { (void)formant::parseSongScale(text); }
 void parseFrication(std::string_view text) {
     (void)formant::parseFricationData(formant::builtinFricationData(), text);
 }
+void parseRegister(std::string_view text) {
+    (void)formant::parseRegisterData(formant::builtinRegisterData(), text);
+}
 
-const std::array<ParserCase, 16> kParsers = {{
+const std::array<ParserCase, 17> kParsers = {{
     {"language", parseLanguage},
     {"voice", parseVoice},
     {"prosody", parseProsody},
@@ -235,6 +238,7 @@ const std::array<ParserCase, 16> kParsers = {{
     {"song", parseSong},
     {"scale", parseScale},
     {"frication", parseFrication},
+    {"register", parseRegister},
 }};
 
 void checkRejection(uint32_t seed) {
@@ -264,7 +268,7 @@ void checkRejection(uint32_t seed) {
 // Structured malformed inputs with expected rejection and a required useful
 // message fragment. These are the "instructive errors" regression guards.
 void checkStructuredMalformed() {
-    const std::array<std::pair<const char *, std::string>, 16> cases = {{
+    const std::array<std::pair<const char *, std::string>, 17> cases = {{
         {"language", "grapheme ab"},
         {"voice", "pitch not_a_number"},
         {"prosody", "segment 0 f0=abcHz"},
@@ -281,6 +285,7 @@ void checkStructuredMalformed() {
         {"song", "schema 99"},
         {"scale", "schema 99"},
         {"frication", "schema 99"},
+        {"register", "schema 99"},
     }};
     for (uint32_t i = 0; i < cases.size(); ++i) {
         CaseScope scope(i + 90000, "structured-malformed");

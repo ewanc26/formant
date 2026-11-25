@@ -13,7 +13,10 @@ changes are allowed to ship.
 - **Samples per second** is `rendered samples / median CPU seconds`.
 - **Complexity breakdown** reports the configured F0, the effective harmonic
   count after the Nyquist and safety caps, and the number of deterministic sine
-  partials used for the unvoiced/noise source.
+  partials used for the unvoiced/noise source. Opt-in register presets add at
+  most one Lorentzian multiplier per voiced harmonic plus a second bounded sine
+  series of at most 64 partials, so the default path stays `O(harmonics +
+  noise partials)` and the opt-in path remains linear in a fixed bound.
 
 The harness reuses the engine and the C++ standard library only. Timing uses
 `std::chrono` in `benchmark/`, deliberately outside the `src/` and `include/`

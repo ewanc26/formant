@@ -32,7 +32,7 @@ language front end (English, Spanish) or articulatory IPA mapping
                           interpolated PCM → 16-bit WAV
 ```
 
-A vowel is four resonances of the vocal tract. The glottal source is a stack of sine waves at multiples of the fundamental frequency; each harmonic is weighted by how close it sits to a formant. Fricatives and stops use a fixed set of sine partials with deterministic pseudo-random phases instead of white noise, so every sound in the output is still a sine wave. Opt-in `--frication` data can scale that stack and shape each place of articulation with an evolving spectral envelope (see [docs/frication.md](docs/frication.md)); the default remains byte-identical. Formant targets are blended across phoneme boundaries to avoid clicks and to give coarticulation. Nasal sounds add spectral zeros (anti-formants) to the same harmonic weighting, giving the notches a peak-only model cannot produce.
+A vowel is four resonances of the vocal tract. The glottal source is a stack of sine waves at multiples of the fundamental frequency; each harmonic is weighted by how close it sits to a formant. Fricatives and stops use a fixed set of sine partials with deterministic pseudo-random phases instead of white noise, so every sound in the output is still a sine wave. Opt-in `--frication` data can scale that stack and shape each place of articulation with an evolving spectral envelope (see [docs/frication.md](docs/frication.md)); opt-in `--register` data can pinch one harmonic or add a subharmonic pulse series (see [docs/registers.md](docs/registers.md)). Both leave the default byte-identical. Formant targets are blended across phoneme boundaries to avoid clicks and to give coarticulation. Nasal sounds add spectral zeros (anti-formants) to the same harmonic weighting, giving the notches a peak-only model cannot produce.
 
 The result is deliberately synthetic: it sounds like a small speaking machine, not a human. The trade is that the whole engine is a few thousand lines of dependency-free C++ and runs anywhere you can compile it.
 
@@ -116,6 +116,14 @@ build/formant --song-file my.song --scale quarter --output quarter.wav
 build/formant --list-songs
 build/formant --list-scales
 build/formant --inspect-song my.song
+
+# Emphasize one harmonic or add a subharmonic register (both opt-in data)
+build/formant --phonemes "[ee]" --register sygyt --output sygyt.wav
+build/formant --phonemes "[ee]" --register kargyraa --output kargyraa.wav
+build/formant --song twinkle --register sygyt --output overtone-song.wav
+build/formant --list-registers
+build/formant --dump-register sygyt > sygyt.register
+build/formant --register-file sygyt.register --phonemes "[ee]" --output shared.wav
 
 # Load a shareable voice definition and sweep or compare voice parameters
 build/formant --text "Hello, world." --voice-file examples/warm.voice --output warm.wav
@@ -382,6 +390,21 @@ Singing is an opt-in front end that quantises F0 to musical notes with deliberat
 
 See [docs/singing.md](docs/singing.md) for the file formats, pitch spellings, note modifiers, checksum convention and library API.
 
+### Overtone and subharmonic registers
+
+`--register` and `--register-file` are opt-in data layers for emphasized-harmonic and subharmonic voice registers. The shipped presets simulate sygyt-style overtone emphasis and kargyraa-style ventricular pulse with ordinary Voice levers, so they compose with every text front end and with singing mode while default speech stays byte-identical.
+
+```sh
+build/formant --phonemes "[ee]" --register sygyt --output sygyt.wav
+build/formant --song twinkle --register sygyt --output overtone-song.wav
+build/formant --list-registers
+build/formant --inspect-register data/registers/register_presets.txt
+build/formant --dump-register kargyraa > kargyraa.register
+build/formant --register-file kargyraa.register --phonemes "[ee]" --output shared.wav
+```
+
+Use one of `--register NAME` and `--register-file FILE`. A shared file defines exactly one preset; unknown names, malformed rows and checksum mismatches fail early. The five numeric levers are also ordinary voice parameters, so the same effect can travel in a voice file.
+
 ### Customisation
 
 A voice is a plain `formant::Voice` struct. Change any field, or start from a preset:
@@ -463,7 +486,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/frication.md](docs/frication.md) for data-defined frication envelopes, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/frication.md](docs/frication.md) for data-defined frication envelopes, [docs/registers.md](docs/registers.md) for overtone and subharmonic registers, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

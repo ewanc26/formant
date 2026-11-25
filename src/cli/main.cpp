@@ -23,6 +23,7 @@
 #include "formant/affect.h"
 #include "formant/breath.h"
 #include "formant/frication.h"
+#include "formant/register.h"
 #include "formant/song.h"
 #include "formant/nvv.h"
 #include "formant/version.h"
@@ -117,6 +118,11 @@ Options:
   --list-frication        List built-in frication profiles and exit
   --dump-frication NAME   Print a versioned frication table for a profile
   --inspect-frication FILE  Inspect a frication file's schema and checksum
+  --register NAME         Use a built-in overtone/subharmonic register
+  --register-file FILE    Apply a versioned .txt register preset file
+  --list-registers        List built-in register presets and exit
+  --dump-register NAME    Print a versioned register table for a preset
+  --inspect-register FILE Inspect a register file's schema and checksum
   --neural-model FILE     Load a saved neural prosody state
   --neural-train FILE     Train from line-oriented sample records
   --neural-save FILE      Save the trained neural state
@@ -351,6 +357,51 @@ void listFrication(const formant::FricationData &data) {
               << " s attack\n";
 }
 
+void listRegisters(const formant::RegisterData &data) {
+    std::cout << "Registers (" << data.registers.size() << "):\n";
+    for (const std::string &name : formant::registerProfileNames(data)) {
+        const formant::RegisterProfile *profile =
+            formant::findRegisterProfile(data, name);
+        std::cout << "  " << name << '\t' << "partial "
+                  << profile->emphasisPartial << " x" << profile->emphasisGain
+                  << " / " << profile->emphasisBandwidthHz << " Hz\t" << "sub "
+                  << profile->subharmonicMix << " x"
+                  << profile->subharmonicPartials;
+        if (!profile->voqs.empty()) {
+            std::cout << '\t' << profile->voqs;
+        }
+        std::cout << '\n';
+    }
+}
+
+void inspectRegister(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open register file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read register file: " + path);
+    }
+    const std::string text = source.str();
+    const formant::RegisterData data =
+        formant::parseRegisterData(formant::builtinRegisterData(), text, false);
+    const std::string expected = formant::registerFileChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << data.schema << "\n"
+              << "name\t" << data.name << "\n"
+              << "registers\t" << data.registers.size() << "\n"
+              << "checksum\t" << (data.checksum ? *data.checksum : "none")
+              << "\n"
+              << "computed\t" << expected << "\n"
+              << "status\t"
+              << (!data.checksum
+                      ? "unsigned"
+                      : (*data.checksum == expected ? "valid" : "invalid"))
+              << "\n";
+}
+
 void inspectFrication(const std::string &path) {
     std::ifstream file(path);
     if (!file) {
@@ -524,6 +575,13 @@ struct Options {
     bool listFrication = false;
     std::string dumpFrication;
     std::string inspectFricationFile;
+    std::string registerName;
+    std::string registerFile;
+    bool useRegister = false;
+    bool useRegisterFile = false;
+    bool listRegisters = false;
+    std::string dumpRegister;
+    std::string inspectRegisterFile;
     // Kept so an affect profile can be applied beneath explicit voice flags.
     Voice baseVoice = voicePreset("neutral");
     std::vector<std::function<void(Voice &)>> voiceOverrides;
@@ -693,6 +751,20 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-frication") {
             options.listFrication = true;
+            continue;
+        }
+        if (arg == "--list-registers") {
+            options.listRegisters = true;
+            continue;
+        }
+        if (arg == "--dump-register" || arg.rfind("--dump-register=", 0) == 0) {
+            options.dumpRegister = takeValue(i, argc, argv, "--dump-register");
+            continue;
+        }
+        if (arg == "--inspect-register" ||
+            arg.rfind("--inspect-register=", 0) == 0) {
+            options.inspectRegisterFile =
+                takeValue(i, argc, argv, "--inspect-register");
             continue;
         }
         if (arg == "--dump-frication" ||
@@ -915,6 +987,13 @@ Options parseOptions(int argc, char **argv) {
             options.fricationFile =
                 takeValue(i, argc, argv, "--frication-file");
             options.useFricationFile = true;
+        } else if (arg == "--register" || arg.rfind("--register=", 0) == 0) {
+            options.registerName = takeValue(i, argc, argv, "--register");
+            options.useRegister = true;
+        } else if (arg == "--register-file" ||
+                   arg.rfind("--register-file=", 0) == 0) {
+            options.registerFile = takeValue(i, argc, argv, "--register-file");
+            options.useRegisterFile = true;
         } else if (arg == "--neural-model" ||
                    arg.rfind("--neural-model=", 0) == 0) {
             options.neuralModelFile =
@@ -1496,6 +1575,10 @@ int main(int argc, char **argv) {
             throw std::invalid_argument(
                 "use only one of --frication and --frication-file");
         }
+        if (options.useRegister && options.useRegisterFile) {
+            throw std::invalid_argument(
+                "use only one of --register and --register-file");
+        }
         if (!options.useSong &&
             (options.useScaleName || options.useScaleFile)) {
             throw std::invalid_argument(
@@ -1781,6 +1864,57 @@ int main(int argc, char **argv) {
             formant::parseFricationData(formant::builtinFricationData(),
                                         fricationUser);
 
+        // #140: register presets are data too. The built-in table is embedded;
+        // a user file layers individual presets over it at parse time.
+        std::string registerUser;
+        if (options.useRegisterFile) {
+            std::ifstream file(options.registerFile);
+            if (!file) {
+                throw std::runtime_error("cannot open register file: " +
+                                         options.registerFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read register file: " +
+                                         options.registerFile);
+            }
+            registerUser = source.str();
+        }
+        const formant::RegisterData registerData = formant::parseRegisterData(
+            formant::builtinRegisterData(), registerUser);
+
+        // #140: register presets set synthesis levers on the voice itself, so
+        // they compose with every front end and with singing mode. Applied
+        // after voice overrides because they are an explicit mode selection,
+        // and before rendering so the same voice drives every render call.
+        if (options.useRegister) {
+            if (!formant::applyRegister(options.voice, registerData,
+                                        options.registerName)) {
+                throw std::invalid_argument("unknown register '" +
+                                            options.registerName +
+                                            "' (use --list-registers)");
+            }
+            status << "Applied register '" << options.registerName << "'\n";
+        } else if (options.useRegisterFile) {
+            // A shared file describes exactly one register: --dump-register
+            // emits this shape. The combined table still supplies the values,
+            // so a file that retunes a built-in name applies the retuned data.
+            const formant::RegisterData fileData =
+                formant::parseRegisterData(registerUser, {}, false);
+            if (fileData.registers.size() != 1) {
+                throw std::invalid_argument(
+                    "register file must define exactly one preset "
+                    "(use --dump-register NAME)");
+            }
+            const std::string name = fileData.registers.begin()->first;
+            if (!formant::applyRegister(options.voice, registerData, name)) {
+                throw std::invalid_argument("unknown register '" + name +
+                                            "' in register file");
+            }
+            status << "Applied register '" << name << "' from register file\n";
+        }
+
         formant::NeuralConfig neuralConfig;
         if (options.neuralMaxUnits != 0) {
             neuralConfig.maxUnits = options.neuralMaxUnits;
@@ -1876,6 +2010,20 @@ int main(int argc, char **argv) {
         }
         if (!options.inspectFricationFile.empty()) {
             inspectFrication(options.inspectFricationFile);
+            return 0;
+        }
+
+        if (options.listRegisters) {
+            listRegisters(registerData);
+            return 0;
+        }
+        if (!options.dumpRegister.empty()) {
+            std::cout << formant::writeRegisterData(registerData,
+                                                    options.dumpRegister);
+            return 0;
+        }
+        if (!options.inspectRegisterFile.empty()) {
+            inspectRegister(options.inspectRegisterFile);
             return 0;
         }
 

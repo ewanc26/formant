@@ -1,0 +1,34 @@
+# Built-in overtone and subharmonic register presets (#140).
+#
+# Version 1. These are acoustic *simulations* of Mongolian and Tuvan
+# throat-singing techniques, not samples or caricatures. Every value is an
+# existing synthesis lever: a narrow resonance that emphasises one harmonic of
+# the sine stack, and an optional deterministic second pulse series at half the
+# fundamental. No samples, noise buffers or random state are involved.
+#
+# A user table layers over these presets register by register. Retuning one
+# preset needs no rebuild and no code change.
+
+schema 1
+name formant-builtin
+author Formant contributors
+description Overtone and subharmonic register presets for the sine source
+license AGPL-3.0-or-later
+version 1.0.0
+
+# register NAME PARTIAL GAIN BANDWIDTH-HZ SUBHARMONIC-MIX SUBHARMONIC-PARTIALS
+# A partial of 0 means "no pinched resonance"; a mix of 0 means "no second pulse".
+register sygyt 6 12 20 0 0
+register kargyraa 0 1 120 0.55 28
+
+# voqs NAME LABEL -- VoQS-consistent descriptive labels.
+# VoQS has no dedicated overtone symbol: sygyt keeps V (modal voice) and is
+# described by its pinched-resonance levers below.
+voqs sygyt V
+voqs kargyraa V‼
+
+# about NAME TEXT -- short, culturally respectful notes.
+about sygyt Whistled overtone melody carried by one emphasised harmonic over a drone
+about kargyraa Deep ventricular/diplophonic register with a subharmonic pulse series
+
+checksum 99bcb30b17d81fc2cb80e2270eecb5b3edabc807be63f195efebc6654fea499d
