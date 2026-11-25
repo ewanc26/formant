@@ -95,6 +95,11 @@ build/formant --ssml-file script.ssml --output ssml.wav
 # Layer exact F0, duration and amplitude targets over the default prosody
 build/formant --text "Hello, world." --prosody-file script.prosody --output exact.wav
 
+# Train a deterministic neural style correction, then apply it to a render
+build/formant --neural-train examples/neural/style.samples --neural-save style.state --list-neural
+build/formant --text "Hello, world." --neural-model style.state \
+  --neural-apply --neural-strength 0.7 --output learned.wav
+
 # Load a shareable voice definition and sweep or compare voice parameters
 build/formant --text "Hello, world." --voice-file examples/warm.voice --output warm.wav
 # Inspect a distributed package and create one from a preset
@@ -324,6 +329,20 @@ intonation/prosody directives still win.
 See [docs/breath-groups.md](docs/breath-groups.md) for the policy format,
 depth table, provenance rules and verification approach.
 
+### Learned style corrections
+
+An optional deterministic growing neural network learns bounded pitch and
+duration multipliers from plain-text context examples. `--neural-train` grows a
+state from ordered samples, `--neural-model` reloads it, `--neural-save`
+persists it with 17-digit doubles, and `--neural-apply` blends its predictions
+into the phoneme vector. It runs after breath planning but before exact
+intonation/prosody overrides, so authored contours still win. No flag means no
+change at all: default audio stays byte-identical and rendering remains
+sine-only.
+
+See [docs/growing-neural.md](docs/growing-neural.md) for the sample and state
+formats, growth rules, determinism contract and library API.
+
 ### Customisation
 
 A voice is a plain `formant::Voice` struct. Change any field, or start from a preset:
@@ -403,7 +422,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

@@ -1639,4 +1639,132 @@ if(breath_style_result EQUAL 0 OR NOT breath_style_error MATCHES "unknown breath
     message(FATAL_ERROR "unknown breath style was not rejected: ${breath_style_error}")
 endif()
 
+# #177: the growing neural layer is opt-in, deterministic and reloadable.
+set(NEURAL_DIR "${CMAKE_CURRENT_BINARY_DIR}/neural-smoke")
+file(MAKE_DIRECTORY "${NEURAL_DIR}")
+file(WRITE "${NEURAL_DIR}/samples.txt"
+    "sample 0 0 0 0 1.2 1.3\n# one learned correction\n")
+file(WRITE "${NEURAL_DIR}/bad-samples.txt"
+    "sample 0 0 0 0 1.2 1.3\nsample nope 0 0 0 1.1 1.1\n")
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --neural-train "${NEURAL_DIR}/samples.txt"
+        --neural-save "${NEURAL_DIR}/model1.state" --list-neural
+    RESULT_VARIABLE neural_train_result
+    OUTPUT_VARIABLE neural_train_status
+    ERROR_VARIABLE neural_train_error
+)
+if(NOT neural_train_result EQUAL 0)
+    message(FATAL_ERROR "neural training failed: ${neural_train_error}")
+endif()
+if(NOT neural_train_status MATCHES "units 1")
+    message(FATAL_ERROR "neural training did not report one unit: ${neural_train_status} ${neural_train_error}")
+endif()
+
+file(READ "${NEURAL_DIR}/model1.state" neural_state)
+if(NOT neural_state MATCHES "^formant-neural 1")
+    message(FATAL_ERROR "neural state has no version header")
+endif()
+if(NOT neural_state MATCHES "unit 0 ")
+    message(FATAL_ERROR "neural state has no trained unit")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --neural-train "${NEURAL_DIR}/samples.txt"
+        --neural-save "${NEURAL_DIR}/model2.state" --list-neural
+    RESULT_VARIABLE neural_repeat_result
+    ERROR_VARIABLE neural_repeat_error
+)
+if(NOT neural_repeat_result EQUAL 0)
+    message(FATAL_ERROR "repeated neural training failed: ${neural_repeat_error}")
+endif()
+file(SHA256 "${NEURAL_DIR}/model1.state" neural_hash1)
+file(SHA256 "${NEURAL_DIR}/model2.state" neural_hash2)
+if(NOT neural_hash1 STREQUAL neural_hash2)
+    message(FATAL_ERROR "neural training is not deterministic")
+endif()
+
+file(WRITE "${NEURAL_DIR}/later.txt"
+    "sample 1 1 1 1 0.8 1.1\nsample 0 1 0 1 1.3 0.9\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --neural-model "${NEURAL_DIR}/model1.state"
+        --neural-train "${NEURAL_DIR}/later.txt"
+        --neural-save "${NEURAL_DIR}/continued1.state" --list-neural
+    RESULT_VARIABLE neural_continue_result
+    ERROR_VARIABLE neural_continue_error
+)
+if(NOT neural_continue_result EQUAL 0)
+    message(FATAL_ERROR "continued neural training failed: ${neural_continue_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --neural-model "${NEURAL_DIR}/model1.state"
+        --neural-train "${NEURAL_DIR}/later.txt"
+        --neural-save "${NEURAL_DIR}/continued2.state" --list-neural
+    RESULT_VARIABLE neural_replay_result
+    ERROR_VARIABLE neural_replay_error
+)
+if(NOT neural_replay_result EQUAL 0)
+    message(FATAL_ERROR "replayed neural training failed: ${neural_replay_error}")
+endif()
+file(SHA256 "${NEURAL_DIR}/continued1.state" neural_continue_hash1)
+file(SHA256 "${NEURAL_DIR}/continued2.state" neural_continue_hash2)
+if(NOT neural_continue_hash1 STREQUAL neural_continue_hash2)
+    message(FATAL_ERROR "continuing from a saved neural state is not deterministic")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --phonemes "[h ee l o]" --sample-rate 22050
+        --output "${NEURAL_DIR}/plain.wav"
+    RESULT_VARIABLE neural_plain_result
+    ERROR_VARIABLE neural_plain_error
+)
+if(NOT neural_plain_result EQUAL 0)
+    message(FATAL_ERROR "plain neural comparison render failed: ${neural_plain_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --phonemes "[h ee l o]" --sample-rate 22050
+        --neural-model "${NEURAL_DIR}/model1.state" --neural-apply
+        --output "${NEURAL_DIR}/learned.wav"
+    RESULT_VARIABLE neural_apply_result
+    ERROR_VARIABLE neural_apply_error
+)
+if(NOT neural_apply_result EQUAL 0)
+    message(FATAL_ERROR "neural apply render failed: ${neural_apply_error}")
+endif()
+file(SHA256 "${NEURAL_DIR}/plain.wav" neural_plain_hash)
+file(SHA256 "${NEURAL_DIR}/learned.wav" neural_learned_hash)
+if(neural_plain_hash STREQUAL neural_learned_hash)
+    message(FATAL_ERROR "applying a trained neural model did not change the audio")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --neural-train "${NEURAL_DIR}/bad-samples.txt"
+        --list-neural
+    RESULT_VARIABLE neural_bad_samples_result
+    ERROR_VARIABLE neural_bad_samples_error
+)
+if(neural_bad_samples_result EQUAL 0 OR NOT neural_bad_samples_error MATCHES "neural line 2")
+    message(FATAL_ERROR "malformed neural samples were not rejected with a line number: ${neural_bad_samples_error}")
+endif()
+
+file(WRITE "${NEURAL_DIR}/bad.state" "${neural_state}bogus\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --neural-model "${NEURAL_DIR}/bad.state"
+        --list-neural
+    RESULT_VARIABLE neural_bad_state_result
+    ERROR_VARIABLE neural_bad_state_error
+)
+if(neural_bad_state_result EQUAL 0 OR NOT neural_bad_state_error MATCHES "neural line 1[0-9]")
+    message(FATAL_ERROR "malformed neural state was not rejected with a line number: ${neural_bad_state_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --neural-apply --output "${NEURAL_DIR}/unused.wav"
+    RESULT_VARIABLE neural_orphan_result
+    ERROR_VARIABLE neural_orphan_error
+)
+if(neural_orphan_result EQUAL 0 OR NOT neural_orphan_error MATCHES "requires --neural-model or --neural-train")
+    message(FATAL_ERROR "orphan --neural-apply was not rejected: ${neural_orphan_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

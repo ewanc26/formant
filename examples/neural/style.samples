@@ -1,0 +1,8 @@
+# Deterministic prosody corrections for a measured style (#177).
+# Fields: sample utterance-position word-position boundary stress pitch duration.
+# Inputs are in [0,1]; targets are multipliers in [0.5,2].
+sample 0.00 0.00 1.0 0.50 1.05 1.10
+sample 0.25 0.00 0.5 0.58 1.10 1.04
+sample 0.50 0.50 0.0 0.55 0.98 1.02
+sample 0.75 1.00 0.5 0.62 1.12 1.08
+sample 1.00 1.00 1.0 0.50 0.92 1.20
