@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.31.0
+  VERSION 0.32.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -38,6 +38,7 @@ add_library(formant_core STATIC
     src/intonation.cpp
     src/mrt.cpp
     src/nvv.cpp
+    src/breath.cpp
     src/timing.cpp
     src/wav.cpp
     src/metrics.cpp
@@ -73,6 +74,15 @@ file(READ data/nvv/nvvs.txt NVV_BUILTIN_DATA)
 configure_file(
     src/nvv_data.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/nvv_data.h
+    @ONLY
+)
+
+# #143: the breath-group policy is also shipped as data, embedded for the same
+# reason. User files are layered over this built-in table without code changes.
+file(READ data/breath/breath_groups.txt BREATH_BUILTIN_DATA)
+configure_file(
+    src/breath_data.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/breath_data.h
     @ONLY
 )
 
@@ -191,4 +201,5 @@ if(FORMANT_INSTALL)
     install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
     install(DIRECTORY data/phoible/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/phoible)
     install(DIRECTORY data/nvv/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/nvv)
+    install(DIRECTORY data/breath/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/breath)
 endif()

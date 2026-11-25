@@ -1519,4 +1519,124 @@ if(NOT nvv_custom_list_result EQUAL 0 OR NOT nvv_custom_list_output MATCHES "sno
     message(FATAL_ERROR "custom NVV not listed: ${nvv_custom_list_error}")
 endif()
 
+# #143: breath-group planning is opt-in, data-driven and deterministic.
+set(BREATH_DIR "${CMAKE_CURRENT_BINARY_DIR}/breath-smoke")
+file(MAKE_DIRECTORY "${BREATH_DIR}")
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-breath
+    RESULT_VARIABLE breath_list_result
+    OUTPUT_VARIABLE breath_list_output
+    ERROR_VARIABLE breath_list_error
+)
+if(NOT breath_list_result EQUAL 0 OR NOT breath_list_output MATCHES "narrative")
+    message(FATAL_ERROR "--list-breath failed: ${breath_list_error}")
+endif()
+if(NOT breath_list_output MATCHES "declination 0.965")
+    message(FATAL_ERROR "--list-breath did not report the resolved policy")
+endif()
+
+set(BREATH_TEXT "One two three four five six seven eight nine ten eleven twelve, alpha beta gamma delta.")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing off
+        --sample-rate 22050 --output "${BREATH_DIR}/off.wav"
+    RESULT_VARIABLE breath_off_result
+    ERROR_VARIABLE breath_off_error
+)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing silent
+        --sample-rate 22050 --output "${BREATH_DIR}/silent.wav"
+    RESULT_VARIABLE breath_silent_result
+    ERROR_VARIABLE breath_silent_error
+)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing auto
+        --sample-rate 22050 --output "${BREATH_DIR}/auto.wav"
+    RESULT_VARIABLE breath_auto_result
+    ERROR_VARIABLE breath_auto_error
+)
+if(NOT breath_off_result EQUAL 0 OR NOT breath_silent_result EQUAL 0 OR
+   NOT breath_auto_result EQUAL 0)
+    message(FATAL_ERROR "breathing modes failed: ${breath_off_error} ${breath_silent_error} ${breath_auto_error}")
+endif()
+file(SHA256 "${BREATH_DIR}/off.wav" breath_off_hash)
+file(SHA256 "${BREATH_DIR}/silent.wav" breath_silent_hash)
+file(SHA256 "${BREATH_DIR}/auto.wav" breath_auto_hash)
+if(breath_off_hash STREQUAL breath_silent_hash OR
+   breath_off_hash STREQUAL breath_auto_hash OR
+   breath_silent_hash STREQUAL breath_auto_hash)
+    message(FATAL_ERROR "breathing modes did not change the planned audio")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing auto
+        --sample-rate 22050 --output "${BREATH_DIR}/auto2.wav"
+    RESULT_VARIABLE breath_again_result
+    ERROR_VARIABLE breath_again_error
+)
+file(SHA256 "${BREATH_DIR}/auto2.wav" breath_auto2_hash)
+if(NOT breath_again_result EQUAL 0 OR NOT breath_auto_hash STREQUAL breath_auto2_hash)
+    message(FATAL_ERROR "breath planning is not deterministic: ${breath_again_error}")
+endif()
+
+# An author-placed NVV breath is preserved, not duplicated by the planner.
+execute_process(
+    COMMAND "${FORMANT_CLI}"
+        --text "One two three four five six seven eight nine ten eleven twelve [breath-in] alpha beta gamma delta."
+        --breathing auto --sample-rate 22050
+        --output "${BREATH_DIR}/explicit.wav"
+    RESULT_VARIABLE breath_explicit_result
+    OUTPUT_VARIABLE breath_explicit_status
+    ERROR_VARIABLE breath_explicit_error
+)
+if(NOT breath_explicit_result EQUAL 0)
+    message(FATAL_ERROR "explicit breath render failed: ${breath_explicit_error}")
+endif()
+if(NOT breath_explicit_status MATCHES "0 breath\\(es\\)")
+    message(FATAL_ERROR "explicit breath was duplicated: ${breath_explicit_status} ${breath_explicit_error}")
+endif()
+
+file(WRITE "${BREATH_DIR}/custom.txt" "language default\n  max-words 16\nstyle narrative\n  depth-long 1.30\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing auto
+        --breath-style narrative --breath-file "${BREATH_DIR}/custom.txt"
+        --sample-rate 22050 --output "${BREATH_DIR}/custom.wav"
+    RESULT_VARIABLE breath_custom_result
+    ERROR_VARIABLE breath_custom_error
+)
+if(NOT breath_custom_result EQUAL 0)
+    message(FATAL_ERROR "custom breath policy failed: ${breath_custom_error}")
+endif()
+
+file(WRITE "${BREATH_DIR}/bad.txt" "language default\n  wobble 3\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing auto
+        --breath-file "${BREATH_DIR}/bad.txt" --output "${BREATH_DIR}/bad.wav"
+    RESULT_VARIABLE breath_bad_result
+    ERROR_VARIABLE breath_bad_error
+)
+if(breath_bad_result EQUAL 0 OR NOT breath_bad_error MATCHES "breath line 2")
+    message(FATAL_ERROR "malformed breath policy was not rejected: ${breath_bad_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing loud
+        --output "${BREATH_DIR}/bad.wav"
+    RESULT_VARIABLE breath_mode_result
+    ERROR_VARIABLE breath_mode_error
+)
+if(breath_mode_result EQUAL 0 OR NOT breath_mode_error MATCHES "invalid breathing mode 'loud'")
+    message(FATAL_ERROR "invalid breathing mode was not rejected: ${breath_mode_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${BREATH_TEXT}" --breathing auto
+        --breath-style manic --output "${BREATH_DIR}/bad.wav"
+    RESULT_VARIABLE breath_style_result
+    ERROR_VARIABLE breath_style_error
+)
+if(breath_style_result EQUAL 0 OR NOT breath_style_error MATCHES "unknown breath style: 'manic'")
+    message(FATAL_ERROR "unknown breath style was not rejected: ${breath_style_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

@@ -17,6 +17,7 @@
 #include "formant/ssml.h"
 #include "formant/prosody_file.h"
 #include "formant/intonation.h"
+#include "formant/breath.h"
 #include "formant/mrt.h"
 #include "formant/timing.h"
 #include "formant/transpose.h"

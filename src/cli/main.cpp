@@ -19,6 +19,7 @@
 #include "benchmark/benchmark.h"
 
 #include "formant/formant.h"
+#include "formant/breath.h"
 #include "formant/nvv.h"
 #include "formant/version.h"
 
@@ -84,6 +85,10 @@ Options:
   --list-nvv              List nonverbal vocalizations and styles and exit
   --nvv-file FILE         Load custom/override nonverbal vocalizations
   --nvv-style NAME        Style for nonverbal events (neutral, nervous, warm)
+  --breathing MODE        Breath groups: off (default), silent, or auto
+  --breath-file FILE      Load custom/override breath-group policy data
+  --breath-style NAME     Breath policy style: narrative, formal, brisk
+  --list-breath           List breath-group policies and exit
   --benchmark             Benchmark the built-in corpus and exit
   --benchmark-repeats N   Timed renders per benchmark case (default: 5)
   --benchmark-report FILE Write a machine-readable benchmark report (TSV)
@@ -297,6 +302,11 @@ struct Options {
     std::string nvvStyle = "neutral";
     bool useNvvFile = false;
     bool listNvv = false;
+    std::string breathing = "off";
+    std::string breathFile;
+    std::string breathStyle = "neutral";
+    bool useBreathFile = false;
+    bool listBreath = false;
     std::string lexiconFile;
     std::string ssmlFile;
     std::string prosodyFile;
@@ -426,6 +436,10 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-nvv") {
             options.listNvv = true;
+            continue;
+        }
+        if (arg == "--list-breath") {
+            options.listBreath = true;
             continue;
         }
         if (arg == "--list-pattern-help") {
@@ -564,6 +578,15 @@ Options parseOptions(int argc, char **argv) {
             options.useNvvFile = true;
         } else if (arg == "--nvv-style" || arg.rfind("--nvv-style=", 0) == 0) {
             options.nvvStyle = takeValue(i, argc, argv, "--nvv-style");
+        } else if (arg == "--breathing" || arg.rfind("--breathing=", 0) == 0) {
+            options.breathing = takeValue(i, argc, argv, "--breathing");
+        } else if (arg == "--breath-file" ||
+                   arg.rfind("--breath-file=", 0) == 0) {
+            options.breathFile = takeValue(i, argc, argv, "--breath-file");
+            options.useBreathFile = true;
+        } else if (arg == "--breath-style" ||
+                   arg.rfind("--breath-style=", 0) == 0) {
+            options.breathStyle = takeValue(i, argc, argv, "--breath-style");
         } else if (arg == "--lexicon" || arg.rfind("--lexicon=", 0) == 0) {
             options.lexiconFile = takeValue(i, argc, argv, "--lexicon");
             options.useLexicon = true;
@@ -1171,6 +1194,60 @@ int main(int argc, char **argv) {
                 });
         };
 
+        // #143: breath policy is data too. The built-in table is embedded; a
+        // user table layers over it field by field without replacing the rest.
+        const formant::BreathMode breathing =
+            formant::breathModeFromName(options.breathing);
+        std::string breathUser;
+        if (options.useBreathFile) {
+            std::ifstream file(options.breathFile);
+            if (!file) {
+                throw std::runtime_error("cannot open breath file: " +
+                                         options.breathFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read breath file: " +
+                                         options.breathFile);
+            }
+            breathUser = source.str();
+        }
+        const formant::BreathPolicySet breathPolicies =
+            formant::parseBreathData(formant::builtinBreathData(), breathUser);
+        if (!options.breathStyle.empty() && options.breathStyle != "neutral" &&
+            breathPolicies.styleOverlays.find(options.breathStyle) ==
+                breathPolicies.styleOverlays.end()) {
+            throw std::invalid_argument("unknown breath style: '" +
+                                        options.breathStyle + "'");
+        }
+
+        if (options.listBreath) {
+            status << "Breathing modes:\n  off\n  silent\n  auto\n";
+            status << "Languages:\n";
+            for (const auto &entry : breathPolicies.languages) {
+                status << "  " << entry.first << "\n";
+            }
+            status << "Styles:\n  neutral\n";
+            for (const auto &entry : breathPolicies.styles) {
+                if (entry.first != "neutral") {
+                    status << "  " << entry.first << "\n";
+                }
+            }
+            const formant::BreathGroupPolicy policy =
+                formant::resolveBreathPolicy(breathPolicies, "en",
+                                             options.breathStyle);
+            status << "Resolved en/" << options.breathStyle << ":\n"
+                   << "  min-words " << policy.minWords << "\n"
+                   << "  max-words " << policy.maxWords << "\n"
+                   << "  max-seconds " << policy.maxSeconds << "\n"
+                   << "  declination " << policy.declination << "\n"
+                   << "  reset " << policy.reset << "\n"
+                   << "  depth " << policy.depthShort << "/"
+                   << policy.depthMedium << "/" << policy.depthLong << "\n";
+            return 0;
+        }
+
         if (options.listNvv) {
             status << "Nonverbal vocalizations:\n";
             for (const std::string &name : nvv.names()) {
@@ -1376,6 +1453,32 @@ int main(int argc, char **argv) {
             phonemes = nvv.expand(text, [&](std::string_view run) {
                 return formant::phonemize(run, options.language);
             });
+        }
+
+        if (breathing != formant::BreathMode::Off) {
+            // Breath groups run after every front end but before symbolic
+            // intonation and prosody-direct files, so explicit contours win.
+            const std::string tag =
+                options.useLanguageFile
+                    ? languageDefinition.tag
+                    : std::string(formant::languageTag(options.language));
+            const formant::BreathGroupPolicy policy =
+                formant::resolveBreathPolicy(breathPolicies, tag,
+                                             options.breathStyle);
+            formant::BreathPlanOptions planOptions;
+            planOptions.mode = breathing;
+            planOptions.languageTag = tag;
+            planOptions.style = options.breathStyle;
+            const formant::BreathPlan plan = formant::planBreathGroups(
+                phonemes, policy,
+                [&nvv](std::string_view name) { return nvv.get(name); },
+                planOptions);
+            phonemes = plan.phonemes;
+            status << "Planned " << plan.groups.size() << " breath group(s), "
+                   << plan.insertedEvents
+                   << (breathing == formant::BreathMode::Silent ? " pause(s)"
+                                                                : " breath(es)")
+                   << "\n";
         }
 
         if (!options.intonationFile.empty() ||
