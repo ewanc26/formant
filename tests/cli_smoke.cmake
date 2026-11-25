@@ -2241,4 +2241,179 @@ foreach(bad_args "--frication;s;--frication-file;${FORMANT_SOURCE_DIR}/data/fric
     endif()
 endforeach()
 
+# ---- #140: overtone and subharmonic register data -------------------------
+set(REGISTER_DIR "${CMAKE_CURRENT_BINARY_DIR}/register-smoke")
+file(MAKE_DIRECTORY "${REGISTER_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-registers
+    RESULT_VARIABLE list_registers_result
+    OUTPUT_VARIABLE list_registers_output
+    ERROR_VARIABLE list_registers_error
+)
+if(NOT list_registers_result EQUAL 0 OR NOT list_registers_output MATCHES "Registers \\(2\\)")
+    message(FATAL_ERROR "formant --list-registers failed: ${list_registers_error}")
+endif()
+foreach(register_name sygyt kargyraa)
+    if(NOT list_registers_output MATCHES "  ${register_name}\t")
+        message(FATAL_ERROR "--list-registers omitted ${register_name}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-register "${FORMANT_SOURCE_DIR}/data/registers/register_presets.txt"
+    RESULT_VARIABLE inspect_register_result
+    OUTPUT_VARIABLE inspect_register_output
+    ERROR_VARIABLE inspect_register_error
+)
+if(NOT inspect_register_result EQUAL 0 OR NOT inspect_register_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "formant --inspect-register failed: ${inspect_register_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --dump-register sygyt
+    RESULT_VARIABLE dump_register_result
+    OUTPUT_VARIABLE dump_register_output
+    ERROR_VARIABLE dump_register_error
+)
+if(NOT dump_register_result EQUAL 0 OR NOT dump_register_output MATCHES "register sygyt ")
+    message(FATAL_ERROR "formant --dump-register failed: ${dump_register_error}")
+endif()
+file(WRITE "${REGISTER_DIR}/dumped.register" "${dump_register_output}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-register "${REGISTER_DIR}/dumped.register"
+    RESULT_VARIABLE dumped_inspect_result
+    OUTPUT_VARIABLE dumped_inspect_output
+    ERROR_VARIABLE dumped_inspect_error
+)
+if(NOT dumped_inspect_result EQUAL 0 OR NOT dumped_inspect_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "dumped register table failed checksum: ${dumped_inspect_error}")
+endif()
+
+file(READ "${FORMANT_SOURCE_DIR}/data/registers/register_presets.txt" register_builtin)
+file(WRITE "${REGISTER_DIR}/tampered.register" "${register_builtin}\n# tamper\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --phonemes "[ee]" --register-file "${REGISTER_DIR}/tampered.register"
+        --output "${REGISTER_DIR}/tampered.wav"
+    RESULT_VARIABLE register_tamper_result
+    ERROR_VARIABLE register_tamper_error
+)
+if(register_tamper_result EQUAL 0 OR NOT register_tamper_error MATCHES "checksum mismatch")
+    message(FATAL_ERROR "register checksum mismatch was not reported")
+endif()
+
+# A dumped preset is a shareable single-preset file. --register-file applies
+# it directly; --register NAME remains the built-in/layered table selector.
+foreach(case_name builtin file)
+    if(case_name STREQUAL "builtin")
+        set(select_args --register sygyt)
+    else()
+        set(select_args --register-file "${REGISTER_DIR}/dumped.register")
+    endif()
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[ee]" ${select_args}
+            --format raw16 --output "${REGISTER_DIR}/${case_name}.raw"
+        RESULT_VARIABLE register_render_result
+        ERROR_VARIABLE register_render_error
+    )
+    if(NOT register_render_result EQUAL 0)
+        message(FATAL_ERROR "register render failed for ${case_name}: ${register_render_error}")
+    endif()
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[ee]" ${select_args}
+            --format raw16 --output "${REGISTER_DIR}/${case_name}-again.raw"
+        RESULT_VARIABLE register_repeat_result
+    )
+    if(NOT register_repeat_result EQUAL 0)
+        message(FATAL_ERROR "repeat register render failed for ${case_name}")
+    endif()
+    file(SHA256 "${REGISTER_DIR}/${case_name}.raw" register_${case_name}_hash)
+    file(SHA256 "${REGISTER_DIR}/${case_name}-again.raw" register_again_hash)
+    if(NOT register_${case_name}_hash STREQUAL register_again_hash)
+        message(FATAL_ERROR "register render is not deterministic for ${case_name}")
+    endif()
+endforeach()
+if(NOT register_builtin_hash STREQUAL register_file_hash)
+    message(FATAL_ERROR "a dumped register preset did not match --register")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --phonemes "[ee]" --output "${REGISTER_DIR}/plain.raw"
+        --format raw16
+    RESULT_VARIABLE register_plain_result
+)
+if(NOT register_plain_result EQUAL 0)
+    message(FATAL_ERROR "plain register comparison render failed")
+endif()
+file(SHA256 "${REGISTER_DIR}/plain.raw" register_plain_hash)
+if(register_plain_hash STREQUAL register_builtin_hash)
+    message(FATAL_ERROR "--register sygyt did not change the audio")
+endif()
+
+# A user file can retune a built-in name without code changes or a rebuild.
+file(WRITE "${REGISTER_DIR}/retune-body.register"
+    "schema 1\nname unit-overlay\nregister sygyt 8 9 40 0 0\n")
+file(SHA256 "${REGISTER_DIR}/retune-body.register" retune_digest)
+file(WRITE "${REGISTER_DIR}/retune.register"
+    "schema 1\nname unit-overlay\nregister sygyt 8 9 40 0 0\nchecksum ${retune_digest}\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --register-file "${REGISTER_DIR}/retune.register"
+        --dump-register sygyt
+    RESULT_VARIABLE retuned_dump_result
+    OUTPUT_VARIABLE retuned_dump_output
+    ERROR_VARIABLE retuned_dump_error
+)
+if(NOT retuned_dump_result EQUAL 0 OR NOT retuned_dump_output MATCHES "register sygyt 8 ")
+    message(FATAL_ERROR "register overlay did not retune the built-in: ${retuned_dump_error}")
+endif()
+
+# A shareable file describes exactly one preset; conflicts and unknowns fail.
+file(WRITE "${REGISTER_DIR}/two-body.register"
+    "schema 1\nname two\nregister one 6 12 20 0 0\nregister two 0 1 120 0.5 28\n")
+file(SHA256 "${REGISTER_DIR}/two-body.register" two_digest)
+file(WRITE "${REGISTER_DIR}/two.register"
+    "schema 1\nname two\nregister one 6 12 20 0 0\nregister two 0 1 120 0.5 28\nchecksum ${two_digest}\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --phonemes "[ee]" --register-file "${REGISTER_DIR}/two.register"
+        --output "${REGISTER_DIR}/two.wav"
+    RESULT_VARIABLE register_two_result
+    ERROR_VARIABLE register_two_error
+)
+if(register_two_result EQUAL 0 OR NOT register_two_error MATCHES "exactly one preset")
+    message(FATAL_ERROR "register file with two presets was accepted")
+endif()
+foreach(bad_args "--register;sygyt;--register-file;${REGISTER_DIR}/dumped.register" "--register;bogus")
+    separate_arguments(bad_command UNIX_COMMAND "${bad_args}")
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[ee]" ${bad_command} --output "${REGISTER_DIR}/bad.wav"
+        RESULT_VARIABLE register_conflict_result
+        ERROR_VARIABLE register_conflict_error
+    )
+    if(register_conflict_result EQUAL 0)
+        message(FATAL_ERROR "formant accepted invalid register options: ${bad_args}")
+    endif()
+endforeach()
+
+# Registers are Voice levers and therefore compose with the singing front end.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song twinkle --sample-rate 22050 --format raw16
+        --output "${REGISTER_DIR}/song-plain.raw"
+    RESULT_VARIABLE register_song_plain_result
+    ERROR_VARIABLE register_song_plain_error
+)
+if(NOT register_song_plain_result EQUAL 0)
+    message(FATAL_ERROR "plain song render failed: ${register_song_plain_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song twinkle --register kargyraa --sample-rate 22050
+        --format raw16 --output "${REGISTER_DIR}/song-register.raw"
+    RESULT_VARIABLE register_song_result
+    ERROR_VARIABLE register_song_error
+)
+if(NOT register_song_result EQUAL 0)
+    message(FATAL_ERROR "song and register did not compose: ${register_song_error}")
+endif()
+file(SHA256 "${REGISTER_DIR}/song-plain.raw" register_song_plain_hash)
+file(SHA256 "${REGISTER_DIR}/song-register.raw" register_song_hash)
+if(register_song_plain_hash STREQUAL register_song_hash)
+    message(FATAL_ERROR "a register did not change the singing render")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

@@ -35,8 +35,8 @@ failure is immediately reproducible with:
    early with an instructive error and never crash or throw an unexpected
    exception. Seed-derived byte strings are fed to every public parser; the
    language, voice, affect, neural, breath, prosody, intonation, lexicon, SSML,
-   IPA, X-SAMPA, bracketed-phoneme, gibberish-pattern, song and scale front ends
-   are all covered. Structured malformed cases sit beside them in the
+   IPA, X-SAMPA, bracketed-phoneme, gibberish-pattern, song, scale, frication
+   and register front ends are all covered. Structured malformed cases sit beside them in the
    `kParsers` table; accent and dialogue files do not exist yet, and when they
    are introduced their parsers must be appended there so they gain the same
    hardening guarantee.
@@ -61,7 +61,8 @@ validation tests.
 `tests/checksum_corpus.txt` stores a SHA-256 for one canonical render of every
 input kind: text, bracketed phonemes, IPA, X-SAMPA, gibberish, language tags,
 conlang files, voice files, intonation, SSML, prosody files, user lexicons,
-alternate formats, sample rates and dither. The CTest hook renders each case and
+alternate formats, sample rates, dither, song, frication and register data.
+The CTest hook renders each case and
 diffs the digest. A mismatch fails
 the build the same way a benchmark checksum does, so an unintended acoustic
 change is caught even when all the unit tests still pass.

@@ -39,6 +39,7 @@ struct AudioDraft {
     std::vector<double> raw;
     double peak = 0.0;
     double phase = 0.0;
+    double subPhase = 0.0; // #140: accumulated F0/2 pulse phase
     int totalSamples = 0;
     bool rising = false;
 };
@@ -200,6 +201,14 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                 std::fmod(draft.phase + 2.0 * detail::kPi * fundamental /
                                             static_cast<double>(sampleRate),
                           2.0 * detail::kPi);
+            // #140: the ventricular pulse runs at F0/2 with its own phase
+            // accumulator. Advancing it every sample (not only on voiced
+            // segments) keeps a continued render byte-identical to a single
+            // one, exactly like the glottal phase above.
+            draft.subPhase = std::fmod(
+                draft.subPhase + 2.0 * detail::kPi * fundamental * 0.5 /
+                                     static_cast<double>(sampleRate),
+                2.0 * detail::kPi);
 
             double voiced = 0.0;
             if (fundamental > 0.0 && voice.harmonics > 0) {
@@ -226,11 +235,57 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                     if (gain <= 0.0) {
                         continue;
                     }
+                    // #140: a pinched resonance around the chosen harmonic.
+                    // The selected partial receives the full gain multiplier
+                    // because its distance from the centre is zero; neighbours
+                    // fall off with a Lorentzian skirt set by the bandwidth.
+                    // Skipped entirely at the neutral zero, so the default
+                    // source stack is untouched.
+                    if (voice.emphasisPartial > 0 && voice.emphasisGain > 1.0) {
+                        const double centre =
+                            fundamental *
+                            static_cast<double>(voice.emphasisPartial);
+                        const double offset =
+                            (frequency - centre) / voice.emphasisBandwidthHz;
+                        gain *= 1.0 + (voice.emphasisGain - 1.0) /
+                                          (1.0 + offset * offset);
+                    }
                     voiced +=
                         detail::formantResponse(frequency, formants) /
                         static_cast<double>(h) * gain *
                         detail::sine(static_cast<double>(h) * draft.phase);
                 }
+            }
+
+            // #140: an optional ventricular pulse at F0/2. It is the same
+            // deterministic sine stack, driven by the half-rate phase above,
+            // so odd multiples add the series that a plain glottal source has
+            // no energy at. Blended rather than summed so the contribution
+            // stays bounded, and skipped entirely at the neutral zero.
+            if (voice.subharmonicMix > 0.0 && voice.subharmonicPartials > 0 &&
+                fundamental > 0.0) {
+                const int limit =
+                    std::min(voice.subharmonicPartials, detail::kMaxHarmonics);
+                double subharmonic = 0.0;
+                for (int k = 1; k <= limit; ++k) {
+                    const double frequency =
+                        fundamental * 0.5 * static_cast<double>(k);
+                    if (frequency >= sampleRate * detail::kHarmonicCeiling) {
+                        break;
+                    }
+                    double gain =
+                        voice.taperCeiling
+                            ? detail::ceilingGain(frequency, sampleRate)
+                            : 1.0;
+                    if (gain <= 0.0) {
+                        continue;
+                    }
+                    subharmonic +=
+                        detail::formantResponse(frequency, formants) /
+                        static_cast<double>(k) * gain *
+                        detail::sine(static_cast<double>(k) * draft.subPhase);
+                }
+                voiced += voice.subharmonicMix * subharmonic;
             }
 
             double noise = 0.0;
@@ -363,6 +418,7 @@ RenderResult Synthesizer::renderContinued(const std::vector<Phoneme> &phonemes,
 
     const AudioDraft draft = renderDraft(voice_, next.phonemes, sampleRate);
     next.phase = draft.phase;
+    next.subPhase = draft.subPhase;
     next.noiseTimeBase = static_cast<double>(draft.totalSamples) /
                          static_cast<double>(sampleRate);
     next.totalSamples = draft.totalSamples;

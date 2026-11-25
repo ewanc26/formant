@@ -123,6 +123,16 @@ Start at a preset and move one axis at a time through the safe band.
 | `gain` | 0.001 | 4 | 0.3 | 1 | Level before peak normalisation. |
 | `jitter-cents` | 0 | 50 | 0 | 12 | Bounded F0 irregularity from two incommensurate sines; `0` disables the branch. |
 | `shimmer` | 0 | 0.25 | 0 | 0.08 | Bounded amplitude irregularity from the same sine-only source model. |
+| `emphasis-partial` | 0 | 64 | 0 | 16 | Harmonic of F0 carrying a pinched resonance; `0` disables it. |
+| `emphasis-gain` | 1 | 12 | 1 | 6 | Multiplier at the emphasised harmonic. |
+| `emphasis-bandwidth` | 20 | 4000 | 20 | 400 | Width of the pinched resonance in Hz. |
+| `subharmonic-mix` | 0 | 1 | 0 | 0.6 | Blend of the F0/2 pulse series; `0` disables it. |
+| `subharmonic-partials` | 0 | 64 | 0 | 32 | Size of that sine series; `0` disables it. |
+
+The last five parameters are the register levers from
+[docs/registers.md](registers.md). They travel in an ordinary voice file, so a
+register preset can be shared without a second file format; all six built-in
+presets keep the neutral zero/off values and remain byte-identical.
 
 The resonance response limits each formant band's total contribution at 2
 with a C1 soft knee (it keeps slope 1 at the corner and saturates toward 2.25)

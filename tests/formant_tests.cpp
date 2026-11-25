@@ -3361,7 +3361,7 @@ int main() {
     {
         const std::vector<formant::VoiceParameter> parameters =
             formant::voiceParameters();
-        CHECK(parameters.size() == 14);
+        CHECK(parameters.size() == 19);
         for (std::size_t i = 0; i < parameters.size(); ++i) {
             CHECK(!parameters[i].name.empty());
             CHECK(parameters[i].minimum <= parameters[i].safeMinimum);
@@ -4705,6 +4705,168 @@ note G4 0.35 ah transition=portamento glide=0.120s
     const std::vector<Phoneme> plain = {*findPhoneme("s"), *findPhoneme("ee")};
     CHECK(synth.render(plain, 22050) != sRender);
     CHECK(names(phonemize("Hello, world.")) == hello);
+
+    // ---- #140: overtone and subharmonic register data -------------------
+    {
+        const RegisterData registers = parseRegisterData(builtinRegisterData());
+        CHECK(registers.schema == kCurrentRegisterSchema);
+        CHECK(registers.checksum.has_value());
+        CHECK(*registers.checksum ==
+              registerFileChecksum(builtinRegisterData()));
+        CHECK(registers.registers.size() == 2);
+        const RegisterProfile *sygyt = findRegisterProfile(registers, "sygyt");
+        const RegisterProfile *kargyraa =
+            findRegisterProfile(registers, "kargyraa");
+        CHECK(sygyt != nullptr);
+        CHECK(kargyraa != nullptr);
+        CHECK(sygyt->emphasisPartial == 6);
+        CHECK(sygyt->subharmonicMix == 0.0);
+        CHECK(sygyt->voqs == "V");
+        CHECK(kargyraa->emphasisPartial == 0);
+        CHECK(kargyraa->subharmonicMix > 0.0);
+        CHECK(!kargyraa->voqs.empty());
+        CHECK(findRegisterProfile(registers, "Sygyt") == nullptr);
+        CHECK(registerProfileNames(registers).size() ==
+              registers.registers.size());
+
+        // Dumped single-preset tables round-trip with the shared checksum rule.
+        const std::string dumped = writeRegisterData(registers, "sygyt");
+        const RegisterData roundTrip = parseRegisterData(dumped);
+        CHECK(roundTrip.registers.size() == 1);
+        CHECK(roundTrip.registers.at("sygyt") == *sygyt);
+        CHECK(roundTrip.checksum == registerFileChecksum(dumped));
+
+        // A user table layers individual registers over the built-ins and needs
+        // no code change or rebuild to retune one preset.
+        const std::string overlayText =
+            "schema 1\nname unit-overlay\nregister sygyt 8 9 40 0 "
+            "0\nchecksum " +
+            registerFileChecksum("schema 1\nname unit-overlay\n"
+                                 "register sygyt 8 9 40 0 0\n") +
+            "\n";
+        const RegisterData layered =
+            parseRegisterData(builtinRegisterData(), overlayText);
+        CHECK(layered.registers.size() == registers.registers.size());
+        CHECK(layered.registers.at("sygyt").emphasisPartial == 8);
+        CHECK(layered.registers.at("kargyraa") == *kargyraa);
+        CHECK(layered.name == "unit-overlay");
+
+        // Malformed data is rejected with an instructive line-numbered error.
+        bool badRegisterSchema = false;
+        try {
+            (void)parseRegisterData("schema 9\nregister sygyt 6 12 20 0 0\n");
+        } catch (const std::invalid_argument &error) {
+            badRegisterSchema =
+                std::string(error.what()).find("unsupported register schema") !=
+                std::string::npos;
+        }
+        CHECK(badRegisterSchema);
+        bool badRegisterRange = false;
+        try {
+            (void)parseRegisterData("schema 1\nregister sygyt 65 12 20 0 0\n");
+        } catch (const std::invalid_argument &error) {
+            badRegisterRange =
+                std::string(error.what()).find("register line 2") !=
+                std::string::npos;
+        }
+        CHECK(badRegisterRange);
+        bool badVoqs = false;
+        try {
+            (void)parseRegisterData(
+                "schema 1\nregister sygyt 6 12 20 0 0\nvoqs bogus V\n");
+        } catch (const std::invalid_argument &error) {
+            badVoqs = std::string(error.what()).find("unknown register") !=
+                      std::string::npos;
+        }
+        CHECK(badVoqs);
+        bool badRegisterChecksum = false;
+        try {
+            (void)parseRegisterData(builtinRegisterData(),
+                                    "schema 1\nname tampered\nregister sygyt 7 "
+                                    "12 20 0 0\nchecksum " +
+                                        std::string(64, '0') + "\n");
+        } catch (const std::invalid_argument &error) {
+            badRegisterChecksum =
+                std::string(error.what()).find("checksum mismatch") !=
+                std::string::npos;
+        }
+        CHECK(badRegisterChecksum);
+
+        // Applying a preset sets ordinary Voice levers, so a voice file carries
+        // the same data without extra machinery.
+        Voice registerVoice = voicePreset("neutral");
+        CHECK(applyRegister(registerVoice, registers, "sygyt"));
+        CHECK(registerVoice.emphasisPartial == 6);
+        CHECK(registerVoice.emphasisGain == sygyt->emphasisGain);
+        CHECK(registerVoice.subharmonicMix == 0.0);
+        CHECK(!applyRegister(registerVoice, registers, "bogus"));
+        const VoiceDefinition registerFile =
+            parseVoiceDefinition(writeVoiceDefinition(registerVoice));
+        const Voice resolvedRegister = resolveVoice(registerFile);
+        CHECK(resolvedRegister.emphasisPartial ==
+              registerVoice.emphasisPartial);
+        CHECK(resolvedRegister.emphasisGain == registerVoice.emphasisGain);
+        CHECK(voiceParameter(registerVoice, "emphasis-partial") == 6.0);
+        CHECK(voiceParameter(registerVoice, "subharmonic-mix") == 0.0);
+        setVoiceParameter(registerVoice, "subharmonic-mix", 0.5);
+        CHECK(registerVoice.subharmonicMix == 0.5);
+
+        // Neutral levers keep the source stack untouched. Same data, same
+        // bytes: no clock, PRNG or global state enters either register layer.
+        const Voice plain = voicePreset("neutral");
+        const Voice neutral = plain;
+        CHECK(plain.emphasisPartial == 0);
+        CHECK(plain.emphasisGain == 1.0);
+        CHECK(plain.subharmonicMix == 0.0);
+        CHECK(plain.subharmonicPartials == 0);
+        CHECK(Synthesizer(plain).render({*findPhoneme("ee")}, 22050) ==
+              Synthesizer(neutral).render({*findPhoneme("ee")}, 22050));
+
+        Voice subVoice = voicePreset("neutral");
+        CHECK(applyRegister(subVoice, registers, "kargyraa"));
+        const Synthesizer subSynth(subVoice);
+        const std::vector<Phoneme> steady{[] {
+            Phoneme vowel = *findPhoneme("ee");
+            vowel.duration = 0.5;
+            return vowel;
+        }()};
+        const std::vector<float> subRender = subSynth.render(steady, 22050);
+        const std::vector<float> subRenderAgain =
+            subSynth.render(steady, 22050);
+        CHECK(subRender.size() == subRenderAgain.size());
+        CHECK(std::equal(subRender.begin(), subRender.end(),
+                         subRenderAgain.begin(), [](float a, float b) {
+                             return std::memcmp(&a, &b, sizeof(float)) == 0;
+                         }));
+        CHECK(subRender != Synthesizer(plain).render(steady, 22050));
+
+        // The F0/2 phase is carried in RenderState, so a continued render is
+        // byte-identical to one call over the concatenated phonemes.
+        const std::vector<Phoneme> transitionPhonemes2 = {*findPhoneme("ee"),
+                                                          *findPhoneme("ah")};
+        const RenderResult firstHalf =
+            subSynth.renderContinued({transitionPhonemes2[0]}, 22050, {});
+        const RenderResult joined = subSynth.renderContinued(
+            {transitionPhonemes2[1]}, 22050, firstHalf.state);
+        const std::vector<float> whole =
+            subSynth.render(transitionPhonemes2, 22050);
+        CHECK(joined.samples.size() == whole.size());
+        CHECK(std::equal(joined.samples.begin(), joined.samples.end(),
+                         whole.begin(), [](float a, float b) {
+                             return std::memcmp(&a, &b, sizeof(float)) == 0;
+                         }));
+        const RenderResult reference =
+            subSynth.renderContinued(transitionPhonemes2, 22050, {});
+        CHECK(joined.state.subPhase == reference.state.subPhase);
+        CHECK(joined.state.phase == reference.state.phase);
+
+        // Registers compose with the singing front end and stay deterministic.
+        const std::vector<Phoneme> song = twinklePhonemes();
+        CHECK(Synthesizer(subVoice).render(song, 22050) ==
+              Synthesizer(subVoice).render(song, 22050));
+        CHECK(Synthesizer(subVoice).render(song, 22050) !=
+              Synthesizer(plain).render(song, 22050));
+    }
 
     if (failures == 0) {
         std::cout << "All formant tests passed\n";

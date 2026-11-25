@@ -26,4 +26,5 @@
 #include "formant/transpose.h"
 #include "formant/voice.h"
 #include "formant/voice_file.h"
+#include "formant/register.h"
 #include "formant/wav.h"

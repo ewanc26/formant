@@ -23,6 +23,7 @@ struct RenderState {
     double noiseTimeBase = 0.0; // absolute sine-noise time at the end, seconds
     int totalSamples = 0;       // combined utterance length in samples
     bool rising = false;        // true when the combined utterance rises
+    double subPhase = 0.0;      // #140: F0/2 pulse phase, radians [0, 2pi)
 };
 
 // The normalized audio for all phonemes accumulated so far, plus the state to

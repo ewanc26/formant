@@ -117,6 +117,18 @@ std::vector<VoiceParameter> voiceParameters() {
          "deterministic pitch modulation depth in cents"},
         {"shimmer", 0.0, 0.25, 0.0, 0.08, false,
          "deterministic amplitude modulation depth"},
+        // #140: overtone and subharmonic register levers. Neutral defaults
+        // keep every preset and every voice file byte-identical.
+        {"emphasis-partial", 0, 64, 0, 16, true,
+         "harmonic of F0 carrying a pinched resonance; 0 disables it"},
+        {"emphasis-gain", 1.0, 12.0, 1.0, 6.0, false,
+         "amplitude multiplier at the emphasised partial"},
+        {"emphasis-bandwidth", 20.0, 4000.0, 20.0, 400.0, false,
+         "pinched resonance width around the emphasised partial in Hz"},
+        {"subharmonic-mix", 0.0, 1.0, 0.0, 0.6, false,
+         "deterministic F0-over-2 pulse series blended into voiced sounds"},
+        {"subharmonic-partials", 0, 64, 0, 32, true,
+         "size of the subharmonic pulse series; 0 disables it"},
     };
 }
 
@@ -159,6 +171,16 @@ void setVoiceParameter(Voice &voice, std::string_view name, double value) {
             voice.jitterCents = value;
         else if (name == "shimmer")
             voice.shimmerDepth = value;
+        else if (name == "emphasis-partial")
+            voice.emphasisPartial = static_cast<int>(value);
+        else if (name == "emphasis-gain")
+            voice.emphasisGain = value;
+        else if (name == "emphasis-bandwidth")
+            voice.emphasisBandwidthHz = value;
+        else if (name == "subharmonic-mix")
+            voice.subharmonicMix = value;
+        else if (name == "subharmonic-partials")
+            voice.subharmonicPartials = static_cast<int>(value);
         return;
     }
     throw std::invalid_argument("unknown voice parameter: " +
@@ -194,6 +216,16 @@ double voiceParameter(const Voice &voice, std::string_view name) {
         return voice.jitterCents;
     if (name == "shimmer")
         return voice.shimmerDepth;
+    if (name == "emphasis-partial")
+        return voice.emphasisPartial;
+    if (name == "emphasis-gain")
+        return voice.emphasisGain;
+    if (name == "emphasis-bandwidth")
+        return voice.emphasisBandwidthHz;
+    if (name == "subharmonic-mix")
+        return voice.subharmonicMix;
+    if (name == "subharmonic-partials")
+        return voice.subharmonicPartials;
     throw std::invalid_argument("unknown voice parameter: " +
                                 std::string(name));
 }

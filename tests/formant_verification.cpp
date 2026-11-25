@@ -680,6 +680,100 @@ bool regressionIsDetected() {
     return pitchDetected && spectralDetected;
 }
 
+// #140: the register presets must change the *measured* spectrum, not just
+// the Voice fields. A Hann-windowed Goertzel bin gives the same objective
+// harmonic energies that the envelope analyzers use, without exposing test
+// internals from formant_core.
+double harmonicEnergy(const std::vector<float> &samples, int sampleRate,
+                      double frequency, double fromSeconds = 0.25,
+                      double toSeconds = 0.75) {
+    const int start = static_cast<int>(fromSeconds * sampleRate);
+    const int end = std::min(static_cast<int>(toSeconds * sampleRate),
+                             static_cast<int>(samples.size()));
+    if (end - start < 64) {
+        return 0.0;
+    }
+    const double coefficient =
+        2.0 * std::cos(2.0 * 3.14159265358979323846 * frequency / sampleRate);
+    double previous = 0.0;
+    double previous2 = 0.0;
+    for (int i = start; i < end; ++i) {
+        const double window =
+            0.5 - 0.5 * std::cos(2.0 * 3.14159265358979323846 *
+                                 static_cast<double>(i - start) /
+                                 static_cast<double>(end - start));
+        const double value = static_cast<double>(samples[i]) * window;
+        const double current = value + coefficient * previous - previous2;
+        previous2 = previous;
+        previous = current;
+    }
+    return std::max(0.0, previous * previous + previous2 * previous2 -
+                             coefficient * previous * previous2);
+}
+
+void verifyRegisters() {
+    const formant::RegisterData data =
+        formant::parseRegisterData(formant::builtinRegisterData());
+    CHECK(data.registers.size() == 2);
+
+    formant::Voice plain = formant::voicePreset("neutral");
+    plain.pitch = 100.0;
+    plain.harmonics = 200;
+    plain.declination = 0.0;
+    plain.vibratoRate = 0.0;
+    plain.vibratoDepth = 0.0;
+    plain.jitterCents = 0.0;
+    plain.shimmerDepth = 0.0;
+    plain.breathiness = 0.0;
+    plain.attack = 0.002;
+    plain.release = 0.002;
+    plain.gain = 1.0;
+
+    formant::Voice sygyt = plain;
+    formant::Voice kargyraa = plain;
+    CHECK(formant::applyRegister(sygyt, data, "sygyt"));
+    CHECK(formant::applyRegister(kargyraa, data, "kargyraa"));
+
+    formant::Phoneme vowel = *formant::findPhoneme("ee");
+    vowel.duration = 1.0;
+    const std::vector<formant::Phoneme> source{vowel};
+    constexpr int sampleRate = 44100;
+    const std::vector<float> plainSamples =
+        formant::Synthesizer(plain).render(source, sampleRate);
+    const std::vector<float> sygytSamples =
+        formant::Synthesizer(sygyt).render(source, sampleRate);
+    const std::vector<float> kargyraaSamples =
+        formant::Synthesizer(kargyraa).render(source, sampleRate);
+    CHECK(sygytSamples != plainSamples);
+    CHECK(kargyraaSamples != plainSamples);
+
+    // Sygyt pinches a Lorentzian resonance around harmonic 6, so that partial
+    // must dominate its immediate neighbours by a clear measured margin.
+    const double peak = harmonicEnergy(sygytSamples, sampleRate, 600.0);
+    const double lower = harmonicEnergy(sygytSamples, sampleRate, 500.0);
+    const double upper = harmonicEnergy(sygytSamples, sampleRate, 700.0);
+    const double plainPeak = harmonicEnergy(plainSamples, sampleRate, 600.0);
+    const double neighbour = std::max(lower, upper);
+    CHECK(peak > neighbour * 2.0);
+    CHECK(peak > plainPeak * 2.0);
+
+    // Kargyraa adds a ventricular pulse at F0/2. Its odd multiples have no
+    // energy in the ordinary glottal series, so compare them with the same
+    // frequencies in the plain render at identical voice settings.
+    for (double frequency : {50.0, 150.0, 250.0, 350.0}) {
+        const double added =
+            harmonicEnergy(kargyraaSamples, sampleRate, frequency);
+        const double baseline =
+            harmonicEnergy(plainSamples, sampleRate, frequency);
+        CHECK(added > baseline * 2.0);
+        std::cout << "register subharmonic " << number(frequency)
+                  << " Hz: " << number(added / std::max(baseline, 1e-12))
+                  << "x\n";
+    }
+    std::cout << "register overtone: h6 " << number(peak / neighbour)
+              << "x neighbours, " << number(peak / plainPeak) << "x plain\n";
+}
+
 void printHelp() {
     std::cout << "usage: formant_verification [options]\n"
                  "  --baseline PATH      compare metrics with PATH\n"
@@ -738,6 +832,7 @@ int main(int argc, char **argv) {
     verifyTransposition();
     verifyProsodyDirect();
     verifyIntonation();
+    verifyRegisters();
     const std::vector<Case> cases = corpus();
     std::vector<ReportRow> rows;
     rows.reserve(cases.size());

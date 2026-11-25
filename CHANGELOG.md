@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.37.0] - 2026-11-25
+
+### Added
+
+- Opt-in overtone and subharmonic registers (#140). `--register NAME` and `--register-file FILE` apply versioned preset data onto ordinary `Voice` levers: a pinched Lorentzian resonance emphasizes one harmonic, and a bounded deterministic F0/2 sine series adds a ventricular-style subharmonic register. The shipped table (`data/registers/register_presets.txt`, embedded at configure time and installed under `share/formant/registers`) provides sygyt-style and kargyraa-style presets with VoQS labels (`V` and `V‼`) and culturally careful notes; `--list-registers`, `--dump-register` and `--inspect-register` follow the shared checksum convention. A dedicated `RenderState::subPhase` keeps continued renders phase-continuous and byte-identical. Registers compose with every text front end, voice files and singing mode. The harness measures a >=2x spectral peak at the chosen partial and a >=2x F0/2 series; unit, property and CLI smoke tests cover data, determinism, joins and malformed input. Default speech remains byte-identical and sine-only, with one additive checksum-corpus case. Documented in `docs/registers.md`.
+
 ## [0.36.0] - 2026-11-25
 
 ### Added

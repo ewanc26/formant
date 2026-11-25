@@ -37,6 +37,16 @@ struct Voice {
     // positional aggregate initialisers meaningful.
     double jitterCents = 0.0;  // bounded pitch modulation depth in cents
     double shimmerDepth = 0.0; // bounded amplitude modulation depth, 0..0.25
+
+    // #140: overtone and subharmonic register levers. All neutral by default,
+    // so ordinary renders keep the exact source stack. `emphasisPartial == 0`
+    // disables the pinched resonance; `subharmonicMix == 0` disables the second
+    // pulse. Appended last so positional aggregate initialisers keep meaning.
+    int emphasisPartial = 0;            // harmonic of F0 to emphasise, 0 = off
+    double emphasisGain = 1.0;          // amplitude multiplier at that partial
+    double emphasisBandwidthHz = 120.0; // pinched resonance width in Hz
+    double subharmonicMix = 0.0;        // blend of the F0/2 pulse series, 0..1
+    int subharmonicPartials = 0;        // size of that series, 0 = off
 };
 
 // Returns a copy of a built-in voice. Throws std::invalid_argument for an
