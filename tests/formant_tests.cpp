@@ -4868,6 +4868,162 @@ note G4 0.35 ah transition=portamento glide=0.120s
               Synthesizer(plain).render(song, 22050));
     }
 
+    // ---- #144: rhythm classes as data -----------------------------------
+    {
+        const RhythmData rhythms = parseRhythmData(builtinRhythmData());
+        CHECK(rhythms.schema == kCurrentRhythmSchema);
+        CHECK(rhythms.checksum.has_value());
+        CHECK(*rhythms.checksum == rhythmFileChecksum(builtinRhythmData()));
+        CHECK(rhythms.profiles.size() == 5);
+        const RhythmProfile *stress = findRhythmProfile(rhythms, "stress");
+        const RhythmProfile *syllable = findRhythmProfile(rhythms, "syllable");
+        const RhythmProfile *mora = findRhythmProfile(rhythms, "mora");
+        CHECK(stress != nullptr);
+        CHECK(syllable != nullptr);
+        CHECK(mora != nullptr);
+        CHECK(stress->vocalicNPviMax > syllable->vocalicNPviMax);
+        CHECK(mora->intervocalicRPviMin > syllable->intervocalicRPviMin);
+        CHECK(findRhythmProfile(rhythms, "Stress") == nullptr);
+        CHECK(rhythmProfileNames(rhythms).size() == rhythms.profiles.size());
+
+        const std::string dumped = writeRhythmData(rhythms, "en");
+        const RhythmData roundTrip = parseRhythmData(dumped);
+        CHECK(roundTrip.profiles.size() == 1);
+        CHECK(roundTrip.profiles.at("en") == *findRhythmProfile(rhythms, "en"));
+        CHECK(roundTrip.checksum == rhythmFileChecksum(dumped));
+
+        const std::string overlayBody =
+            "schema 1\nname unit-overlay\n"
+            "rhythm en stress 50 60 60 70 0.75 0.7 1.6\n";
+        const std::string overlay =
+            overlayBody + "checksum " + rhythmFileChecksum(overlayBody) + "\n";
+        const RhythmData layered =
+            parseRhythmData(builtinRhythmData(), overlay);
+        CHECK(layered.profiles.size() == rhythms.profiles.size());
+        CHECK(layered.profiles.at("en").strength == 0.75);
+        CHECK(layered.profiles.at("es") == *findRhythmProfile(rhythms, "es"));
+        CHECK(layered.name == "unit-overlay");
+
+        bool badRhythmSchema = false;
+        try {
+            (void)parseRhythmData(
+                "schema 9\nrhythm stress stress 52 66 50 65 1 0.6 1.8\n");
+        } catch (const std::invalid_argument &error) {
+            badRhythmSchema =
+                std::string(error.what()).find("unsupported rhythm schema") !=
+                std::string::npos;
+        }
+        CHECK(badRhythmSchema);
+        bool badBand = false;
+        try {
+            (void)parseRhythmData(
+                "schema 1\nrhythm stress stress 66 52 50 65 1 0.6 1.8\n");
+        } catch (const std::invalid_argument &error) {
+            badBand = std::string(error.what()).find("rhythm line 2") !=
+                      std::string::npos;
+        }
+        CHECK(badBand);
+        bool badStrength = false;
+        try {
+            (void)parseRhythmData(
+                "schema 1\nrhythm stress stress 52 66 50 65 2 0.6 1.8\n");
+        } catch (const std::invalid_argument &error) {
+            badStrength =
+                std::string(error.what()).find("strength must be in [0, 1]") !=
+                std::string::npos;
+        }
+        CHECK(badStrength);
+        bool badChecksum = false;
+        try {
+            (void)parseRhythmData(builtinRhythmData(),
+                                  overlayBody + "checksum " +
+                                      std::string(64, '0') + "\n");
+        } catch (const std::invalid_argument &error) {
+            badChecksum = std::string(error.what()).find("checksum mismatch") !=
+                          std::string::npos;
+        }
+        CHECK(badChecksum);
+
+        // Conlangs carry the same dials in their language profile.
+        const LanguageDefinition conlang =
+            parseLanguageDefinition("name Testlang\ntag zz\nrhythm mora\n"
+                                    "rhythm-vocalic-npvi 40 45\n"
+                                    "rhythm-intervocalic-rpvi 55 65\n"
+                                    "rhythm-strength 0.5\n");
+        CHECK(conlang.typology.vocalicNPviMin.has_value());
+        CHECK(conlang.typology.rhythmStrength.has_value());
+        const RhythmProfile conlangProfile = resolveRhythmProfile(
+            rhythms, "auto", conlang.tag, conlang.typology);
+        CHECK(conlangProfile.name == "zz");
+        CHECK(conlangProfile.rhythmClass == "mora");
+        CHECK(conlangProfile.vocalicNPviMin == 40.0);
+        CHECK(conlangProfile.strength == 0.5);
+        CHECK(resolveRhythmProfile(rhythms, "es", "zz", {}).name == "es");
+        CHECK(resolveRhythmProfile(rhythms, "auto", "en", {}).name == "en");
+
+        const auto makeVowel = [](double seconds) {
+            Phoneme vowel = *findPhoneme("ee");
+            vowel.duration = seconds;
+            return vowel;
+        };
+        const auto makeConsonant = [](double seconds) {
+            Phoneme consonant = *findPhoneme("s");
+            consonant.duration = seconds;
+            return consonant;
+        };
+        // Three vocalic and two intervocalic intervals give the harness
+        // enough pairs to measure both PVI definitions.
+        std::vector<Phoneme> script = {makeVowel(0.10), makeConsonant(0.10),
+                                       makeVowel(0.16), makeConsonant(0.12),
+                                       makeVowel(0.10)};
+        const RhythmMetrics baseline = measureRhythm(script);
+        CHECK(baseline.vocalicIntervals == 3);
+        CHECK(baseline.intervocalicIntervals == 2);
+        CHECK(baseline.vocalicNPvi > 0.0);
+        CHECK(baseline.intervocalicRPvi > 0.0);
+        const std::vector<Phoneme> stressScript = applyRhythm(script, *stress);
+        const std::vector<Phoneme> syllableScript =
+            applyRhythm(script, *syllable);
+        const RhythmMetrics stressed = measureRhythm(stressScript);
+        const RhythmMetrics syllabled = measureRhythm(syllableScript);
+        CHECK(stressed.vocalicNPvi > baseline.vocalicNPvi);
+        CHECK(syllabled.vocalicNPvi < baseline.vocalicNPvi);
+        CHECK(stressed.vocalicNPvi > syllabled.vocalicNPvi);
+        CHECK(std::isfinite(stressed.intervocalicRPvi));
+        CHECK(std::isfinite(syllabled.intervocalicRPvi));
+
+        // Strength zero is a true no-op and repeats are byte-identical.
+        RhythmProfile inert = *stress;
+        inert.strength = 0.0;
+        CHECK(applyRhythm(script, inert) == script);
+        CHECK(applyRhythm(script, *mora) == applyRhythm(script, *mora));
+
+        // Pause- and note-tagged spans are exempt from the duration pass.
+        std::vector<Phoneme> exempt = script;
+        exempt[1].source = "breath:auto";
+        exempt[3].noteF0 = NoteF0Control{};
+        const std::vector<Phoneme> exemptAfter = applyRhythm(exempt, *stress);
+        CHECK(exemptAfter[1] == exempt[1]);
+        CHECK(exemptAfter[3] == exempt[3]);
+
+        const std::vector<Phoneme> ordinary =
+            phonemize("The quick brown fox jumps over the lazy dog.");
+        const RhythmMetrics ordinaryBefore = measureRhythm(ordinary);
+        const std::vector<Phoneme> ordinaryAfter =
+            applyRhythm(ordinary, *syllable);
+        const RhythmMetrics ordinaryResult = measureRhythm(ordinaryAfter);
+        CHECK(ordinaryResult.vocalicNPvi <= syllable->vocalicNPviMax + 1e-6);
+        CHECK(ordinaryResult.vocalicNPvi != ordinaryBefore.vocalicNPvi);
+        CHECK(ordinaryAfter.size() == ordinary.size());
+        CHECK(names(phonemize("Hello, world.")) == hello);
+
+        const Synthesizer synth(voicePreset("neutral"));
+        CHECK(synth.render(ordinaryAfter, 22050) ==
+              synth.render(applyRhythm(ordinary, *syllable), 22050));
+        CHECK(synth.render(ordinaryAfter, 22050) !=
+              synth.render(ordinary, 22050));
+    }
+
     if (failures == 0) {
         std::cout << "All formant tests passed\n";
     }

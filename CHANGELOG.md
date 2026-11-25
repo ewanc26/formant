@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.38.0] - 2026-11-25
+
+### Added
+
+- Opt-in rhythm classes (#144). `--rhythm NAME` (`stress`, `syllable`, `mora`, `en`, `es`, `auto`) and `--rhythm-file FILE` apply versioned PVI target bands derived from the exact scheduled phoneme durations used for rendering. A bounded deterministic duration pass nudges vocalic nPVI and intervocalic rPVI toward the target bands, leaving phoneme identity, formants, F0 and coarticulation crossfades untouched; silence, breath/NVV, absolute-F0 spans and note-F0 segments are exempt, and the pass runs before neural, intonation and prosody-direct layers so authored contours win. `--list-rhythms`, `--dump-rhythm` and `--inspect-rhythm` expose the shipped table (`data/rhythm/rhythm_profiles.txt`, embedded at configure time and installed under `share/formant/rhythm`) with the shared checksum convention. `--rhythm` and `--rhythm-file` are mutually exclusive, and song mode rejects rhythm. Language files accept `rhythm-vocalic-npvi`, `rhythm-intervocalic-rpvi` and `rhythm-strength` dials consumed by `--rhythm auto`, which prefers them over tag-specific built-in calibrations and then generic class profiles. `formant::RhythmProfile`, `RhythmData` and the other data/API helpers plus `RhythmMetrics`/`measureRhythm()` are public. The harness prints before/after PVI per class and checks the bands; unit, property and CLI tests cover parsing, checksums, layering, conlang dials, PVI movement, determinism, continued renders, exemptions, list/dump/inspect/file commands and combination errors, with one additive checksum-corpus case. Default renders remain byte-identical and sine-only. Documented in `docs/rhythm-classes.md`, with updates to `docs/language-files.md` and `docs/metrics.md`.
+
 ## [0.37.0] - 2026-11-25
 
 ### Added

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.37.0
+  VERSION 0.38.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -43,6 +43,7 @@ add_library(formant_core STATIC
     src/affect.cpp
     src/frication.cpp
     src/register.cpp
+    src/rhythm.cpp
     src/neural.cpp
     src/timing.cpp
     src/wav.cpp
@@ -115,6 +116,15 @@ file(READ data/registers/register_presets.txt REGISTER_BUILTIN_DATA)
 configure_file(
     src/register_data.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/register_data.h
+    @ONLY
+)
+
+# #144: rhythm-class target bands are inspectable data too. The built-in table
+# is embedded; user language files and rhythm files layer over it at parse time.
+file(READ data/rhythm/rhythm_profiles.txt RHYTHM_BUILTIN_DATA)
+configure_file(
+    src/rhythm_data.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/rhythm_data.h
     @ONLY
 )
 
@@ -250,6 +260,7 @@ if(FORMANT_INSTALL)
     install(DIRECTORY data/affect/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/affect)
     install(DIRECTORY data/frication/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/frication)
     install(DIRECTORY data/registers/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/registers)
+    install(DIRECTORY data/rhythm/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/rhythm)
     install(DIRECTORY data/songs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/songs)
     install(DIRECTORY data/scales/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/scales)
 endif()

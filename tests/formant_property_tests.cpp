@@ -220,8 +220,11 @@ void parseFrication(std::string_view text) {
 void parseRegister(std::string_view text) {
     (void)formant::parseRegisterData(formant::builtinRegisterData(), text);
 }
+void parseRhythm(std::string_view text) {
+    (void)formant::parseRhythmData(formant::builtinRhythmData(), text);
+}
 
-const std::array<ParserCase, 17> kParsers = {{
+const std::array<ParserCase, 18> kParsers = {{
     {"language", parseLanguage},
     {"voice", parseVoice},
     {"prosody", parseProsody},
@@ -239,6 +242,7 @@ const std::array<ParserCase, 17> kParsers = {{
     {"scale", parseScale},
     {"frication", parseFrication},
     {"register", parseRegister},
+    {"rhythm", parseRhythm},
 }};
 
 void checkRejection(uint32_t seed) {
@@ -268,7 +272,7 @@ void checkRejection(uint32_t seed) {
 // Structured malformed inputs with expected rejection and a required useful
 // message fragment. These are the "instructive errors" regression guards.
 void checkStructuredMalformed() {
-    const std::array<std::pair<const char *, std::string>, 17> cases = {{
+    const std::array<std::pair<const char *, std::string>, 18> cases = {{
         {"language", "grapheme ab"},
         {"voice", "pitch not_a_number"},
         {"prosody", "segment 0 f0=abcHz"},
@@ -286,6 +290,7 @@ void checkStructuredMalformed() {
         {"scale", "schema 99"},
         {"frication", "schema 99"},
         {"register", "schema 99"},
+        {"rhythm", "schema 99"},
     }};
     for (uint32_t i = 0; i < cases.size(); ++i) {
         CaseScope scope(i + 90000, "structured-malformed");
@@ -342,7 +347,55 @@ void checkIdempotence(uint32_t seed) {
 }
 
 // ---------------------------------------------------------------------------
-// Property 5: arbitrary Unicode, invalid UTF-8 and embedded NULs are handled
+// Property 5: rhythm adjustment is deterministic and bounded for every dial
+// combination. Only durations move; phoneme identity and other fields stay put.
+// ---------------------------------------------------------------------------
+void checkRhythm(uint32_t seed) {
+    CaseScope scope(seed, "rhythm");
+    formant::RhythmProfile profile;
+    profile.name = "property";
+    profile.rhythmClass = "stress";
+    profile.vocalicNPviMin = 25.0 + static_cast<double>(seed % 40);
+    profile.vocalicNPviMax = profile.vocalicNPviMin + 10.0;
+    profile.intervocalicRPviMin = 20.0 + static_cast<double>((seed / 7) % 60);
+    profile.intervocalicRPviMax = profile.intervocalicRPviMin + 15.0;
+    profile.strength = 0.1 + static_cast<double>(seed % 10) / 10.0;
+    profile.minFactor = 0.5 + static_cast<double>(seed % 5) / 10.0;
+    profile.maxFactor = 1.2 + static_cast<double>(seed % 8) / 10.0;
+
+    const std::string bytes = bytesFromSeed(seed, 48);
+    std::vector<formant::Phoneme> script;
+    for (std::size_t i = 0; i < bytes.size() / 4; ++i) {
+        const bool vowel = (static_cast<unsigned char>(bytes[i]) & 1U) != 0;
+        formant::Phoneme phoneme = *formant::findPhoneme(vowel ? "ee" : "s");
+        phoneme.duration =
+            0.05 +
+            static_cast<double>(static_cast<unsigned char>(bytes[i + 1])) /
+                2000.0;
+        script.push_back(phoneme);
+    }
+
+    const auto first = formant::applyRhythm(script, profile);
+    const auto second = formant::applyRhythm(script, profile);
+    CHECK(first == second);
+    CHECK(first.size() == script.size());
+    for (std::size_t i = 0; i < first.size(); ++i) {
+        CHECK(first[i].name == script[i].name);
+        CHECK(first[i].kind == script[i].kind);
+        CHECK(first[i].bands == script[i].bands);
+        CHECK(std::isfinite(first[i].duration) && first[i].duration > 0.0);
+        CHECK(first[i].duration >=
+              script[i].duration * profile.minFactor - 1e-12);
+        CHECK(first[i].duration <=
+              script[i].duration * profile.maxFactor + 1e-12);
+    }
+    const formant::RhythmMetrics metrics = formant::measureRhythm(first);
+    CHECK(std::isfinite(metrics.vocalicNPvi));
+    CHECK(std::isfinite(metrics.intervocalicRPvi));
+}
+
+// ---------------------------------------------------------------------------
+// Property 6: arbitrary Unicode, invalid UTF-8 and embedded NULs are handled
 // safely; invalid encodings produce a clear error rather than a crash.
 // ---------------------------------------------------------------------------
 void checkUnicode(uint32_t seed) {
@@ -389,7 +442,7 @@ void checkUnicode(uint32_t seed) {
 } // namespace
 
 int main(int argc, char **argv) {
-    // Fast CI property run: 240 seeds x 5 properties is seconds, not minutes.
+    // Fast CI property run: 240 seeds x 6 properties is seconds, not minutes.
     // Sanitizer builds pass a smaller count because instrumented renders are
     // roughly 25x slower and ctest enforces a 300s per-test limit.
     uint32_t seedCount = 240;
@@ -408,6 +461,7 @@ int main(int argc, char **argv) {
         checkBounds(seed);
         checkRejection(seed);
         checkIdempotence(seed);
+        checkRhythm(seed);
         checkUnicode(seed);
     }
     checkStructuredMalformed();

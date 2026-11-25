@@ -108,4 +108,16 @@ FormantMetrics
 compareFormants(const std::array<FormantPeak, 2> &peaks,
                 const std::array<double, 2> &expectedFrequencies);
 
+// #144: rhythm metrics derived from the exact phoneme-duration schedule that
+// drives rendering. nPVI is dimensionless (x100); rPVI is in milliseconds.
+// Silence, breath/NVV events, absolute-F0 and note-F0 segments are excluded.
+struct RhythmMetrics {
+    double vocalicNPvi = 0.0;
+    double intervocalicRPvi = 0.0;
+    std::size_t vocalicIntervals = 0;
+    std::size_t intervocalicIntervals = 0;
+};
+
+RhythmMetrics measureRhythm(const std::vector<Phoneme> &phonemes);
+
 } // namespace formant

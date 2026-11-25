@@ -64,6 +64,33 @@ These are *relative* envelope metrics: the reference is the synthesiser's intend
 
 `estimateFormantPeaks()` scans the harmonic grid that a voiced source can actually produce. For each expected formant it takes the strongest harmonic within ±300 Hz, and the strongest harmonic in the 400–600 Hz guard bands on either side. `compareFormants()` reports the absolute frequency error for each band, the maximum error, and the minimum peak-to-guard contrast. A real resonance must both land near its target and dominate nearby off-formant harmonics.
 
+## Rhythm PVI
+
+`formant::measureRhythm()` reports a `RhythmMetrics` value for a `Phoneme`
+sequence: vocalic nPVI, intervocalic rPVI in milliseconds, and the number of
+intervals used for each. The durations are the exact ones the scheduler hands
+to the renderer, so the measure describes the same timeline as the audio and
+the timing exports rather than an analysis of the waveform. A vocalic interval
+is a run of consecutive voiced vocalic phonemes; an intervocalic interval is the
+consonant span between two such runs. Silence, breath/NVV events,
+absolute-F0/prosody-direct spans and note-F0 singing segments are ineligible and
+split the intervals around them. With fewer than two intervals, the index is
+zero.
+
+For consecutive durations `d[k]`, nPVI is dimensionless (×100) and rPVI is in
+milliseconds:
+
+```
+nPVI = 100 * mean( abs(d[k] - d[k+1]) / ((d[k] + d[k+1]) / 2) )
+rPVI = mean( abs(d[k] - d[k+1]) )        // d in ms
+```
+
+These are the indices targeted by the opt-in rhythm profiles in
+[docs/rhythm-classes.md](rhythm-classes.md). The harness prints measured
+before/after values per class and checks that the bounded duration pass lands
+inside each profile's band; with no rhythm flag, the duration pass is skipped
+entirely.
+
 ## Thresholds
 
 | Metric | Quality ceiling / floor | Baseline drift |
