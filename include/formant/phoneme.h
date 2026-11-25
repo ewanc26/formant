@@ -71,6 +71,12 @@ struct Phoneme {
     // phoneme and every caller-built Phoneme renders exactly as before.
     std::array<SpectralZero, 2> zeros{};
 
+    // Optional provenance tag set by front ends (for example "nvv:laugh" or
+    // "breath:auto"). Empty for ordinary speech, so equality and rendering
+    // are unchanged. Front ends use it to express intent to later layers; the
+    // synthesiser never reads it.
+    std::string source;
+
     bool operator==(const Phoneme &) const = default;
 };
 

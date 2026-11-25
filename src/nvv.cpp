@@ -201,6 +201,9 @@ std::vector<Phoneme> NvvLibrary::get(std::string_view name) const {
         phoneme.pitchStart *= style.pitchScale;
         phoneme.pitchEnd *= style.pitchScale;
         phoneme.amplitude *= style.amplitudeScale;
+        // Provenance lets later layers (#143 breath planning) recognise an
+        // author-placed event without changing how this segment renders.
+        phoneme.source = "nvv:" + std::string(name);
     }
     return result;
 }

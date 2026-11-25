@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.32.0] - 2026-11-25
+
+### Added
+
+- Opt-in breath-group planning for long-form reading (#143). Boundaries, word/duration limits, depth tiers, F0 declination and resets are a shipped data policy (`data/breath/breath_groups.txt`, embedded at build time and installed under `share/formant/breath`), layered with `--breath-file` and selected with `--breath-style`. `--breathing auto` inserts scaled `breath-in` NVVs at planned boundaries and `--breathing silent` inserts pauses only; the default remains `--breathing off`, so all existing audio is byte-identical. `Phoneme` now carries an optional provenance `source` tag so author-placed NVV breaths are detected and preserved instead of duplicated. Planner output exposes measured group ranges for harness verification of F0 downtrends and resets. Documented in `docs/breath-groups.md`.
+
 ## [0.31.0] - 2026-11-24
 
 ### Added

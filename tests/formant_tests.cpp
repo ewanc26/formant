@@ -2791,6 +2791,234 @@ int main() {
         CHECK(rejects("nvv x | d\n"));             // no segments
     }
 
+    // Issue #143: opt-in, data-defined breath-group planning.
+    {
+        const BreathPolicySet builtin = parseBreathData(builtinBreathData());
+        CHECK(builtin.defaultPolicy.minWords == 4);
+        CHECK(builtin.defaultPolicy.maxWords == 12);
+        const BreathGroupPolicy spanish =
+            resolveBreathPolicy(builtin, "es", "neutral");
+        CHECK(spanish.minWords == 3);
+        CHECK(std::abs(spanish.declination - 0.972) < 1e-12);
+        const BreathGroupPolicy narrative =
+            resolveBreathPolicy(builtin, "es", "narrative");
+        CHECK(narrative.minWords == 5);
+        CHECK(std::abs(narrative.depthLong - 1.22) < 1e-12);
+
+        // A user table layers field by field; it does not drop Spanish or
+        // narrative values from the built-in table.
+        const char *userData = "language default\n"
+                               "  max-words 7\n"
+                               "style narrative\n"
+                               "  depth-long 1.30\n";
+        const BreathPolicySet layered =
+            parseBreathData(builtinBreathData(), userData);
+        CHECK(layered.defaultPolicy.maxWords == 7);
+        const BreathGroupPolicy layeredNarrative =
+            resolveBreathPolicy(layered, "es", "narrative");
+        // A style overlays the language: narrative keeps its own limits and
+        // declination while the user file retunes only its long depth.
+        CHECK(layeredNarrative.minWords == 5);
+        CHECK(std::abs(layeredNarrative.declination - 0.970) < 1e-12);
+        CHECK(std::abs(layeredNarrative.depthLong - 1.30) < 1e-12);
+
+        const auto rejectsPolicy = [](const char *text) {
+            try {
+                (void)parseBreathData(text);
+            } catch (const std::invalid_argument &error) {
+                return std::string(error.what()).find("breath line") !=
+                       std::string::npos;
+            }
+            return false;
+        };
+        CHECK(rejectsPolicy("language default\n  wobble 3\n"));
+        CHECK(rejectsPolicy("language default\n  declination 1.4\n"));
+        CHECK(rejectsPolicy("language default\n  strong ab\n"));
+
+        NvvLibrary library(builtinNvvData());
+        const auto authoredBreath = library.get("breath-in");
+        CHECK(!authoredBreath.empty());
+        CHECK(authoredBreath.front().source == "nvv:breath-in");
+        const auto eventLoader = [&library](std::string_view name) {
+            return library.get(name);
+        };
+
+        // Twelve words before a comma trigger a long upcoming group.
+        const auto phraseWith = [](std::size_t firstWords, const char *boundary,
+                                   std::size_t secondWords) {
+            std::vector<Phoneme> result;
+            // The word gap is derived from "_" with a "|" display name, not
+            // a row in the phoneme table.
+            Phoneme gap = *findPhoneme("_");
+            gap.name = "|";
+            const auto appendWords = [&](std::size_t count) {
+                for (std::size_t i = 0; i < count; ++i) {
+                    result.push_back(*findPhoneme("a"));
+                    result.push_back(gap);
+                }
+            };
+            appendWords(firstWords);
+            result.push_back(*findPhoneme(boundary));
+            appendWords(secondWords);
+            result.push_back(*findPhoneme("."));
+            return result;
+        };
+        const std::vector<Phoneme> phrase = phraseWith(12, ",", 4);
+        const BreathGroupPolicy policy = builtin.defaultPolicy;
+
+        BreathPlanOptions options;
+        options.mode = BreathMode::Off;
+        const BreathPlan off =
+            planBreathGroups(phrase, policy, eventLoader, options);
+        CHECK(off.phonemes == phrase);
+        CHECK(off.groups.empty());
+        CHECK(off.insertedEvents == 0);
+
+        options.mode = BreathMode::Auto;
+        const BreathPlan planned =
+            planBreathGroups(phrase, policy, eventLoader, options);
+        const BreathPlan again =
+            planBreathGroups(phrase, policy, eventLoader, options);
+        CHECK(planned.phonemes == again.phonemes);
+        CHECK(planned.groups.size() == 2);
+        CHECK(planned.insertedEvents == 1);
+        CHECK(planned.groups[0].words == 12);
+        CHECK(planned.groups[0].depthTier == 2);
+        CHECK(std::abs(planned.groups[0].depthScale - 1.18) < 1e-12);
+
+        std::size_t autoBreathSegments = 0;
+        const Phoneme *firstAutoBreath = nullptr;
+        for (const Phoneme &phoneme : planned.phonemes) {
+            if (phoneme.source == "breath:auto") {
+                ++autoBreathSegments;
+                if (firstAutoBreath == nullptr) {
+                    firstAutoBreath = &phoneme;
+                }
+            }
+        }
+        CHECK(autoBreathSegments == authoredBreath.size());
+        CHECK(firstAutoBreath != nullptr);
+        if (firstAutoBreath != nullptr) {
+            CHECK(std::abs(firstAutoBreath->duration /
+                               authoredBreath.front().duration -
+                           1.18) < 1e-12);
+        }
+
+        // Direct multipliers are the source of truth for the F0 oracle.
+        const auto pitchAt = [&](const BreathGroup &group, bool last) {
+            double result = 0.0;
+            std::size_t count = 0;
+            for (std::size_t i = group.begin; i < group.end; ++i) {
+                if (!planned.phonemes[i].voiced) {
+                    continue;
+                }
+                if (count == 0 || last) {
+                    result = planned.phonemes[i].pitchStart;
+                }
+                ++count;
+            }
+            return result;
+        };
+        const BreathGroup &firstGroup = planned.groups.front();
+        const BreathGroup &secondGroup = planned.groups.back();
+        CHECK(pitchAt(firstGroup, false) > pitchAt(firstGroup, true));
+        CHECK(std::abs(pitchAt(firstGroup, true) - 0.965) < 1e-12);
+        CHECK(pitchAt(secondGroup, true) > pitchAt(firstGroup, true));
+        CHECK(std::abs(pitchAt(secondGroup, false) - 1.045) < 1e-12);
+        CHECK(std::abs(pitchAt(secondGroup, true) - 1.045 * 0.965) < 1e-12);
+
+        // The shared F0 oracle sees the same downtrend and reset in Hz.
+        Voice flat = voicePreset("neutral");
+        flat.declination = 0.0;
+        flat.vibratoDepth = 0.0;
+        const AnalyzerOptions analyzer;
+        const F0Track track =
+            expectedF0(planned.phonemes, flat, 22050, analyzer);
+        const auto meanBand = [&](const BreathGroup &group, bool last) {
+            std::vector<double> values;
+            for (const F0Frame &frame : track) {
+                const double at =
+                    static_cast<double>(frame.startSample) / 22050.0;
+                if (frame.frequency > 0.0 && at >= group.startSeconds &&
+                    at < group.endSeconds) {
+                    values.push_back(frame.frequency);
+                }
+            }
+            if (values.empty()) {
+                return 0.0;
+            }
+            double sum = 0.0;
+            const std::size_t count = std::min<std::size_t>(3, values.size());
+            const std::size_t begin = last ? values.size() - count : 0;
+            for (std::size_t i = 0; i < count; ++i) {
+                sum += values[begin + i];
+            }
+            return sum / static_cast<double>(count);
+        };
+        CHECK(meanBand(firstGroup, false) > meanBand(firstGroup, true));
+        CHECK(meanBand(secondGroup, false) > meanBand(firstGroup, true));
+
+        options.mode = BreathMode::Silent;
+        const BreathPlan silent =
+            planBreathGroups(phrase, policy, eventLoader, options);
+        CHECK(silent.groups.size() == 2);
+        CHECK(silent.insertedEvents == 1);
+        bool silentPause = false;
+        for (const Phoneme &phoneme : silent.phonemes) {
+            CHECK(phoneme.source != "breath:auto");
+            if (phoneme.source == "breath:pause") {
+                silentPause = true;
+                CHECK(phoneme.kind == PhonemeKind::Silence);
+                CHECK(std::abs(phoneme.duration - 0.08 * 1.18) < 1e-12);
+            }
+        }
+        CHECK(silentPause);
+
+        // An author-placed breath marks its own boundary and is never
+        // duplicated by the planner.
+        std::vector<Phoneme> explicitPhrase = phrase;
+        const auto comma = std::find_if(
+            explicitPhrase.begin(), explicitPhrase.end(),
+            [](const Phoneme &phoneme) { return phoneme.name == ","; });
+        explicitPhrase.insert(comma + 1, authoredBreath.begin(),
+                              authoredBreath.end());
+        options.mode = BreathMode::Auto;
+        const BreathPlan preserved =
+            planBreathGroups(explicitPhrase, policy, eventLoader, options);
+        CHECK(preserved.insertedEvents == 0);
+        CHECK(preserved.groups.size() >= 2);
+        std::size_t authoredSegments = 0;
+        for (const Phoneme &phoneme : preserved.phonemes) {
+            if (phoneme.source == "nvv:breath-in") {
+                ++authoredSegments;
+            }
+            CHECK(phoneme.source != "breath:auto");
+        }
+        CHECK(authoredSegments == authoredBreath.size());
+
+        // Absolute prosody-direct targets survive untouched; later CLI
+        // intonation/prosody files still override the relative contour.
+        std::vector<Phoneme> absolute = phrase;
+        absolute.front().f0StartHz = 180.0;
+        absolute.front().f0EndHz = 180.0;
+        const BreathPlan absolutePlan =
+            planBreathGroups(absolute, policy, eventLoader, options);
+        CHECK(absolutePlan.phonemes.front().f0StartHz.has_value());
+        CHECK(*absolutePlan.phonemes.front().f0StartHz == 180.0);
+        CHECK(absolutePlan.phonemes.front().pitchStart == 1.0);
+
+        CHECK(breathModeFromName("off") == BreathMode::Off);
+        CHECK(breathModeFromName("silent") == BreathMode::Silent);
+        CHECK(breathModeFromName("auto") == BreathMode::Auto);
+        bool modeRejected = false;
+        try {
+            (void)breathModeFromName("loud");
+        } catch (const std::invalid_argument &) {
+            modeRejected = true;
+        }
+        CHECK(modeRejected);
+    }
+
     // Issue #129: prosody-direct override files. Every field is optional, so
     // a file can retune one segment while neighbours keep their defaults.
     {

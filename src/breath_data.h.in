@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+// Generated from data/breath/breath_groups.txt by CMake. The shipped policy is
+// data, not synthesis code; embedding it keeps the runtime dependency-free.
+namespace formant::detail {
+inline constexpr std::string_view kBuiltinBreathData = R"BREATHDATA(@BREATH_BUILTIN_DATA@)BREATHDATA";
+} // namespace formant::detail

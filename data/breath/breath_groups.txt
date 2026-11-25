@@ -1,0 +1,72 @@
+# Built-in breath-group policy (#143).
+#
+# Whitespace-separated "key value..." lines. Blank lines and # comments are
+# ignored. Sections start with "language TAG" or "style NAME"; "default"
+# retunes the base for every render. A user file is layered field by field on
+# top of this table, so overriding one number never drops the others.
+#
+# Breath depth follows the planning research cited in docs/breath-groups.md:
+# a longer upcoming group gets a longer, slightly stronger inhale. The tiers
+# are selected by word count (short-words and medium-words thresholds).
+#
+# key value...
+#   min-words N          minimum words before a clause boundary can breathe
+#   max-words N          force a breath after at most N words
+#   max-seconds S        force a breath after at most S seconds of speech
+#   short-words N        upper word count of the short depth tier
+#   medium-words N       upper word count of the medium depth tier
+#   declination F        final F0 multiplier within one group (below 1)
+#   reset F              first-group F0 multiplier after a breath (above 1)
+#   depth-short F        duration scale for a short upcoming group
+#   depth-medium F       duration scale for a medium upcoming group
+#   depth-long F         duration scale for a long upcoming group
+#   pause-seconds S      Silent-mode pause before depth scaling
+#   strong PUNCT...      clause-final phoneme names that can end a group
+#   weak PUNCT...        softer boundaries, used only for longer clauses
+#   event-short NAME     NVV used for the short tier in Auto mode
+#   event-medium NAME    NVV used for the medium tier in Auto mode
+#   event-long NAME      NVV used for the long tier in Auto mode
+
+language default
+  min-words 4
+  max-words 12
+  max-seconds 5.0
+  short-words 4
+  medium-words 8
+  declination 0.965
+  reset 1.045
+  depth-short 0.82
+  depth-medium 1.00
+  depth-long 1.18
+  pause-seconds 0.08
+  strong . ! ? ; :
+  weak ,
+  event-short breath-in
+  event-medium breath-in
+  event-long breath-in
+
+# Spanish clauses are shorter on average in the shipped front end.
+language es
+  min-words 3
+  max-words 10
+  declination 0.972
+  reset 1.040
+
+# Named styles are data. A style overlays the resolved language values.
+style formal
+  declination 0.955
+  depth-long 1.12
+  pause-seconds 0.06
+
+style narrative
+  min-words 5
+  max-words 14
+  declination 0.970
+  depth-long 1.22
+
+style brisk
+  min-words 3
+  max-words 9
+  max-seconds 3.8
+  declination 0.958
+  depth-long 1.10
