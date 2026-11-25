@@ -2143,4 +2143,102 @@ foreach(bad_args "--song;twinkle;--text;nope" "--song;twinkle;--song-file;x" "--
     endif()
 endforeach()
 
+# ---- #101: data-defined frication envelopes -------------------------------
+set(FRICATION_DIR "${CMAKE_CURRENT_BINARY_DIR}/frication-smoke")
+file(MAKE_DIRECTORY "${FRICATION_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-frication
+    RESULT_VARIABLE list_frication_result
+    OUTPUT_VARIABLE list_frication_output
+    ERROR_VARIABLE list_frication_error
+)
+if(NOT list_frication_result EQUAL 0 OR NOT list_frication_output MATCHES "Frication profiles")
+    message(FATAL_ERROR "formant --list-frication failed: ${list_frication_error}")
+endif()
+foreach(profile s sh f)
+    if(NOT list_frication_output MATCHES "  ${profile}\t")
+        message(FATAL_ERROR "--list-frication omitted profile ${profile}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-frication "${FORMANT_SOURCE_DIR}/data/frication/frication_profiles.txt"
+    RESULT_VARIABLE inspect_frication_result
+    OUTPUT_VARIABLE inspect_frication_output
+    ERROR_VARIABLE inspect_frication_error
+)
+if(NOT inspect_frication_result EQUAL 0 OR NOT inspect_frication_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "formant --inspect-frication failed: ${inspect_frication_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --dump-frication s
+    RESULT_VARIABLE dump_frication_result
+    OUTPUT_VARIABLE dump_frication_output
+    ERROR_VARIABLE dump_frication_error
+)
+if(NOT dump_frication_result EQUAL 0 OR NOT dump_frication_output MATCHES "profile s ")
+    message(FATAL_ERROR "formant --dump-frication failed: ${dump_frication_error}")
+endif()
+file(WRITE "${FRICATION_DIR}/dumped.frication" "${dump_frication_output}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-frication "${FRICATION_DIR}/dumped.frication"
+    RESULT_VARIABLE dumped_inspect_result
+    OUTPUT_VARIABLE dumped_inspect_output
+    ERROR_VARIABLE dumped_inspect_error
+)
+if(NOT dumped_inspect_result EQUAL 0 OR NOT dumped_inspect_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "dumped frication table failed checksum: ${dumped_inspect_error}")
+endif()
+file(READ "${FORMANT_SOURCE_DIR}/data/frication/frication_profiles.txt" frication_builtin)
+file(WRITE "${FRICATION_DIR}/tampered.frication" "${frication_builtin}\n# tamper\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --phonemes "[s ee]" --frication-file "${FRICATION_DIR}/tampered.frication"
+        --output "${FRICATION_DIR}/tampered.wav"
+    RESULT_VARIABLE frication_tamper_result
+    ERROR_VARIABLE frication_tamper_error
+)
+if(frication_tamper_result EQUAL 0 OR NOT frication_tamper_error MATCHES "checksum mismatch")
+    message(FATAL_ERROR "frication checksum mismatch was not reported")
+endif()
+foreach(profile s sh f)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[${profile} ee]" --frication-file
+            "${FORMANT_SOURCE_DIR}/data/frication/frication_profiles.txt"
+            --format raw16 --output "${FRICATION_DIR}/${profile}.raw"
+        RESULT_VARIABLE shaped_result
+        ERROR_VARIABLE shaped_error
+    )
+    if(NOT shaped_result EQUAL 0)
+        message(FATAL_ERROR "--frication-file render failed: ${shaped_error}")
+    endif()
+    file(SHA256 "${FRICATION_DIR}/${profile}.raw" shaped_${profile}_hash)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[${profile} ee]" --frication-file
+            "${FORMANT_SOURCE_DIR}/data/frication/frication_profiles.txt"
+            --format raw16 --output "${FRICATION_DIR}/${profile}-again.raw"
+        RESULT_VARIABLE shaped_again_result
+    )
+    if(NOT shaped_again_result EQUAL 0)
+        message(FATAL_ERROR "repeat --frication-file render failed")
+    endif()
+    file(SHA256 "${FRICATION_DIR}/${profile}-again.raw" shaped_again_hash)
+    if(NOT shaped_${profile}_hash STREQUAL shaped_again_hash)
+        message(FATAL_ERROR "--frication render is not deterministic for ${profile}")
+    endif()
+endforeach()
+if(shaped_s_hash STREQUAL shaped_sh_hash OR shaped_s_hash STREQUAL shaped_f_hash
+        OR shaped_sh_hash STREQUAL shaped_f_hash)
+    message(FATAL_ERROR "frication profiles did not produce distinguishable output")
+endif()
+foreach(bad_args "--frication;s;--frication-file;${FORMANT_SOURCE_DIR}/data/frication/frication_profiles.txt" "--frication;bogus")
+    separate_arguments(bad_command UNIX_COMMAND "${bad_args}")
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[s ee]" ${bad_command} --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE frication_conflict_result
+        ERROR_VARIABLE frication_conflict_error
+    )
+    if(frication_conflict_result EQUAL 0)
+        message(FATAL_ERROR "formant accepted invalid frication options: ${bad_args}")
+    endif()
+endforeach()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

@@ -22,6 +22,7 @@
 #include "formant/formant.h"
 #include "formant/affect.h"
 #include "formant/breath.h"
+#include "formant/frication.h"
 #include "formant/song.h"
 #include "formant/nvv.h"
 #include "formant/version.h"
@@ -111,6 +112,11 @@ Options:
   --list-styles           List affect styles, mapping and emphasis levels
   --dump-style NAME       Print a versioned affect data file for a style
   --inspect-style FILE    Print an affect file's version and checksum status
+  --frication NAME        Use a built-in frication profile (per-place envelope)
+  --frication-file FILE   Layer a versioned .frication table over the built-in one
+  --list-frication        List built-in frication profiles and exit
+  --dump-frication NAME   Print a versioned frication table for a profile
+  --inspect-frication FILE  Inspect a frication file's schema and checksum
   --neural-model FILE     Load a saved neural prosody state
   --neural-train FILE     Train from line-oriented sample records
   --neural-save FILE      Save the trained neural state
@@ -331,6 +337,49 @@ void inspectScale(const std::string &path) {
               << "\n";
 }
 
+void listFrication(const formant::FricationData &data) {
+    std::cout << "Frication profiles (" << data.profiles.size() << "):\n";
+    for (const std::string &name : formant::fricationProfileNames(data)) {
+        const formant::FricationProfile *profile =
+            formant::findFricationProfile(data, name);
+        std::cout << "  " << name << '\t' << profile->partials << " partials\t"
+                  << profile->centerHz << " Hz / " << profile->bandwidthHz
+                  << " Hz\n";
+    }
+    std::cout << "defaults\t" << data.defaultPartials << " partials\t"
+              << data.floor << " floor\t" << data.attackSeconds
+              << " s attack\n";
+}
+
+void inspectFrication(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open frication file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read frication file: " + path);
+    }
+    const std::string text = source.str();
+    const formant::FricationData data = formant::parseFricationData(
+        formant::builtinFricationData(), text, false);
+    const std::string expected = formant::fricationFileChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << data.schema << "\n"
+              << "name\t" << data.name << "\n"
+              << "profiles\t" << data.profiles.size() << "\n"
+              << "partials\t" << data.defaultPartials << "\n"
+              << "checksum\t" << (data.checksum ? *data.checksum : "none")
+              << "\n"
+              << "computed\t" << expected << "\n"
+              << "status\t"
+              << (!data.checksum
+                      ? "unsigned"
+                      : (*data.checksum == expected ? "valid" : "invalid"))
+              << "\n";
+}
+
 void listLanguages() {
     for (const std::string &tag : formant::languageTags()) {
         const Language language = languageFromTag(tag);
@@ -468,6 +517,13 @@ struct Options {
     bool listStyles = false;
     std::string dumpStyle;
     std::string inspectStyleFile;
+    std::string fricationName;
+    std::string fricationFile;
+    bool useFrication = false;
+    bool useFricationFile = false;
+    bool listFrication = false;
+    std::string dumpFrication;
+    std::string inspectFricationFile;
     // Kept so an affect profile can be applied beneath explicit voice flags.
     Voice baseVoice = voicePreset("neutral");
     std::vector<std::function<void(Voice &)>> voiceOverrides;
@@ -633,6 +689,22 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-styles") {
             options.listStyles = true;
+            continue;
+        }
+        if (arg == "--list-frication") {
+            options.listFrication = true;
+            continue;
+        }
+        if (arg == "--dump-frication" ||
+            arg.rfind("--dump-frication=", 0) == 0) {
+            options.dumpFrication =
+                takeValue(i, argc, argv, "--dump-frication");
+            continue;
+        }
+        if (arg == "--inspect-frication" ||
+            arg.rfind("--inspect-frication=", 0) == 0) {
+            options.inspectFricationFile =
+                takeValue(i, argc, argv, "--inspect-frication");
             continue;
         }
         if (arg == "--list-songs") {
@@ -835,6 +907,14 @@ Options parseOptions(int argc, char **argv) {
                    arg.rfind("--style-file=", 0) == 0) {
             options.styleFile = takeValue(i, argc, argv, "--style-file");
             options.useStyleFile = true;
+        } else if (arg == "--frication" || arg.rfind("--frication=", 0) == 0) {
+            options.fricationName = takeValue(i, argc, argv, "--frication");
+            options.useFrication = true;
+        } else if (arg == "--frication-file" ||
+                   arg.rfind("--frication-file=", 0) == 0) {
+            options.fricationFile =
+                takeValue(i, argc, argv, "--frication-file");
+            options.useFricationFile = true;
         } else if (arg == "--neural-model" ||
                    arg.rfind("--neural-model=", 0) == 0) {
             options.neuralModelFile =
@@ -1412,6 +1492,10 @@ int main(int argc, char **argv) {
             throw std::invalid_argument(
                 "use only one of --scale and --scale-file");
         }
+        if (options.useFrication && options.useFricationFile) {
+            throw std::invalid_argument(
+                "use only one of --frication and --frication-file");
+        }
         if (!options.useSong &&
             (options.useScaleName || options.useScaleFile)) {
             throw std::invalid_argument(
@@ -1676,6 +1760,27 @@ int main(int argc, char **argv) {
             status << "Applied affect style '" << affectProfile.name << "'\n";
         }
 
+        // #101: frication envelopes are data too. The built-in per-place table
+        // is embedded; a user file layers individual profiles over it.
+        std::string fricationUser;
+        if (options.useFricationFile) {
+            std::ifstream file(options.fricationFile);
+            if (!file) {
+                throw std::runtime_error("cannot open frication file: " +
+                                         options.fricationFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read frication file: " +
+                                         options.fricationFile);
+            }
+            fricationUser = source.str();
+        }
+        const formant::FricationData fricationData =
+            formant::parseFricationData(formant::builtinFricationData(),
+                                        fricationUser);
+
         formant::NeuralConfig neuralConfig;
         if (options.neuralMaxUnits != 0) {
             neuralConfig.maxUnits = options.neuralMaxUnits;
@@ -1757,6 +1862,20 @@ int main(int argc, char **argv) {
         }
         if (!options.inspectStyleFile.empty()) {
             inspectAffect(options.inspectStyleFile);
+            return 0;
+        }
+
+        if (options.listFrication) {
+            listFrication(fricationData);
+            return 0;
+        }
+        if (!options.dumpFrication.empty()) {
+            std::cout << formant::writeFricationData(fricationData,
+                                                     options.dumpFrication);
+            return 0;
+        }
+        if (!options.inspectFricationFile.empty()) {
+            inspectFrication(options.inspectFricationFile);
             return 0;
         }
 
@@ -2026,6 +2145,27 @@ int main(int argc, char **argv) {
             phonemes = nvv.expand(text, [&](std::string_view run) {
                 return formant::phonemize(run, options.language);
             });
+        }
+
+        if (options.useFrication || options.useFricationFile) {
+            // #101: run after every front end so text, IPA and phoneme inputs
+            // all resolve their fricatives through the same versioned table.
+            formant::FricationData active = fricationData;
+            if (options.useFrication) {
+                const auto found = active.profiles.find(options.fricationName);
+                if (found == active.profiles.end()) {
+                    throw std::invalid_argument("unknown frication profile '" +
+                                                options.fricationName +
+                                                "' (use --list-frication)");
+                }
+                const formant::FricationProfile selected = found->second;
+                active.profiles.clear();
+                active.profiles[options.fricationName] = selected;
+            }
+            const std::size_t applied =
+                formant::applyFrication(phonemes, active);
+            status << "Shaped " << applied
+                   << " fricative segment(s) from the frication table\n";
         }
 
         if (breathing != formant::BreathMode::Off) {

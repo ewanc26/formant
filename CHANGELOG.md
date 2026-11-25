@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.36.0] - 2026-11-25
+
+### Added
+
+- Opt-in frication quality (#101). `--frication NAME` and `--frication-file FILE` apply versioned, per-place spectral envelopes to the unvoiced sine stack: the deterministic seeded partial count scales from twelve to tens (up to 128), and a Lorentzian peak shaped from an authored attack centre/bandwidth to a steady centre/bandwidth multiplies the existing four formants. A broadband floor keeps diffuse fricatives (`f`, `θ`) distinct from concentrated ones (`s`, `ʃ`), and the existing crossfade blends the following vowel into the tail. The shipped table (`data/frication/frication_profiles.txt`, embedded at configure time and installed under `share/formant/frication`) lists 18 ASCII and UTF-8 IPA keys; `--list-frication`, `--dump-frication` and `--inspect-frication` expose it with the shared checksum convention. Default speech remains byte-identical, the renderer is still `O(partial count)` with one phase accumulator and unchanged peak normalisation, and the checksum corpus gains one additive case. Documented in `docs/frication.md`.
+
 ## [0.35.0] - 2026-11-25
 
 ### Added

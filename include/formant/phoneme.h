@@ -55,6 +55,23 @@ struct NoteF0Control {
     bool operator==(const NoteF0Control &) const = default;
 };
 
+// #101: optional per-segment frication descriptor. `partials` is the size of
+// the deterministic unvoiced sine stack; the centre/bandwidth pair shapes its
+// spectrum, evolving from the attack pair to the steady pair over the segment.
+// `floor` keeps a flat broadband fraction outside the peak. Every field is data
+// resolved from the versioned frication table, never from a random source.
+struct FricationControl {
+    int partials = 12;
+    double centerHz = 0.0;
+    double bandwidthHz = 0.0;
+    double attackCenterHz = 0.0;
+    double attackBandwidthHz = 0.0;
+    double attackSeconds = 0.0;
+    double floor = 0.0;
+
+    bool operator==(const FricationControl &) const = default;
+};
+
 struct Phoneme {
     std::string name;
     PhonemeKind kind = PhonemeKind::Silence;
@@ -96,6 +113,13 @@ struct Phoneme {
     // Optional note-F0 control (#123). Added after provenance so every
     // positional aggregate initialiser keeps its original meaning.
     std::optional<NoteF0Control> noteF0;
+
+    // #101: optional per-segment frication control. When set, the unvoiced sine
+    // stack uses the authored partial count and a place-specific spectral
+    // envelope that evolves from its attack shape to its steady shape. Absent
+    // by default, so every ordinary render keeps the original fixed 12-partial
+    // path.
+    std::optional<FricationControl> frication;
 
     bool operator==(const Phoneme &) const = default;
 };

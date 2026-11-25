@@ -1,0 +1,43 @@
+# Built-in frication profiles (#101).
+#
+# Version 1. The unvoiced source is a fixed stack of deterministic sine
+# partials; these rows decide how many partials it holds and where its spectral
+# energy sits. A Lorentzian peak shaped from an attack centre/bandwidth to a
+# steady centre/bandwidth is multiplied by the segment's existing formants.
+# This is data, not synthesis code: no samples, filters or random buffers.
+#
+# A user table layers over this one profile by profile. Retuning one sound (or
+# adding a new phoneme spelling) needs no rebuild and no code change.
+
+schema 1
+name formant-builtin
+author Formant contributors
+description Per-place frication envelopes for the unvoiced sine stack
+license AGPL-3.0-or-later
+version 1.0.0
+
+# Global defaults: partials broadband-floor attack-seconds.
+defaults 48 0.02 0.012
+
+# profile KEY PARTIALS CENTRE BANDWIDTH ATTACK-CENTRE ATTACK-BANDWIDTH
+# centres and bandwidths are Hz. A wide bandwidth is a flat, diffuse fricative.
+profile s 64 5400 2400 4400 3200
+profile z 64 5200 2400 4300 3200
+profile ʃ 56 2900 1400 2300 1800
+profile ʒ 56 2800 1400 2200 1800
+profile sh 56 2900 1400 2300 1800
+profile zh 56 2800 1400 2200 1800
+profile f 48 4600 6200 4600 6200
+profile v 48 4200 5600 4200 5600
+profile θ 48 3400 5400 3400 5400
+profile ð 48 3200 5200 3200 5200
+profile th 48 3400 5400 3400 5400
+profile dh 48 3200 5200 3200 5200
+profile x 56 1900 1300 1600 1100
+profile ɣ 56 1800 1300 1500 1100
+profile h 48 2600 3000 2600 3000
+profile ɦ 48 2500 2900 2500 2900
+profile ch 56 3600 2100 3000 1900
+profile j 56 3400 2000 2800 1800
+
+checksum 379f87c7a218ec1ad2e320b951189b27bee6893c0f8558313d83138df411fa0a

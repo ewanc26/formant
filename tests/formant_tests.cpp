@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "formant/formant.h"
+#include "formant/frication.h"
 #include "formant/nvv.h"
 #include "../src/prosody.h"
 
@@ -4604,6 +4605,105 @@ note G4 0.35 ah transition=portamento glide=0.120s
     CHECK(!findPhoneme("ah")->noteF0.has_value());
 
     // The English paths remain byte-for-byte unchanged.
+    CHECK(names(phonemize("Hello, world.")) == hello);
+
+    // ---- #101: data-defined frication envelopes -------------------------
+    const FricationData builtin = parseFricationData(builtinFricationData());
+    CHECK(builtin.schema == kCurrentFricationSchema);
+    CHECK(builtin.checksum.has_value());
+    CHECK(*builtin.checksum == fricationFileChecksum(builtinFricationData()));
+    CHECK(builtin.profiles.size() >= 18);
+    CHECK(builtin.defaultPartials >= 12);
+    CHECK(builtin.defaultPartials <= kMaxFricationPartials);
+    const FricationProfile *sProfile = findFricationProfile(builtin, "s");
+    const FricationProfile *shProfile = findFricationProfile(builtin, "sh");
+    const FricationProfile *fProfile = findFricationProfile(builtin, "f");
+    CHECK(sProfile != nullptr);
+    CHECK(shProfile != nullptr);
+    CHECK(fProfile != nullptr);
+    // Place-specific peaks really are data, and distinct from each other.
+    CHECK(sProfile->centerHz > shProfile->centerHz);
+    CHECK(fProfile->bandwidthHz > sProfile->bandwidthHz);
+    CHECK(findFricationProfile(builtin, "S") == nullptr);
+    CHECK(!fricationProfileNames(builtin).empty());
+
+    // Serialisation round-trips through the documented checksum convention.
+    const std::string dumped = writeFricationData(builtin, "s");
+    const FricationData roundTrip = parseFricationData(dumped);
+    CHECK(roundTrip.profiles.size() == 1);
+    CHECK(roundTrip.profiles.at("s") == *sProfile);
+    CHECK(roundTrip.defaultPartials == builtin.defaultPartials);
+
+    // A user file layers over the built-in table without replacing it.
+    const std::string overlay =
+        "schema 1\nname unit-overlay\nprofile s 96 6000 2000 5000 1800\n" +
+        std::string("checksum ") +
+        fricationFileChecksum(
+            "schema 1\nname unit-overlay\nprofile s 96 6000 2000 5000 1800\n") +
+        "\n";
+    const FricationData layered =
+        parseFricationData(builtinFricationData(), overlay);
+    CHECK(layered.profiles.size() == builtin.profiles.size());
+    CHECK(layered.profiles.at("s").partials == 96);
+    CHECK(layered.profiles.at("sh").partials == shProfile->partials);
+    CHECK(layered.name == "unit-overlay");
+
+    bool badFricationSchema = false;
+    try {
+        (void)parseFricationData("schema 99\n");
+    } catch (const std::invalid_argument &error) {
+        badFricationSchema =
+            std::string(error.what()).find("unsupported frication schema") !=
+            std::string::npos;
+    }
+    CHECK(badFricationSchema);
+    bool badFricationChecksum = false;
+    try {
+        (void)parseFricationData(builtinFricationData(),
+                                 "profile s 64 5400 2400 4400 3200\nchecksum "
+                                 "000000000000000000000000000000000000000000000"
+                                 "0000000000000000000\n");
+    } catch (const std::invalid_argument &error) {
+        badFricationChecksum =
+            std::string(error.what()).find("checksum mismatch") !=
+            std::string::npos;
+    }
+    CHECK(badFricationChecksum);
+
+    // Controls attach only to fricatives with a matching profile.
+    std::vector<Phoneme> fricatives = {*findPhoneme("s"), *findPhoneme("ee"),
+                                       *findPhoneme("sh")};
+    CHECK(!fricatives[0].frication.has_value());
+    CHECK(applyFrication(fricatives, builtin) == 2);
+    CHECK(fricatives[0].frication.has_value());
+    CHECK(!fricatives[1].frication.has_value());
+    CHECK(fricatives[2].frication.has_value());
+    CHECK(fricatives[0].frication->partials == sProfile->partials);
+    CHECK(fricatives[0].frication->centerHz == sProfile->centerHz);
+
+    // Same data, same bytes: the shaped path is still pure deterministic sines.
+    const Voice fricVoice = voicePreset("neutral");
+    const Synthesizer synth(fricVoice);
+    const auto renderFricative = [&](std::string_view name) {
+        std::vector<Phoneme> phrase = {*findPhoneme(name), *findPhoneme("ee")};
+        CHECK(applyFrication(phrase, builtin) == 1);
+        return synth.render(phrase, 22050);
+    };
+    const std::vector<float> sRender = renderFricative("s");
+    const std::vector<float> sRenderAgain = renderFricative("s");
+    const std::vector<float> shRender = renderFricative("sh");
+    const std::vector<float> fRender = renderFricative("f");
+    CHECK(sRender.size() == sRenderAgain.size());
+    CHECK(std::equal(sRender.begin(), sRender.end(), sRenderAgain.begin(),
+                     [](float a, float b) {
+                         return std::memcmp(&a, &b, sizeof(float)) == 0;
+                     }));
+    CHECK(!std::equal(sRender.begin(), sRender.end(), shRender.begin()));
+    CHECK(!std::equal(sRender.begin(), sRender.end(), fRender.begin()));
+    CHECK(!std::equal(shRender.begin(), shRender.end(), fRender.begin()));
+    // No control means the fixed legacy stack, so the speech path is identical.
+    const std::vector<Phoneme> plain = {*findPhoneme("s"), *findPhoneme("ee")};
+    CHECK(synth.render(plain, 22050) != sRender);
     CHECK(names(phonemize("Hello, world.")) == hello);
 
     if (failures == 0) {

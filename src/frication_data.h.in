@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+// Generated from data/frication/frication_profiles.txt by CMake. The shipped
+// profiles are data, not synthesis code; embedding keeps the CLI dependency-free.
+namespace formant::detail {
+inline constexpr std::string_view kBuiltinFricationData = R"FRICATIONDATA(@FRICATION_BUILTIN_DATA@)FRICATIONDATA";
+} // namespace formant::detail

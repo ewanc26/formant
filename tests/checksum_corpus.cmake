@@ -38,6 +38,7 @@ set(CASES
     "sample_rate"
     "dither"
     "song"
+    "frication"
 )
 
 set(ARGS_default "")
@@ -66,6 +67,8 @@ set(ARGS_format_raw16 --format raw16 --text "Hello, world.")
 set(ARGS_sample_rate --sample-rate 22050 --text "Hello, world.")
 set(ARGS_dither --dither 42 --format raw16 --text "Hello, world.")
 set(ARGS_song --song twinkle --sample-rate 22050)
+set(ARGS_frication --phonemes "[s ee]" --frication-file
+    "${FORMANT_SOURCE_DIR}/data/frication/frication_profiles.txt")
 
 function(formant_read_corpus out_var)
     if(NOT EXISTS "${CORPUS_FILE}")

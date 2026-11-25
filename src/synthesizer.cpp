@@ -43,9 +43,13 @@ struct AudioDraft {
     bool rising = false;
 };
 
-std::vector<NoisePartial> makeNoisePartials(int sampleRate) {
+// #101: the default count stays 12, so an ordinary render produces the exact
+// same seeded frequencies and phases as every previous release. A frication
+// table can request more partials; the first twelve are unchanged because the
+// LCG is seeded and advanced identically.
+std::vector<NoisePartial> makeNoisePartials(int sampleRate, int count = 12) {
     std::vector<NoisePartial> partials;
-    partials.reserve(12);
+    partials.reserve(count);
 
     uint32_t state = 0x9e3779b9u;
     auto next = [&state]() {
@@ -54,7 +58,7 @@ std::vector<NoisePartial> makeNoisePartials(int sampleRate) {
     };
 
     const double ceiling = sampleRate * 0.45;
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < count; ++i) {
         const double spread = static_cast<double>(next() % 9000);
         NoisePartial partial;
         partial.frequency = std::min(1200.0 + spread, ceiling);
@@ -126,7 +130,18 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
     // normalisation can overflow with a large gain, leaving an infinite peak
     // and NaN samples after the inf * 0 scaling step.
     draft.raw.assign(static_cast<size_t>(draft.totalSamples), 0.0);
-    const std::vector<NoisePartial> partials = makeNoisePartials(sampleRate);
+    // #101: one stack serves the whole utterance. Frication profiles only ever
+    // ask for more partials than the legacy twelve, and the seeded generator
+    // produces an identical prefix, so a plain render stays byte-identical.
+    int maxPartials = 12;
+    for (const Segment &segment : segments) {
+        if (segment.phoneme->frication) {
+            maxPartials =
+                std::max(maxPartials, segment.phoneme->frication->partials);
+        }
+    }
+    const std::vector<NoisePartial> partials =
+        makeNoisePartials(sampleRate, maxPartials);
 
     for (const Segment &segment : segments) {
         const Phoneme &phoneme = *segment.phoneme;
@@ -223,14 +238,62 @@ AudioDraft renderDraft(const Voice &voice, const std::vector<Phoneme> &phonemes,
                 const double time =
                     static_cast<double>(s) / static_cast<double>(sampleRate);
                 double sum = 0.0;
-                for (const NoisePartial &partial : partials) {
-                    sum +=
-                        detail::formantResponse(partial.frequency, formants) *
-                        detail::sine(2.0 * detail::kPi * partial.frequency *
-                                         time +
-                                     partial.phase);
+                if (phoneme.frication) {
+                    // #101: a data-defined spectral envelope over the same
+                    // deterministic sine stack. Interpolating the centre and
+                    // bandwidth from their attack values gives the fricative a
+                    // trajectory, and the segment crossfade above already lets
+                    // the following vowel's formants blend into the tail.
+                    const FricationControl &frication = *phoneme.frication;
+                    const int count = std::min<int>(
+                        frication.partials, static_cast<int>(partials.size()));
+                    const double elapsed =
+                        static_cast<double>(s - segment.start) /
+                        static_cast<double>(sampleRate);
+                    const double progress =
+                        frication.attackSeconds > 0.0
+                            ? detail::smooth(std::min(
+                                  1.0, elapsed / frication.attackSeconds))
+                            : 1.0;
+                    const double centre =
+                        frication.attackCenterHz +
+                        (frication.centerHz - frication.attackCenterHz) *
+                            progress;
+                    const double width =
+                        frication.attackBandwidthHz +
+                        (frication.bandwidthHz - frication.attackBandwidthHz) *
+                            progress;
+                    double weightSum = 0.0;
+                    for (int i = 0; i < count; ++i) {
+                        const NoisePartial &partial =
+                            partials[static_cast<size_t>(i)];
+                        const double distance =
+                            (partial.frequency - centre) / width;
+                        const double weight =
+                            frication.floor + (1.0 - frication.floor) /
+                                                  (1.0 + distance * distance);
+                        weightSum += weight;
+                        sum += detail::formantResponse(partial.frequency,
+                                                       formants) *
+                               weight *
+                               detail::sine(2.0 * detail::kPi *
+                                                partial.frequency * time +
+                                            partial.phase);
+                    }
+                    // Normalise by the envelope's own weight so changing the
+                    // spectral shape does not simply change loudness. Peak
+                    // normalisation of the finished buffer is untouched.
+                    noise = 0.6 * sum / std::max(1.0, weightSum);
+                } else {
+                    for (const NoisePartial &partial : partials) {
+                        sum += detail::formantResponse(partial.frequency,
+                                                       formants) *
+                               detail::sine(2.0 * detail::kPi *
+                                                partial.frequency * time +
+                                            partial.phase);
+                    }
+                    noise = 0.6 * sum / static_cast<double>(partials.size());
                 }
-                noise = 0.6 * sum / static_cast<double>(partials.size());
             }
 
             double sample = voice.gain * envelope * phoneme.amplitude *

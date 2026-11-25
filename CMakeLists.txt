@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   formant
-  VERSION 0.35.0
+  VERSION 0.36.0
   DESCRIPTION "A customisable sine-wave voice synthesis engine"
   LANGUAGES CXX
 )
@@ -41,6 +41,7 @@ add_library(formant_core STATIC
     src/nvv.cpp
     src/breath.cpp
     src/affect.cpp
+    src/frication.cpp
     src/neural.cpp
     src/timing.cpp
     src/wav.cpp
@@ -95,6 +96,15 @@ file(READ data/affect/affect_styles.txt AFFECT_BUILTIN_DATA)
 configure_file(
     src/affect_data.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/affect_data.h
+    @ONLY
+)
+
+# #101: frication profiles are inspectable data too. The built-in per-place
+# envelopes are embedded at configure time; user tables layer over them.
+file(READ data/frication/frication_profiles.txt FRICATION_BUILTIN_DATA)
+configure_file(
+    src/frication_data.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/frication_data.h
     @ONLY
 )
 
@@ -228,6 +238,7 @@ if(FORMANT_INSTALL)
     install(DIRECTORY data/nvv/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/nvv)
     install(DIRECTORY data/breath/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/breath)
     install(DIRECTORY data/affect/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/affect)
+    install(DIRECTORY data/frication/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/frication)
     install(DIRECTORY data/songs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/songs)
     install(DIRECTORY data/scales/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/scales)
 endif()
