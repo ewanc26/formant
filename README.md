@@ -24,7 +24,7 @@ language front end (English, Spanish) or articulatory IPA mapping
                                        │
              ┌─────────────────────────┴──────────────────────────┐
              ▼                                                     ▼
-   voiced: harmonics of F0                unvoiced: 12 detuned sine
+   voiced: harmonics of F0                unvoiced: deterministic sine
    each amplitude shaped by               partials shaped by the same
    four resonant formants                 four formants
              └─────────────────────────┬──────────────────────────┘
@@ -32,7 +32,7 @@ language front end (English, Spanish) or articulatory IPA mapping
                           interpolated PCM → 16-bit WAV
 ```
 
-A vowel is four resonances of the vocal tract. The glottal source is a stack of sine waves at multiples of the fundamental frequency; each harmonic is weighted by how close it sits to a formant. Fricatives and stops use a fixed set of sine partials with pseudo-random phases instead of white noise, so every sound in the output is still a sine wave. Formant targets are blended across phoneme boundaries to avoid clicks and to give coarticulation. Nasal sounds add spectral zeros (anti-formants) to the same harmonic weighting, giving the notches a peak-only model cannot produce.
+A vowel is four resonances of the vocal tract. The glottal source is a stack of sine waves at multiples of the fundamental frequency; each harmonic is weighted by how close it sits to a formant. Fricatives and stops use a fixed set of sine partials with deterministic pseudo-random phases instead of white noise, so every sound in the output is still a sine wave. Opt-in `--frication` data can scale that stack and shape each place of articulation with an evolving spectral envelope (see [docs/frication.md](docs/frication.md)); the default remains byte-identical. Formant targets are blended across phoneme boundaries to avoid clicks and to give coarticulation. Nasal sounds add spectral zeros (anti-formants) to the same harmonic weighting, giving the notches a peak-only model cannot produce.
 
 The result is deliberately synthetic: it sounds like a small speaking machine, not a human. The trade is that the whole engine is a few thousand lines of dependency-free C++ and runs anywhere you can compile it.
 
@@ -457,13 +457,13 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 - User-defined language files cover grapheme maps, word lexicons, inventories, per-phoneme realization overrides, nearest-feature inventory fallback and language-level typology defaults (`rate`, `stress=fixed`; `tone`/`rhythm` are recorded metadata). Ordered rewrite rules are supported; free tone/stress assignment remains unimplemented. Seeded phonotactic word generation is available separately via `--gibberish` (see [docs/gibberish.md](docs/gibberish.md)).
 - Only English and Spanish text front ends are built in. The IPA and X-SAMPA front ends remain language-independent.
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
-- Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds are approximate.
+- Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds remain approximate, but opt-in `--frication` data can scale the partial count and give each place a distinct evolving spectral envelope (see [docs/frication.md](docs/frication.md)).
 - Nasality is an acoustic approximation: nasal stops and nasalized vowels get two place-dependent spectral zeros rather than a solved vocal-tract area function, and `voice.nasality` is a single fixed notch.
 - Output is mono PCM. Stereo, streaming and real-time playback are up to the embedder.
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/frication.md](docs/frication.md) for data-defined frication envelopes, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 
