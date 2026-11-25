@@ -1,0 +1,30 @@
+# Formant rhythm profiles (#144), version 1
+#
+# Target bands come from Grabe and Low (2002); see PROVENANCE.md. Each rhythm
+# line is:
+#   rhythm NAME CLASS V-NPVI-MIN V-NPVI-MAX I-RPVI-MIN I-RPVI-MAX STRENGTH MIN-FACTOR MAX-FACTOR
+# nPVI is dimensionless (x100); rPVI is in milliseconds. Strength is the
+# per-iteration fraction of the gap closed, and the factors bound how far any
+# individual phoneme duration may move from its authored value.
+schema 1
+name formant-rhythm
+author Formant contributors
+description Published rhythm-class targets for stress, syllable and mora timing
+license AGPL-3.0-or-later
+version 1.0.0
+
+# Generic class targets, deliberately wider than a single speaker or study.
+rhythm stress stress 52 66 50 65 1.0 0.6 1.8
+about stress Gradient stress-timing: high vocalic and intervocalic variability
+rhythm syllable syllable 28 44 46 58 1.0 0.6 1.8
+about syllable Gradient syllable-timing: more even vocalic intervals
+rhythm mora mora 38 44 56 66 0.8 0.7 1.6
+about mora Mora-timing: even vocalic intervals with longer medial consonant spans
+
+# Built-in language calibrations from the same source.
+rhythm en stress 52 62 58 68 1.0 0.6 1.8
+about en British English: nPVI 57.2, intervocalic rPVI 64.1 ms
+rhythm es syllable 26 34 50 62 1.0 0.6 1.8
+about es Spanish: nPVI 29.7, intervocalic rPVI 57.7 ms
+
+checksum 105f414132d58838d3f85d669c574f1ac58e4341f23b05398f51b0a6e3d6bd11

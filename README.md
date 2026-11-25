@@ -284,7 +284,7 @@ const auto phonemes = formant::phonemize("Velta shael.", velta);
 
 Rewrite rules use SCA-style `pattern > replacement / environment` bodies, class sets for vowels, consonants or arbitrary categories, `#` word edges, and `0` for deletion. Grapheme rules run before lookup; phoneme rules run after mapping and before realization overrides. `--trace` reports every application.
 
-A `strict` inventory rejects undeclared phonemes and names the nearest declaration; in `lenient` mode an undeclared phoneme falls back to its nearest declared neighbour with a warning. `tone`, `stress`, `rhythm` and `rate` carry language-level typology as data (`rate` scales durations, `stress=fixed` gives each word a default initial stress). `--list-phonemes` reports the active conlang's inventory.
+A `strict` inventory rejects undeclared phonemes and names the nearest declaration; in `lenient` mode an undeclared phoneme falls back to its nearest declared neighbour with a warning. `tone`, `stress`, `rhythm` and `rate` carry language-level typology as data (`rate` scales durations, `stress=fixed` gives each word a default initial stress). Language files can also declare rhythm PVI dials, consumed when `--rhythm auto` is selected. `--list-phonemes` reports the active conlang's inventory.
 
 See [docs/language-files.md](docs/language-files.md) for the grammar, rule matching, trace output, fallback and override semantics. [`examples/velta.lang`](examples/velta.lang) and [`examples/thalen.lang`](examples/thalen.lang) are complete examples.
 
@@ -405,6 +405,23 @@ build/formant --register-file kargyraa.register --phonemes "[ee]" --output share
 
 Use one of `--register NAME` and `--register-file FILE`. A shared file defines exactly one preset; unknown names, malformed rows and checksum mismatches fail early. The five numeric levers are also ordinary voice parameters, so the same effect can travel in a voice file.
 
+### Rhythm classes
+
+`--rhythm` and `--rhythm-file` are opt-in duration profiles that nudge vocalic nPVI and intervocalic rPVI toward published rhythm-class bands. Only phoneme durations change; identity, formants, F0 and coarticulation are preserved, and no flag means byte-identical, sine-only defaults.
+
+```sh
+build/formant --text "The quick brown fox." --rhythm stress --output stress.wav
+build/formant --lang es --text "Una línea." --rhythm auto --output es-rhythm.wav
+build/formant --list-rhythms
+build/formant --dump-rhythm mora > mora.rhythm
+build/formant --inspect-rhythm mora.rhythm
+build/formant --text "A line." --rhythm-file mora.rhythm --output shared.wav
+```
+
+Use one of `--rhythm NAME` and `--rhythm-file FILE`, not both; song mode rejects rhythm. `--rhythm auto` prefers language-file dials, then built-in `en`/`es` calibration, then the generic class profile.
+
+See [docs/rhythm-classes.md](docs/rhythm-classes.md) for the data format, target bands, provenance and verification.
+
 ### Customisation
 
 A voice is a plain `formant::Voice` struct. Change any field, or start from a preset:
@@ -477,7 +494,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 ## Limitations
 
 - The English text layer is a small lexicon plus letter rules (including `-tion`, `-sion`, `-ing` and common contractions), not a full G2P model. The Spanish layer is a rule-based Castilian front end without a lexicon; dialect variation and allophonic realisations such as [β ð ɣ] are not modelled. IPA and X-SAMPA input avoid the text layer entirely.
-- User-defined language files cover grapheme maps, word lexicons, inventories, per-phoneme realization overrides, nearest-feature inventory fallback and language-level typology defaults (`rate`, `stress=fixed`; `tone`/`rhythm` are recorded metadata). Ordered rewrite rules are supported; free tone/stress assignment remains unimplemented. Seeded phonotactic word generation is available separately via `--gibberish` (see [docs/gibberish.md](docs/gibberish.md)).
+- User-defined language files cover grapheme maps, word lexicons, inventories, per-phoneme realization overrides, nearest-feature inventory fallback and language-level typology defaults (`rate`, `stress=fixed`; `tone` is recorded metadata, while `rhythm` dials are active only with `--rhythm auto` or an explicit profile). Ordered rewrite rules are supported; free tone/stress assignment remains unimplemented. Seeded phonotactic word generation is available separately via `--gibberish` (see [docs/gibberish.md](docs/gibberish.md)).
 - Only English and Spanish text front ends are built in. The IPA and X-SAMPA front ends remain language-independent.
 - IPA covers the official chart plus common extensions: all vowels, pulmonic and non-pulmonic consonants, diacritics, tones and suprasegmentals. Clicks, trills, ejectives and rare extensions are approximated by sine partials rather than modelled as true airstream mechanisms.
 - Sine-only synthesis cannot produce true fricative noise; loud `s` and `f` sounds remain approximate, but opt-in `--frication` data can scale the partial count and give each place a distinct evolving spectral envelope (see [docs/frication.md](docs/frication.md)).
@@ -486,7 +503,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/frication.md](docs/frication.md) for data-defined frication envelopes, [docs/registers.md](docs/registers.md) for overtone and subharmonic registers, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/frication.md](docs/frication.md) for data-defined frication envelopes, [docs/registers.md](docs/registers.md) for overtone and subharmonic registers, [docs/rhythm-classes.md](docs/rhythm-classes.md) for opt-in rhythm-class profiles, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

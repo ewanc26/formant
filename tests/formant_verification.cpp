@@ -774,6 +774,105 @@ void verifyRegisters() {
               << "x neighbours, " << number(peak / plainPeak) << "x plain\n";
 }
 
+// #144: opt-in rhythm targets must move the measured PVI of the same duration
+// schedule that drives rendering. The harness checks each built-in class band,
+// silence/note exemptions and byte-identical repeated renders.
+void verifyRhythm() {
+    const formant::RhythmData data =
+        formant::parseRhythmData(formant::builtinRhythmData());
+    const formant::RhythmProfile *stress =
+        formant::findRhythmProfile(data, "stress");
+    const formant::RhythmProfile *syllable =
+        formant::findRhythmProfile(data, "syllable");
+    const formant::RhythmProfile *mora =
+        formant::findRhythmProfile(data, "mora");
+    if (stress == nullptr || syllable == nullptr || mora == nullptr) {
+        std::cerr << "FAIL missing built-in rhythm profiles\n";
+        ++failures;
+        return;
+    }
+
+    const auto vowel = [](double duration) {
+        formant::Phoneme result = *formant::findPhoneme("ee");
+        result.duration = duration;
+        return result;
+    };
+    const auto consonant = [](double duration) {
+        formant::Phoneme result = *formant::findPhoneme("s");
+        result.duration = duration;
+        return result;
+    };
+    const std::vector<formant::Phoneme> script = {vowel(0.10), consonant(0.10),
+                                                  vowel(0.16), consonant(0.12),
+                                                  vowel(0.10)};
+    const formant::RhythmMetrics original = formant::measureRhythm(script);
+    CHECK(original.vocalicIntervals == 3);
+    CHECK(original.intervocalicIntervals == 2);
+    CHECK(original.vocalicNPvi > 0.0);
+    CHECK(original.intervocalicRPvi > 0.0);
+
+    const formant::RhythmProfile *profiles[] = {stress, syllable, mora};
+    for (const formant::RhythmProfile *profile : profiles) {
+        const std::vector<formant::Phoneme> adjusted =
+            formant::applyRhythm(script, *profile);
+        const formant::RhythmMetrics measured =
+            formant::measureRhythm(adjusted);
+        CHECK(adjusted.size() == script.size());
+        CHECK(measured.vocalicNPvi >= profile->vocalicNPviMin - 0.5);
+        CHECK(measured.vocalicNPvi <= profile->vocalicNPviMax + 0.5);
+        CHECK(measured.intervocalicRPvi >= profile->intervocalicRPviMin - 0.5);
+        CHECK(measured.intervocalicRPvi <= profile->intervocalicRPviMax + 0.5);
+        CHECK(measured.vocalicNPvi != original.vocalicNPvi);
+        CHECK(measured.intervocalicRPvi != original.intervocalicRPvi);
+        CHECK(std::all_of(
+            adjusted.begin(), adjusted.end(), [](const formant::Phoneme &p) {
+                return std::isfinite(p.duration) && p.duration > 0.0;
+            }));
+        const formant::Synthesizer synth(formant::voicePreset("neutral"));
+        CHECK(synth.render(adjusted, 44100) == synth.render(adjusted, 44100));
+        std::cout << "rhythm " << profile->name << ": V nPVI "
+                  << number(measured.vocalicNPvi) << " ("
+                  << number(profile->vocalicNPviMin) << '-'
+                  << number(profile->vocalicNPviMax) << "), I rPVI "
+                  << number(measured.intervocalicRPvi) << " ms ("
+                  << number(profile->intervocalicRPviMin) << '-'
+                  << number(profile->intervocalicRPviMax) << ")\n";
+    }
+
+    std::vector<formant::Phoneme> exempt = script;
+    exempt[1].source = "breath:auto";
+    exempt[3].noteF0 = formant::NoteF0Control{};
+    const std::vector<formant::Phoneme> exemptAfter =
+        formant::applyRhythm(exempt, *stress);
+    CHECK(exemptAfter[1] == exempt[1]);
+    CHECK(exemptAfter[3] == exempt[3]);
+
+    formant::RhythmProfile inert = *stress;
+    inert.strength = 0.0;
+    CHECK(formant::applyRhythm(script, inert) == script);
+
+    // The acceptance case uses one text under different rhythm settings. The
+    // schedule that drives audio must move in the direction each class names.
+    const std::vector<formant::Phoneme> text =
+        formant::phonemize("The quick brown fox jumps over the lazy dog.");
+    const formant::RhythmMetrics textBaseline = formant::measureRhythm(text);
+    const formant::RhythmMetrics textStress =
+        formant::measureRhythm(formant::applyRhythm(text, *stress));
+    const formant::RhythmMetrics textSyllable =
+        formant::measureRhythm(formant::applyRhythm(text, *syllable));
+    CHECK(textBaseline.vocalicIntervals > 2);
+    CHECK(textStress.vocalicNPvi > textBaseline.vocalicNPvi);
+    CHECK(textSyllable.vocalicNPvi > textBaseline.vocalicNPvi);
+    CHECK(textStress.vocalicNPvi > textSyllable.vocalicNPvi);
+    CHECK(textStress.vocalicNPvi >= stress->vocalicNPviMin - 0.5);
+    CHECK(textStress.vocalicNPvi <= stress->vocalicNPviMax + 0.5);
+    CHECK(textSyllable.vocalicNPvi >= syllable->vocalicNPviMin - 0.5);
+    CHECK(textSyllable.vocalicNPvi <= syllable->vocalicNPviMax + 0.5);
+    std::cout << "rhythm same-text: V nPVI " << number(textBaseline.vocalicNPvi)
+              << " baseline, " << number(textStress.vocalicNPvi) << " stress, "
+              << number(textSyllable.vocalicNPvi) << " syllable\n";
+}
+
 void printHelp() {
     std::cout << "usage: formant_verification [options]\n"
                  "  --baseline PATH      compare metrics with PATH\n"
@@ -833,6 +932,7 @@ int main(int argc, char **argv) {
     verifyProsodyDirect();
     verifyIntonation();
     verifyRegisters();
+    verifyRhythm();
     const std::vector<Case> cases = corpus();
     std::vector<ReportRow> rows;
     rows.reserve(cases.size());

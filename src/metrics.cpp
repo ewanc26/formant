@@ -698,4 +698,107 @@ compareFormants(const std::array<FormantPeak, 2> &peaks,
     return metrics;
 }
 
+namespace {
+
+bool rhythmEligible(const Phoneme &phoneme) {
+    if (phoneme.kind == PhonemeKind::Silence || !(phoneme.duration > 0.0) ||
+        !std::isfinite(phoneme.duration)) {
+        return false;
+    }
+    if (phoneme.source.rfind("breath:", 0) == 0 ||
+        phoneme.source.rfind("nvv:", 0) == 0) {
+        return false;
+    }
+    // Singing and prosody-direct own their timing and F0 outright.
+    return !phoneme.noteF0 && !phoneme.f0StartHz && !phoneme.f0EndHz;
+}
+
+bool vocalic(const Phoneme &phoneme) {
+    return phoneme.kind == PhonemeKind::Voiced && phoneme.voiced;
+}
+
+double normalizedPvi(const std::vector<double> &durations) {
+    if (durations.size() < 2) {
+        return 0.0;
+    }
+    double sum = 0.0;
+    for (std::size_t i = 1; i < durations.size(); ++i) {
+        sum += 200.0 * std::abs(durations[i - 1] - durations[i]) /
+               (durations[i - 1] + durations[i]);
+    }
+    return sum / static_cast<double>(durations.size() - 1);
+}
+
+double rawPviMs(const std::vector<double> &durations) {
+    if (durations.size() < 2) {
+        return 0.0;
+    }
+    double sum = 0.0;
+    for (std::size_t i = 1; i < durations.size(); ++i) {
+        sum += std::abs(durations[i - 1] - durations[i]) * 1000.0;
+    }
+    return sum / static_cast<double>(durations.size() - 1);
+}
+
+} // namespace
+
+RhythmMetrics measureRhythm(const std::vector<Phoneme> &phonemes) {
+    std::vector<double> vocalicIntervals;
+    std::vector<double> intervocalicIntervals;
+    double vocalicSeconds = 0.0;
+    double intervocalicSeconds = 0.0;
+    bool inVocalic = false;
+    bool inIntervocalic = false;
+    bool sawVocalic = false;
+
+    const auto flushVocalic = [&]() {
+        if (inVocalic) {
+            vocalicIntervals.push_back(vocalicSeconds);
+            vocalicSeconds = 0.0;
+            inVocalic = false;
+        }
+    };
+    const auto flushIntervocalic = [&]() {
+        if (inIntervocalic) {
+            intervocalicIntervals.push_back(intervocalicSeconds);
+            intervocalicSeconds = 0.0;
+            inIntervocalic = false;
+        }
+    };
+
+    for (const Phoneme &phoneme : phonemes) {
+        if (!rhythmEligible(phoneme)) {
+            flushVocalic();
+            flushIntervocalic();
+            sawVocalic = false;
+            continue;
+        }
+        if (vocalic(phoneme)) {
+            flushIntervocalic();
+            if (!inVocalic) {
+                inVocalic = true;
+            }
+            vocalicSeconds += phoneme.duration;
+            sawVocalic = true;
+        } else {
+            flushVocalic();
+            if (sawVocalic) {
+                if (!inIntervocalic) {
+                    inIntervocalic = true;
+                }
+                intervocalicSeconds += phoneme.duration;
+            }
+        }
+    }
+    // A trailing consonant span is not intervocalic; drop it.
+    flushVocalic();
+
+    RhythmMetrics metrics;
+    metrics.vocalicNPvi = normalizedPvi(vocalicIntervals);
+    metrics.intervocalicRPvi = rawPviMs(intervocalicIntervals);
+    metrics.vocalicIntervals = vocalicIntervals.size();
+    metrics.intervocalicIntervals = intervocalicIntervals.size();
+    return metrics;
+}
+
 } // namespace formant

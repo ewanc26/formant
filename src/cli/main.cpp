@@ -24,6 +24,7 @@
 #include "formant/breath.h"
 #include "formant/frication.h"
 #include "formant/register.h"
+#include "formant/rhythm.h"
 #include "formant/song.h"
 #include "formant/nvv.h"
 #include "formant/version.h"
@@ -123,6 +124,11 @@ Options:
   --list-registers        List built-in register presets and exit
   --dump-register NAME    Print a versioned register table for a preset
   --inspect-register FILE Inspect a register file's schema and checksum
+  --rhythm NAME           Use a rhythm profile: stress, syllable, mora, en, es, auto
+  --rhythm-file FILE      Apply one versioned .txt rhythm profile
+  --list-rhythms          List built-in rhythm profiles and exit
+  --dump-rhythm NAME      Print a versioned rhythm table for a profile
+  --inspect-rhythm FILE   Inspect a rhythm file's schema and checksum
   --neural-model FILE     Load a saved neural prosody state
   --neural-train FILE     Train from line-oriented sample records
   --neural-save FILE      Save the trained neural state
@@ -402,6 +408,47 @@ void inspectRegister(const std::string &path) {
               << "\n";
 }
 
+void listRhythms(const formant::RhythmData &data) {
+    std::cout << "Rhythm profiles (" << data.profiles.size() << "):\n";
+    for (const std::string &name : formant::rhythmProfileNames(data)) {
+        const formant::RhythmProfile *profile =
+            formant::findRhythmProfile(data, name);
+        std::cout << "  " << name << '\t' << profile->rhythmClass << "\tV "
+                  << profile->vocalicNPviMin << '-' << profile->vocalicNPviMax
+                  << "\tI " << profile->intervocalicRPviMin << '-'
+                  << profile->intervocalicRPviMax << " ms\tstrength "
+                  << profile->strength << '\n';
+    }
+}
+
+void inspectRhythm(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open rhythm file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read rhythm file: " + path);
+    }
+    const std::string text = source.str();
+    const formant::RhythmData data =
+        formant::parseRhythmData(formant::builtinRhythmData(), text, false);
+    const std::string expected = formant::rhythmFileChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << data.schema << "\n"
+              << "name\t" << data.name << "\n"
+              << "profiles\t" << data.profiles.size() << "\n"
+              << "checksum\t" << (data.checksum ? *data.checksum : "none")
+              << "\n"
+              << "computed\t" << expected << "\n"
+              << "status\t"
+              << (!data.checksum
+                      ? "unsigned"
+                      : (*data.checksum == expected ? "valid" : "invalid"))
+              << "\n";
+}
+
 void inspectFrication(const std::string &path) {
     std::ifstream file(path);
     if (!file) {
@@ -582,6 +629,13 @@ struct Options {
     bool listRegisters = false;
     std::string dumpRegister;
     std::string inspectRegisterFile;
+    std::string rhythmName;
+    std::string rhythmFile;
+    bool useRhythm = false;
+    bool useRhythmFile = false;
+    bool listRhythms = false;
+    std::string dumpRhythm;
+    std::string inspectRhythmFile;
     // Kept so an affect profile can be applied beneath explicit voice flags.
     Voice baseVoice = voicePreset("neutral");
     std::vector<std::function<void(Voice &)>> voiceOverrides;
@@ -755,6 +809,20 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-registers") {
             options.listRegisters = true;
+            continue;
+        }
+        if (arg == "--list-rhythms") {
+            options.listRhythms = true;
+            continue;
+        }
+        if (arg == "--dump-rhythm" || arg.rfind("--dump-rhythm=", 0) == 0) {
+            options.dumpRhythm = takeValue(i, argc, argv, "--dump-rhythm");
+            continue;
+        }
+        if (arg == "--inspect-rhythm" ||
+            arg.rfind("--inspect-rhythm=", 0) == 0) {
+            options.inspectRhythmFile =
+                takeValue(i, argc, argv, "--inspect-rhythm");
             continue;
         }
         if (arg == "--dump-register" || arg.rfind("--dump-register=", 0) == 0) {
@@ -994,6 +1062,13 @@ Options parseOptions(int argc, char **argv) {
                    arg.rfind("--register-file=", 0) == 0) {
             options.registerFile = takeValue(i, argc, argv, "--register-file");
             options.useRegisterFile = true;
+        } else if (arg == "--rhythm" || arg.rfind("--rhythm=", 0) == 0) {
+            options.rhythmName = takeValue(i, argc, argv, "--rhythm");
+            options.useRhythm = true;
+        } else if (arg == "--rhythm-file" ||
+                   arg.rfind("--rhythm-file=", 0) == 0) {
+            options.rhythmFile = takeValue(i, argc, argv, "--rhythm-file");
+            options.useRhythmFile = true;
         } else if (arg == "--neural-model" ||
                    arg.rfind("--neural-model=", 0) == 0) {
             options.neuralModelFile =
@@ -1579,6 +1654,10 @@ int main(int argc, char **argv) {
             throw std::invalid_argument(
                 "use only one of --register and --register-file");
         }
+        if (options.useRhythm && options.useRhythmFile) {
+            throw std::invalid_argument(
+                "use only one of --rhythm and --rhythm-file");
+        }
         if (!options.useSong &&
             (options.useScaleName || options.useScaleFile)) {
             throw std::invalid_argument(
@@ -1603,10 +1682,11 @@ int main(int argc, char **argv) {
         if (options.useSong &&
             (!options.intonationFile.empty() ||
              !options.intonationTune.empty() || options.useProsody ||
-             options.neuralApply || options.breathing != "off")) {
+             options.neuralApply || options.breathing != "off" ||
+             options.useRhythm || options.useRhythmFile)) {
             throw std::invalid_argument(
                 "song mode owns its F0 contour and cannot be combined with "
-                "intonation, prosody, neural or breathing layers");
+                "intonation, prosody, neural, breathing or rhythm layers");
         }
         if (options.useGibberish && inputModes > 0) {
             throw std::invalid_argument(
@@ -1884,6 +1964,26 @@ int main(int argc, char **argv) {
         const formant::RegisterData registerData = formant::parseRegisterData(
             formant::builtinRegisterData(), registerUser);
 
+        // #144: rhythm-class targets are data too. A user table layers
+        // individual profiles over the embedded built-in calibration table.
+        std::string rhythmUser;
+        if (options.useRhythmFile) {
+            std::ifstream file(options.rhythmFile);
+            if (!file) {
+                throw std::runtime_error("cannot open rhythm file: " +
+                                         options.rhythmFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read rhythm file: " +
+                                         options.rhythmFile);
+            }
+            rhythmUser = source.str();
+        }
+        const formant::RhythmData rhythmData =
+            formant::parseRhythmData(formant::builtinRhythmData(), rhythmUser);
+
         // #140: register presets set synthesis levers on the voice itself, so
         // they compose with every front end and with singing mode. Applied
         // after voice overrides because they are an explicit mode selection,
@@ -2024,6 +2124,20 @@ int main(int argc, char **argv) {
         }
         if (!options.inspectRegisterFile.empty()) {
             inspectRegister(options.inspectRegisterFile);
+            return 0;
+        }
+
+        if (options.listRhythms) {
+            listRhythms(rhythmData);
+            return 0;
+        }
+        if (!options.dumpRhythm.empty()) {
+            std::cout << formant::writeRhythmData(rhythmData,
+                                                  options.dumpRhythm);
+            return 0;
+        }
+        if (!options.inspectRhythmFile.empty()) {
+            inspectRhythm(options.inspectRhythmFile);
             return 0;
         }
 
@@ -2340,6 +2454,43 @@ int main(int argc, char **argv) {
                    << (breathing == formant::BreathMode::Silent ? " pause(s)"
                                                                 : " breath(es)")
                    << "\n";
+        }
+
+        if (options.useRhythm || options.useRhythmFile) {
+            // #144: rhythm targets run after all front ends and breath
+            // planning, but before neural, intonation and prosody-direct
+            // layers so explicit author contours still win. Singing is exempt
+            // by CLI validation. No duration changes happen on the default
+            // path, so existing renders remain byte-identical.
+            const std::string tag =
+                options.useLanguageFile
+                    ? languageDefinition.tag
+                    : std::string(formant::languageTag(options.language));
+            const formant::LanguageTypology typology =
+                options.useLanguageFile ? languageDefinition.typology
+                                        : formant::LanguageTypology{};
+            std::string name = options.rhythmName;
+            if (options.useRhythmFile) {
+                const formant::RhythmData fileData =
+                    formant::parseRhythmData(rhythmUser, {}, false);
+                if (fileData.profiles.size() != 1) {
+                    throw std::invalid_argument(
+                        "rhythm file must define exactly one profile "
+                        "(use --dump-rhythm NAME)");
+                }
+                name = fileData.profiles.begin()->first;
+            }
+            const formant::RhythmProfile profile =
+                formant::resolveRhythmProfile(rhythmData, name, tag, typology);
+            const formant::RhythmMetrics before =
+                formant::measureRhythm(phonemes);
+            phonemes = formant::applyRhythm(phonemes, profile);
+            const formant::RhythmMetrics after =
+                formant::measureRhythm(phonemes);
+            status << "Applied rhythm '" << profile.name << "' (V nPVI "
+                   << before.vocalicNPvi << " -> " << after.vocalicNPvi
+                   << ", I rPVI " << before.intervocalicRPvi << " -> "
+                   << after.intervocalicRPvi << " ms)\n";
         }
 
         if (options.neuralApply) {

@@ -34,6 +34,9 @@ directive  = "name" text
            | "tone" ("none" | "simple" | "complex")
            | "stress" ("none" | "fixed" | "free")
            | "rhythm" ("stress" | "syllable" | "mora")
+           | "rhythm-vocalic-npvi" number number
+           | "rhythm-intervocalic-rpvi" number number
+           | "rhythm-strength" number
            | "rate" number
            | "phoneme" ipa { override }
            | "grapheme" grapheme [ ipa ]
@@ -56,7 +59,7 @@ key        = "duration-scale"
 - `name` is required and may contain spaces.
 - `tag` is an optional BCP-47-style identifier, such as `x-velta`.
 - `strict` rejects text that cannot be pronounced completely. `lenient` is the default and skips unknown graphemes; a phoneme outside the declared inventory is replaced by its nearest declared neighbour (see [Inventory fallback](#inventory-fallback)).
-- `tone`, `stress`, `rhythm` and `rate` set language-level defaults; see [Typology defaults](#typology-defaults).
+- `tone`, `stress`, `rhythm`, the three `rhythm-*` dials and `rate` set language-level defaults; see [Typology defaults](#typology-defaults).
 - `phoneme` declares an IPA symbol. The optional overrides change how that symbol is realized. A declaration with no overrides is still useful in strict mode because it adds the symbol to the inventory.
 - `grapheme` maps a spelling to IPA. The IPA is the rest of the line and may contain several phonemes. Omitting it makes the grapheme silent.
 - `word` maps a whole word to IPA. Word entries take precedence over grapheme mappings and may carry stress marks.
@@ -202,10 +205,30 @@ rate 0.95
 |-----------|--------|--------|
 | `tone` | `none`, `simple`, `complex` | Recorded as language metadata. |
 | `stress` | `none`, `fixed`, `free` | `fixed` gives the first vowel of every word a default pitch onset and amplitude lift. |
-| `rhythm` | `stress`, `syllable`, `mora` | Recorded as language metadata. |
+| `rhythm` | `stress`, `syllable`, `mora` | Class metadata; names the fallback class and a built-in profile for `--rhythm auto`. |
+| `rhythm-vocalic-npvi` | two positive numbers `MIN MAX` (`MAX` ≤ 200) | Vocalic nPVI target band. |
+| `rhythm-intervocalic-rpvi` | two positive numbers `MIN MAX` (`MAX` ≤ 500) | Intervocalic rPVI target band in milliseconds. |
+| `rhythm-strength` | number in `[0, 1]` | Fraction of the gap to the target band closed per iteration. |
 | `rate` | positive number | Multiplies every segment's duration. |
 
-`tone` and `rhythm` are deliberately declarative today: they are parsed, validated and available to embedders through `LanguageDefinition::typology`, but they do not yet impose F0 or durational targets. `stress=fixed` and `rate` change the rendered phonemes immediately. All four values are exposed so a conlang file alone can carry the language's typological profile without code changes, and future prosody layers can consume them without a format change.
+`tone` remains declarative: it is parsed, validated and available to embedders through `LanguageDefinition::typology` without imposing F0 targets. `stress=fixed` and `rate` change the rendered phonemes immediately. `rhythm` and its dials are also parsed and exposed as typology data, but they impose no durational targets during an ordinary render: they become active only when the caller opts in with `--rhythm auto` (or `resolveRhythmProfile()` in the library). `auto` prefers complete language-file dials, then a tag-specific built-in calibration (`en` or `es`), then the generic class profile named by `rhythm`. Without a rhythm selection, the metadata changes nothing.
+
+A conlang can therefore carry its own calibration:
+
+```text
+name Velta
+tag x-velta
+rhythm syllable
+rhythm-vocalic-npvi 34 44
+rhythm-intervocalic-rpvi 50 60
+rhythm-strength 0.8
+```
+
+```sh
+build/formant --lang-file my.lang --rhythm auto --text "Velta tata." --output velta.wav
+```
+
+The dials must form ordered bands, and `rhythm-strength` must lie in `[0, 1]`; malformed values fail with a line number. See [docs/rhythm-classes.md](rhythm-classes.md) for the target bands, the duration pass and the CLI.
 
 The defaults are applied after rewrite rules and realization overrides, and after inventory fallback, so a substituted phoneme keeps the language's rate and stress.
 

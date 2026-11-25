@@ -1278,6 +1278,50 @@ LanguageDefinition parseLanguageDefinition(std::string_view text) {
                     languageFileError(lineNumber, "lenient takes no value");
                 }
                 definition.strictInventory = false;
+            } else if (directive == "rhythm-vocalic-npvi" ||
+                       directive == "rhythm-intervocalic-rpvi" ||
+                       directive == "rhythm-strength") {
+                const bool isPair = directive != "rhythm-strength";
+                if (fields.size() != (isPair ? 3U : 2U)) {
+                    languageFileError(
+                        lineNumber, directive + (isPair ? " needs two values"
+                                                        : " needs one value"));
+                }
+                if (isPair) {
+                    const double minimum =
+                        languageFileNumber(fields[1], lineNumber);
+                    const double maximum =
+                        languageFileNumber(fields[2], lineNumber);
+                    if (!(minimum > 0.0) || !(maximum >= minimum)) {
+                        languageFileError(lineNumber,
+                                          directive +
+                                              " needs a positive ordered band");
+                    }
+                    if (directive == "rhythm-vocalic-npvi") {
+                        if (maximum > 200.0) {
+                            languageFileError(
+                                lineNumber, "vocalic nPVI must not exceed 200");
+                        }
+                        definition.typology.vocalicNPviMin = minimum;
+                        definition.typology.vocalicNPviMax = maximum;
+                    } else {
+                        if (maximum > 500.0) {
+                            languageFileError(
+                                lineNumber,
+                                "intervocalic rPVI must not exceed 500 ms");
+                        }
+                        definition.typology.intervocalicRPviMin = minimum;
+                        definition.typology.intervocalicRPviMax = maximum;
+                    }
+                } else {
+                    const double strength =
+                        languageFileNumber(fields[1], lineNumber);
+                    if (strength < 0.0 || strength > 1.0) {
+                        languageFileError(lineNumber,
+                                          "rhythm-strength must be in [0, 1]");
+                    }
+                    definition.typology.rhythmStrength = strength;
+                }
             } else if (directive == "tone" || directive == "stress" ||
                        directive == "rhythm" || directive == "rate") {
                 if (fields.size() != 2) {

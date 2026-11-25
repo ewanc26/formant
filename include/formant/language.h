@@ -23,13 +23,19 @@ struct PhonemeOverride {
 
 // Language-level typology defaults declared in a conlang file. `rate` scales
 // segment durations and `stress=fixed` assigns a default stress to the first
-// vowel of each word. `tone` and `rhythm` are recorded as language metadata for
-// tooling and future prosody layers; they do not alter F0 or durations today.
+// vowel of each word. `tone` is recorded as metadata. `rhythm` is metadata by
+// default; the optional PVI dials and strength below become active only when a
+// caller opts in with `--rhythm auto` (or calls resolveRhythmProfile directly).
 struct LanguageTypology {
     std::string tone = "unspecified";   // none | simple | complex
     std::string stress = "unspecified"; // none | fixed | free
     std::string rhythm = "unspecified"; // stress | syllable | mora
     std::optional<double> rate;         // positive duration multiplier
+    std::optional<double> vocalicNPviMin;
+    std::optional<double> vocalicNPviMax;
+    std::optional<double> intervocalicRPviMin;
+    std::optional<double> intervocalicRPviMax;
+    std::optional<double> rhythmStrength;
 };
 
 // A user-defined language over the shared IPA core. The maps are plain data:

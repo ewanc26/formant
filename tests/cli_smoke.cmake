@@ -2416,4 +2416,210 @@ if(register_song_plain_hash STREQUAL register_song_hash)
     message(FATAL_ERROR "a register did not change the singing render")
 endif()
 
+# ---- #144: rhythm classes as versioned duration data ----------------------
+set(RHYTHM_DIR "${CMAKE_CURRENT_BINARY_DIR}/rhythm-smoke")
+file(MAKE_DIRECTORY "${RHYTHM_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-rhythms
+    RESULT_VARIABLE list_rhythms_result
+    OUTPUT_VARIABLE list_rhythms_output
+    ERROR_VARIABLE list_rhythms_error
+)
+if(NOT list_rhythms_result EQUAL 0 OR NOT list_rhythms_output MATCHES "Rhythm profiles \\(5\\)")
+    message(FATAL_ERROR "formant --list-rhythms failed: ${list_rhythms_error}")
+endif()
+foreach(rhythm_name stress syllable mora en es)
+    if(NOT list_rhythms_output MATCHES "  ${rhythm_name}\t")
+        message(FATAL_ERROR "--list-rhythms omitted ${rhythm_name}")
+    endif()
+endforeach()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-rhythm "${FORMANT_SOURCE_DIR}/data/rhythm/rhythm_profiles.txt"
+    RESULT_VARIABLE inspect_rhythm_result
+    OUTPUT_VARIABLE inspect_rhythm_output
+    ERROR_VARIABLE inspect_rhythm_error
+)
+if(NOT inspect_rhythm_result EQUAL 0 OR NOT inspect_rhythm_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "formant --inspect-rhythm failed: ${inspect_rhythm_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --dump-rhythm stress
+    RESULT_VARIABLE dump_rhythm_result
+    OUTPUT_VARIABLE dump_rhythm_output
+    ERROR_VARIABLE dump_rhythm_error
+)
+if(NOT dump_rhythm_result EQUAL 0 OR NOT dump_rhythm_output MATCHES "rhythm stress stress ")
+    message(FATAL_ERROR "formant --dump-rhythm failed: ${dump_rhythm_error}")
+endif()
+file(WRITE "${RHYTHM_DIR}/dumped.rhythm" "${dump_rhythm_output}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-rhythm "${RHYTHM_DIR}/dumped.rhythm"
+    RESULT_VARIABLE dumped_rhythm_inspect_result
+    OUTPUT_VARIABLE dumped_rhythm_inspect_output
+    ERROR_VARIABLE dumped_rhythm_inspect_error
+)
+if(NOT dumped_rhythm_inspect_result EQUAL 0 OR NOT dumped_rhythm_inspect_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "dumped rhythm table failed checksum: ${dumped_rhythm_inspect_error}")
+endif()
+
+# One profile is shareable; the full built-in table is not a --rhythm-file.
+foreach(case_name builtin file)
+    if(case_name STREQUAL "builtin")
+        set(rhythm_select_args --rhythm stress)
+    else()
+        set(rhythm_select_args --rhythm-file "${RHYTHM_DIR}/dumped.rhythm")
+    endif()
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[ee s ee s ee]" ${rhythm_select_args}
+            --format raw16 --output "${RHYTHM_DIR}/${case_name}.raw"
+        RESULT_VARIABLE rhythm_render_result
+        ERROR_VARIABLE rhythm_render_error
+    )
+    if(NOT rhythm_render_result EQUAL 0)
+        message(FATAL_ERROR "rhythm render failed for ${case_name}: ${rhythm_render_error}")
+    endif()
+    file(SHA256 "${RHYTHM_DIR}/${case_name}.raw" rhythm_${case_name}_hash)
+endforeach()
+if(NOT rhythm_builtin_hash STREQUAL rhythm_file_hash)
+    message(FATAL_ERROR "--rhythm-file did not reproduce the built-in profile")
+endif()
+
+# The same text moved under different named classes, with deterministic bytes.
+set(RHYTHM_TEXT "The quick brown fox jumps over the lazy dog.")
+foreach(case_name plain stress syllable)
+    if(case_name STREQUAL "plain")
+        set(rhythm_text_args "")
+    else()
+        set(rhythm_text_args --rhythm ${case_name})
+    endif()
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --text "${RHYTHM_TEXT}" ${rhythm_text_args}
+            --format raw16 --output "${RHYTHM_DIR}/text-${case_name}.raw"
+        RESULT_VARIABLE rhythm_text_result
+        OUTPUT_VARIABLE rhythm_text_status
+        ERROR_VARIABLE rhythm_text_error
+    )
+    if(NOT rhythm_text_result EQUAL 0)
+        message(FATAL_ERROR "rhythm text render failed for ${case_name}: ${rhythm_text_error}")
+    endif()
+    file(SHA256 "${RHYTHM_DIR}/text-${case_name}.raw" rhythm_text_${case_name}_hash)
+    if(NOT case_name STREQUAL "plain" AND NOT rhythm_text_status MATCHES "V nPVI [0-9.]+ -> [0-9.]+")
+        message(FATAL_ERROR "rhythm status omitted PVI movement for ${case_name}: ${rhythm_text_status}")
+    endif()
+endforeach()
+if(rhythm_text_plain_hash STREQUAL rhythm_text_stress_hash
+        OR rhythm_text_plain_hash STREQUAL rhythm_text_syllable_hash
+        OR rhythm_text_stress_hash STREQUAL rhythm_text_syllable_hash)
+    message(FATAL_ERROR "rhythm classes did not change the same-text render")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "${RHYTHM_TEXT}" --rhythm stress
+        --format raw16 --output "${RHYTHM_DIR}/text-stress-again.raw"
+    RESULT_VARIABLE rhythm_repeat_result
+    ERROR_VARIABLE rhythm_repeat_error
+)
+if(NOT rhythm_repeat_result EQUAL 0)
+    message(FATAL_ERROR "repeat rhythm render failed: ${rhythm_repeat_error}")
+endif()
+file(SHA256 "${RHYTHM_DIR}/text-stress-again.raw" rhythm_repeat_hash)
+if(NOT rhythm_repeat_hash STREQUAL rhythm_text_stress_hash)
+    message(FATAL_ERROR "--rhythm render is not deterministic")
+endif()
+
+# Built-in language calibrations resolve through --rhythm auto.
+foreach(lang_name en es)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --lang ${lang_name} --text "${RHYTHM_TEXT}"
+            --rhythm auto --format raw16 --output "${RHYTHM_DIR}/auto-${lang_name}.raw"
+        RESULT_VARIABLE rhythm_auto_result
+        OUTPUT_VARIABLE rhythm_auto_status
+        ERROR_VARIABLE rhythm_auto_error
+    )
+    if(NOT rhythm_auto_result EQUAL 0 OR NOT rhythm_auto_status MATCHES "Applied rhythm '${lang_name}'")
+        message(FATAL_ERROR "--rhythm auto did not resolve ${lang_name}: ${rhythm_auto_error}")
+    endif()
+endforeach()
+
+# Conlang dials live in the language file and take precedence under auto.
+set(RHYTHM_LANG_FILE "${RHYTHM_DIR}/rhythm.lang")
+file(WRITE "${RHYTHM_LANG_FILE}" [=[name Rhythm Smoke
+tag x-rhythm
+lenient
+rhythm stress
+rhythm-vocalic-npvi 52 62
+rhythm-intervocalic-rpvi 50 60
+rhythm-strength 1
+phoneme a
+phoneme e
+phoneme s
+grapheme a a
+grapheme e e
+grapheme s s
+]=])
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${RHYTHM_LANG_FILE}" --text "a s a e s a"
+        --rhythm auto --format raw16 --output "${RHYTHM_DIR}/conlang-auto.raw"
+    RESULT_VARIABLE conlang_rhythm_result
+    OUTPUT_VARIABLE conlang_rhythm_status
+    ERROR_VARIABLE conlang_rhythm_error
+)
+if(NOT conlang_rhythm_result EQUAL 0 OR NOT conlang_rhythm_status MATCHES "Applied rhythm 'x-rhythm'")
+    message(FATAL_ERROR "conlang rhythm dials were not applied: ${conlang_rhythm_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang-file "${RHYTHM_LANG_FILE}" --text "a s a e s a"
+        --format raw16 --output "${RHYTHM_DIR}/conlang-plain.raw"
+    RESULT_VARIABLE conlang_plain_result
+    ERROR_VARIABLE conlang_plain_error
+)
+if(NOT conlang_plain_result EQUAL 0)
+    message(FATAL_ERROR "plain conlang render failed: ${conlang_plain_error}")
+endif()
+file(SHA256 "${RHYTHM_DIR}/conlang-auto.raw" conlang_rhythm_hash)
+file(SHA256 "${RHYTHM_DIR}/conlang-plain.raw" conlang_plain_hash)
+if(conlang_rhythm_hash STREQUAL conlang_plain_hash)
+    message(FATAL_ERROR "conlang rhythm dials did not change the render")
+endif()
+
+# Checksum tampering, exclusive flags, unknown names and song ownership fail.
+file(READ "${FORMANT_SOURCE_DIR}/data/rhythm/rhythm_profiles.txt" rhythm_builtin)
+file(WRITE "${RHYTHM_DIR}/tampered.rhythm" "${rhythm_builtin}\n# tamper\n")
+foreach(bad_args
+        "--rhythm;stress;--rhythm-file;${RHYTHM_DIR}/dumped.rhythm"
+        "--rhythm;stress;--rhythm-file;${RHYTHM_DIR}/tampered.rhythm"
+        "--rhythm;bogus"
+        "--rhythm-file;${FORMANT_SOURCE_DIR}/data/rhythm/rhythm_profiles.txt")
+    separate_arguments(bad_command UNIX_COMMAND "${bad_args}")
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --phonemes "[ee s ee s ee]" ${bad_command}
+            --output "${RHYTHM_DIR}/bad.wav"
+        RESULT_VARIABLE rhythm_conflict_result
+        ERROR_VARIABLE rhythm_conflict_error
+    )
+    if(rhythm_conflict_result EQUAL 0)
+        message(FATAL_ERROR "formant accepted invalid rhythm options: ${bad_args}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --phonemes "[ee s ee s ee]"
+        --rhythm-file "${RHYTHM_DIR}/tampered.rhythm"
+        --output "${RHYTHM_DIR}/tampered.wav"
+    RESULT_VARIABLE rhythm_tamper_result
+    ERROR_VARIABLE rhythm_tamper_error
+)
+if(rhythm_tamper_result EQUAL 0 OR NOT rhythm_tamper_error MATCHES "checksum mismatch")
+    message(FATAL_ERROR "rhythm checksum mismatch was not reported: ${rhythm_tamper_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song twinkle --rhythm stress
+        --output "${RHYTHM_DIR}/song-rhythm.wav"
+    RESULT_VARIABLE rhythm_song_result
+    ERROR_VARIABLE rhythm_song_error
+)
+if(rhythm_song_result EQUAL 0 OR NOT rhythm_song_error MATCHES "song mode owns its F0 contour")
+    message(FATAL_ERROR "song mode accepted a rhythm layer: ${rhythm_song_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")
