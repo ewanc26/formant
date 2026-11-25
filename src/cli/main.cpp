@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -19,6 +20,7 @@
 #include "benchmark/benchmark.h"
 
 #include "formant/formant.h"
+#include "formant/affect.h"
 #include "formant/breath.h"
 #include "formant/nvv.h"
 #include "formant/version.h"
@@ -89,6 +91,14 @@ Options:
   --breath-file FILE      Load custom/override breath-group policy data
   --breath-style NAME     Breath policy style: narrative, formal, brisk
   --list-breath           List breath-group policies and exit
+  --style NAME            Affect style: neutral, calm, excited, sad, whispering, newsreader
+  --style-file FILE       Load custom/override affect style data
+  --arousal -1..1         Continuous arousal override (PAD dimension)
+  --valence -1..1         Continuous valence override (PAD dimension)
+  --dominance -1..1       Continuous dominance override (PAD dimension)
+  --list-styles           List affect styles, mapping and emphasis levels
+  --dump-style NAME       Print a versioned affect data file for a style
+  --inspect-style FILE    Print an affect file's version and checksum status
   --neural-model FILE     Load a saved neural prosody state
   --neural-train FILE     Train from line-oriented sample records
   --neural-save FILE      Save the trained neural state
@@ -119,6 +129,8 @@ Options:
   --nasality 0..1         Pervasive nasal anti-formant depth
   --harmonics N           Number of sine partials in the glottal source
   --gain FACTOR           Output gain before normalisation
+  --jitter CENTS          Deterministic pitch modulation depth
+  --shimmer DEPTH         Deterministic amplitude modulation depth (0..0.25)
   --attack SECONDS        Phoneme attack time
   --release SECONDS       Phoneme release time
   --declination 0..1      Pitch drift across a phrase
@@ -152,6 +164,31 @@ void listVoiceParameters() {
                   << parameter.safeMaximum << '\t'
                   << (parameter.integer ? "integer" : "real") << '\t'
                   << parameter.description << "\n";
+    }
+}
+
+void listAffectStyles(const formant::AffectData &data) {
+    std::cout << "schema\t" << data.schema << "\n";
+    std::cout << "name\t" << data.name << "\n";
+    std::cout << "version\t" << data.version << "\n";
+    std::cout << "Styles (arousal\tvalence\tdominance -> pitch\trange\trate\t"
+                 "intensity\tjitter\tshimmer\tadduction\teffort):\n";
+    for (const auto &entry : data.styles) {
+        const formant::AffectProfile profile =
+            formant::resolveAffectProfile(data, entry.first);
+        const formant::AffectAxes &a = profile.axes;
+        const formant::AffectLevers &l = profile.levers;
+        std::cout << "  " << entry.first << '\t' << a.arousal << '\t'
+                  << a.valence << '\t' << a.dominance << " ->\t" << l.pitch
+                  << '\t' << l.range << '\t' << l.rate << '\t' << l.intensity
+                  << '\t' << l.jitterCents << '\t' << l.shimmer << '\t'
+                  << l.adduction << '\t' << l.effort << "\n";
+    }
+    std::cout << "Emphasis (pitch\tduration\tamplitude):\n";
+    for (const auto &entry : data.emphasis) {
+        std::cout << "  " << entry.first << '\t' << entry.second.pitch << '\t'
+                  << entry.second.duration << '\t' << entry.second.amplitude
+                  << "\n";
     }
 }
 
@@ -314,6 +351,18 @@ struct Options {
     std::string breathStyle = "neutral";
     bool useBreathFile = false;
     bool listBreath = false;
+    std::string styleName;
+    std::string styleFile;
+    bool useStyleFile = false;
+    std::optional<double> arousal;
+    std::optional<double> valence;
+    std::optional<double> dominance;
+    bool listStyles = false;
+    std::string dumpStyle;
+    std::string inspectStyleFile;
+    // Kept so an affect profile can be applied beneath explicit voice flags.
+    Voice baseVoice = voicePreset("neutral");
+    std::vector<std::function<void(Voice &)>> voiceOverrides;
     std::string neuralModelFile;
     std::string neuralTrainFile;
     std::string neuralSaveFile;
@@ -392,6 +441,7 @@ Options parseOptions(int argc, char **argv) {
         "--formant-scale", "--vibrato-rate",
         "--vibrato-depth", "--breathiness",
         "--nasality",      "--gain",
+        "--jitter",        "--shimmer",
         "--attack",        "--release",
         "--declination",   "--pitch-shift",
         "--formant-ratio", "--vocal-tract-scale",
@@ -458,6 +508,19 @@ Options parseOptions(int argc, char **argv) {
             options.listBreath = true;
             continue;
         }
+        if (arg == "--list-styles") {
+            options.listStyles = true;
+            continue;
+        }
+        if (arg == "--dump-style" || arg.rfind("--dump-style=", 0) == 0) {
+            options.dumpStyle = takeValue(i, argc, argv, "--dump-style");
+            continue;
+        }
+        if (arg == "--inspect-style" || arg.rfind("--inspect-style=", 0) == 0) {
+            options.inspectStyleFile =
+                takeValue(i, argc, argv, "--inspect-style");
+            continue;
+        }
         if (arg == "--list-neural") {
             options.listNeural = true;
             continue;
@@ -505,6 +568,23 @@ Options parseOptions(int argc, char **argv) {
             options.mrtOutDir = takeValue(i, argc, argv, "--mrt");
             continue;
         }
+        // Affect coordinates resolve into levers rather than overriding a
+        // Voice field, so they are parsed here instead of in doubleFlags.
+        if (arg == "--arousal" || arg.rfind("--arousal=", 0) == 0) {
+            options.arousal =
+                number("--arousal", takeValue(i, argc, argv, "--arousal"));
+            continue;
+        }
+        if (arg == "--valence" || arg.rfind("--valence=", 0) == 0) {
+            options.valence =
+                number("--valence", takeValue(i, argc, argv, "--valence"));
+            continue;
+        }
+        if (arg == "--dominance" || arg.rfind("--dominance=", 0) == 0) {
+            options.dominance =
+                number("--dominance", takeValue(i, argc, argv, "--dominance"));
+            continue;
+        }
 
         bool handled = false;
         for (const std::string &flag : doubleFlags) {
@@ -534,6 +614,12 @@ Options parseOptions(int argc, char **argv) {
                     [parsed](Voice &v) { v.nasality = parsed; });
             else if (flag == "--gain")
                 overrides.push_back([parsed](Voice &v) { v.gain = parsed; });
+            else if (flag == "--jitter")
+                overrides.push_back(
+                    [parsed](Voice &v) { v.jitterCents = parsed; });
+            else if (flag == "--shimmer")
+                overrides.push_back(
+                    [parsed](Voice &v) { v.shimmerDepth = parsed; });
             else if (flag == "--attack")
                 overrides.push_back([parsed](Voice &v) { v.attack = parsed; });
             else if (flag == "--release")
@@ -611,6 +697,12 @@ Options parseOptions(int argc, char **argv) {
         } else if (arg == "--breath-style" ||
                    arg.rfind("--breath-style=", 0) == 0) {
             options.breathStyle = takeValue(i, argc, argv, "--breath-style");
+        } else if (arg == "--style" || arg.rfind("--style=", 0) == 0) {
+            options.styleName = takeValue(i, argc, argv, "--style");
+        } else if (arg == "--style-file" ||
+                   arg.rfind("--style-file=", 0) == 0) {
+            options.styleFile = takeValue(i, argc, argv, "--style-file");
+            options.useStyleFile = true;
         } else if (arg == "--neural-model" ||
                    arg.rfind("--neural-model=", 0) == 0) {
             options.neuralModelFile =
@@ -722,7 +814,11 @@ Options parseOptions(int argc, char **argv) {
     }
 
     // Replay every override onto the final preset in argument order, so a
-    // value set before --voice is not erased by the preset assignment.
+    // value set before --voice is not erased by the preset assignment. Keep the
+    // unstyled base and overrides too: an affect profile is applied beneath
+    // explicit voice flags so `--pitch 220 --style calm` still honours 220 Hz.
+    options.baseVoice = baseVoice;
+    options.voiceOverrides = overrides;
     options.voice = baseVoice;
     for (const auto &apply : overrides) {
         apply(options.voice);
@@ -815,6 +911,30 @@ std::string readTextFile(const std::string &path, std::string_view kind) {
                                  " file: " + path);
     }
     return source.str();
+}
+
+void inspectAffect(const std::string &path) {
+    const std::string text = readTextFile(path, "affect");
+    const formant::AffectData data = formant::parseAffectData(
+        formant::builtinAffectData(), text, /*verifyChecksum=*/false);
+    const std::string computed = formant::affectFileChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << data.schema << "\n"
+              << "name\t" << data.name << "\n"
+              << "author\t" << data.author << "\n"
+              << "description\t" << data.description << "\n"
+              << "license\t" << data.license << "\n"
+              << "version\t" << data.version << "\n"
+              << "styles\t" << data.styles.size() << "\n"
+              << "emphasis\t" << data.emphasis.size() << "\n"
+              << "checksum\t" << (data.checksum ? *data.checksum : "none")
+              << "\n"
+              << "computed\t" << computed << "\n"
+              << "status\t"
+              << (!data.checksum
+                      ? "unsigned"
+                      : (*data.checksum == computed ? "valid" : "invalid"))
+              << "\n";
 }
 
 std::string trimmed(std::string_view value) {
@@ -1048,7 +1168,7 @@ std::string cellLabel(const std::vector<SweepAxis> &axes,
 
 int main(int argc, char **argv) {
     try {
-        const Options options = parseOptions(argc, argv);
+        Options options = parseOptions(argc, argv);
 
         // Writing audio to stdout must leave stdout byte-clean; every human
         // message (including traces) goes to stderr in that mode.
@@ -1177,6 +1297,16 @@ int main(int argc, char **argv) {
             throw std::invalid_argument("--trace only applies with "
                                         "--lang-file or --lexicon");
         }
+        for (const auto *axis :
+             {&options.arousal, &options.valence, &options.dominance}) {
+            if (*axis && !std::isfinite(**axis)) {
+                throw std::invalid_argument(
+                    "affect axes must be finite numbers in [-1, 1]");
+            }
+            if (*axis && (std::abs(**axis) > formant::kAffectAxisLimit)) {
+                throw std::invalid_argument("affect axes must be in [-1, 1]");
+            }
+        }
         if (options.neuralStrength < 0.0 || options.neuralStrength > 1.0) {
             throw std::invalid_argument("--neural-strength must be in [0, 1]");
         }
@@ -1302,6 +1432,51 @@ int main(int argc, char **argv) {
                                         options.breathStyle + "'");
         }
 
+        // #125: affect styles are data too. The built-in PAD mapping and named
+        // presets are embedded; a user file layers new styles or coefficients
+        // over them. Resolution is shared by CLI flags and file coordinates.
+        std::string styleUser;
+        if (options.useStyleFile) {
+            std::ifstream file(options.styleFile);
+            if (!file) {
+                throw std::runtime_error("cannot open style file: " +
+                                         options.styleFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read style file: " +
+                                         options.styleFile);
+            }
+            styleUser = source.str();
+        }
+        const formant::AffectData affectData =
+            formant::parseAffectData(formant::builtinAffectData(), styleUser);
+        const bool affectActive = !options.styleName.empty() ||
+                                  options.useStyleFile || options.arousal ||
+                                  options.valence || options.dominance;
+        const formant::AffectProfile affectProfile =
+            affectActive ? formant::resolveAffectProfile(
+                               affectData, options.styleName, options.arousal,
+                               options.valence, options.dominance)
+                         : formant::AffectProfile{};
+        formant::SsmlEmphasisLevels emphasisLevels;
+        for (const auto &entry : affectProfile.emphasis) {
+            emphasisLevels[entry.first] = {entry.second.pitch,
+                                           entry.second.duration,
+                                           entry.second.amplitude};
+        }
+        if (affectActive) {
+            // Apply beneath explicit voice flags so authored --pitch/--gain or
+            // a voice file still has the final word over the style baseline.
+            options.voice = options.baseVoice;
+            formant::applyAffectStyle(options.voice, affectProfile);
+            for (const auto &apply : options.voiceOverrides) {
+                apply(options.voice);
+            }
+            status << "Applied affect style '" << affectProfile.name << "'\n";
+        }
+
         formant::NeuralConfig neuralConfig;
         if (options.neuralMaxUnits != 0) {
             neuralConfig.maxUnits = options.neuralMaxUnits;
@@ -1369,6 +1544,20 @@ int main(int argc, char **argv) {
                    << "  reset " << policy.reset << "\n"
                    << "  depth " << policy.depthShort << "/"
                    << policy.depthMedium << "/" << policy.depthLong << "\n";
+            return 0;
+        }
+
+        if (options.listStyles) {
+            listAffectStyles(affectData);
+            return 0;
+        }
+        if (!options.dumpStyle.empty()) {
+            std::cout << formant::writeAffectData(affectData,
+                                                  options.dumpStyle);
+            return 0;
+        }
+        if (!options.inspectStyleFile.empty()) {
+            inspectAffect(options.inspectStyleFile);
             return 0;
         }
 
@@ -1535,7 +1724,8 @@ int main(int argc, char **argv) {
                                                         std::to_string(offset) +
                                                         ": " + error.what());
                         }
-                    }));
+                    }),
+                emphasisLevels);
             for (const std::string &line : trace) {
                 status << "trace: " << line << "\n";
             }

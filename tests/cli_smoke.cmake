@@ -1767,4 +1767,212 @@ if(neural_orphan_result EQUAL 0 OR NOT neural_orphan_error MATCHES "requires --n
     message(FATAL_ERROR "orphan --neural-apply was not rejected: ${neural_orphan_error}")
 endif()
 
+# #125: affect styles are versioned data, opt-in and deterministic. The
+# built-in table ships with the binary; user files layer over it and checksums
+# protect shared packages.
+set(AFFECT_DIR "${CMAKE_CURRENT_BINARY_DIR}/affect-smoke")
+file(MAKE_DIRECTORY "${AFFECT_DIR}")
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-styles
+    RESULT_VARIABLE affect_list_result
+    OUTPUT_VARIABLE affect_list_output
+    ERROR_VARIABLE affect_list_error
+)
+if(NOT affect_list_result EQUAL 0
+        OR NOT affect_list_output MATCHES "schema.1"
+        OR NOT affect_list_output MATCHES "excited"
+        OR NOT affect_list_output MATCHES "whispering"
+        OR NOT affect_list_output MATCHES "Emphasis")
+    message(FATAL_ERROR "--list-styles did not report the built-in table: ${affect_list_output} ${affect_list_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-voice-parameters
+    RESULT_VARIABLE affect_parameters_result
+    OUTPUT_VARIABLE affect_parameters_output
+    ERROR_VARIABLE affect_parameters_error
+)
+if(NOT affect_parameters_result EQUAL 0
+        OR NOT affect_parameters_output MATCHES "jitter-cents"
+        OR NOT affect_parameters_output MATCHES "shimmer")
+    message(FATAL_ERROR "affect voice parameters are missing: ${affect_parameters_output} ${affect_parameters_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --dump-style excited
+    RESULT_VARIABLE affect_dump_result
+    OUTPUT_VARIABLE affect_dump
+    ERROR_VARIABLE affect_dump_error
+)
+if(NOT affect_dump_result EQUAL 0 OR NOT affect_dump MATCHES "schema 1")
+    message(FATAL_ERROR "--dump-style failed: ${affect_dump_error}")
+endif()
+if(NOT affect_dump MATCHES "style excited"
+        OR NOT affect_dump MATCHES "checksum [0-9a-f]+")
+    message(FATAL_ERROR "exported style is not versioned or checksummed: ${affect_dump}")
+endif()
+file(WRITE "${AFFECT_DIR}/dumped.affect" "${affect_dump}")
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-style "${AFFECT_DIR}/dumped.affect"
+    RESULT_VARIABLE dumped_inspect_result
+    OUTPUT_VARIABLE dumped_inspect
+    ERROR_VARIABLE dumped_inspect_error
+)
+if(NOT dumped_inspect_result EQUAL 0 OR NOT dumped_inspect MATCHES "status.valid")
+    message(FATAL_ERROR "generated affect checksum did not validate: ${dumped_inspect} ${dumped_inspect_error}")
+endif()
+
+file(READ "${AFFECT_DIR}/dumped.affect" tampered_affect)
+file(WRITE "${AFFECT_DIR}/tampered.affect" "${tampered_affect}# tampered comment\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-style "${AFFECT_DIR}/tampered.affect"
+    RESULT_VARIABLE tampered_inspect_result
+    OUTPUT_VARIABLE tampered_inspect
+    ERROR_VARIABLE tampered_inspect_error
+)
+if(NOT tampered_inspect_result EQUAL 0 OR NOT tampered_inspect MATCHES "status.invalid")
+    message(FATAL_ERROR "tampered affect file was not detected: ${tampered_inspect} ${tampered_inspect_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --style-file "${AFFECT_DIR}/tampered.affect"
+        --style excited --text "Hello." --output "${AFFECT_DIR}/tampered.wav"
+    RESULT_VARIABLE tampered_render_result
+    ERROR_VARIABLE tampered_render_error
+)
+if(tampered_render_result EQUAL 0 OR NOT tampered_render_error MATCHES "affect checksum mismatch")
+    message(FATAL_ERROR "tampered affect checksum was not enforced: ${tampered_render_error}")
+endif()
+
+set(BRIGHT_STYLE "${FORMANT_EXAMPLES_DIR}/affect/bright.affect")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-style "${BRIGHT_STYLE}"
+    RESULT_VARIABLE bright_inspect_result
+    OUTPUT_VARIABLE bright_inspect
+    ERROR_VARIABLE bright_inspect_error
+)
+if(NOT bright_inspect_result EQUAL 0
+        OR NOT bright_inspect MATCHES "name.Bright"
+        OR NOT bright_inspect MATCHES "status.valid")
+    message(FATAL_ERROR "shipped example style is invalid: ${bright_inspect} ${bright_inspect_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-styles --style-file "${BRIGHT_STYLE}"
+    RESULT_VARIABLE bright_list_result
+    OUTPUT_VARIABLE bright_list_output
+    ERROR_VARIABLE bright_list_error
+)
+if(NOT bright_list_result EQUAL 0 OR NOT bright_list_output MATCHES "bright")
+    message(FATAL_ERROR "shipped example style did not layer over the built-ins: ${bright_list_output} ${bright_list_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "I really like this." --sample-rate 22050
+        --output "${AFFECT_DIR}/plain.wav"
+    RESULT_VARIABLE affect_plain_result
+    ERROR_VARIABLE affect_plain_error
+)
+if(NOT affect_plain_result EQUAL 0)
+    message(FATAL_ERROR "plain affect comparison render failed: ${affect_plain_error}")
+endif()
+foreach(affect_pass 1 2)
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --text "I really like this." --sample-rate 22050
+            --style excited --output "${AFFECT_DIR}/excited${affect_pass}.wav"
+        RESULT_VARIABLE affect_render_result
+        ERROR_VARIABLE affect_render_error
+    )
+    if(NOT affect_render_result EQUAL 0)
+        message(FATAL_ERROR "styled render failed: ${affect_render_error}")
+    endif()
+endforeach()
+file(SHA256 "${AFFECT_DIR}/plain.wav" affect_plain_hash)
+file(SHA256 "${AFFECT_DIR}/excited1.wav" affect_excited_hash1)
+file(SHA256 "${AFFECT_DIR}/excited2.wav" affect_excited_hash2)
+if(affect_plain_hash STREQUAL affect_excited_hash1)
+    message(FATAL_ERROR "applying an affect style did not change the audio")
+endif()
+if(NOT affect_excited_hash1 STREQUAL affect_excited_hash2)
+    message(FATAL_ERROR "affect styling is not deterministic")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "I really like this." --sample-rate 22050
+        --arousal 0.8 --valence 0.7 --dominance 0.5
+        --output "${AFFECT_DIR}/coordinates.wav"
+    RESULT_VARIABLE affect_coordinates_result
+    ERROR_VARIABLE affect_coordinates_error
+)
+if(NOT affect_coordinates_result EQUAL 0)
+    message(FATAL_ERROR "continuous affect render failed: ${affect_coordinates_error}")
+endif()
+file(SHA256 "${AFFECT_DIR}/coordinates.wav" affect_coordinates_hash)
+if(NOT affect_coordinates_hash STREQUAL affect_excited_hash1)
+    message(FATAL_ERROR "PAD coordinates matching a named preset did not resolve identically")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --pitch 200 --style excited
+        --text "I really like this." --sample-rate 22050
+        --output "${AFFECT_DIR}/flag-first.wav"
+    RESULT_VARIABLE affect_flag_first_result
+    ERROR_VARIABLE affect_flag_first_error
+)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --style excited --pitch 200
+        --text "I really like this." --sample-rate 22050
+        --output "${AFFECT_DIR}/style-first.wav"
+    RESULT_VARIABLE affect_style_first_result
+    ERROR_VARIABLE affect_style_first_error
+)
+if(NOT affect_flag_first_result EQUAL 0 OR NOT affect_style_first_result EQUAL 0)
+    message(FATAL_ERROR "flag-order comparison render failed: ${affect_flag_first_error} ${affect_style_first_error}")
+endif()
+file(SHA256 "${AFFECT_DIR}/flag-first.wav" affect_flag_first_hash)
+file(SHA256 "${AFFECT_DIR}/style-first.wav" affect_style_first_hash)
+if(NOT affect_flag_first_hash STREQUAL affect_style_first_hash)
+    message(FATAL_ERROR "explicit voice flags are not replayed after --style")
+endif()
+
+file(WRITE "${AFFECT_DIR}/plain.ssml" "<speak>I really like this.</speak>\n")
+file(WRITE "${AFFECT_DIR}/emphasis.ssml"
+    "<speak>I <emphasis level=\"strong\">really</emphasis> like this.</speak>\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ssml-file "${AFFECT_DIR}/plain.ssml"
+        --sample-rate 22050 --output "${AFFECT_DIR}/plain-ssml.wav"
+    RESULT_VARIABLE emphasis_plain_result
+    ERROR_VARIABLE emphasis_plain_error
+)
+execute_process(
+    COMMAND "${FORMANT_CLI}" --ssml-file "${AFFECT_DIR}/emphasis.ssml"
+        --sample-rate 22050 --output "${AFFECT_DIR}/emphasis.wav"
+    RESULT_VARIABLE emphasis_result
+    ERROR_VARIABLE emphasis_error
+)
+if(NOT emphasis_plain_result EQUAL 0 OR NOT emphasis_result EQUAL 0)
+    message(FATAL_ERROR "SSML emphasis comparison render failed: ${emphasis_plain_error} ${emphasis_error}")
+endif()
+file(SHA256 "${AFFECT_DIR}/plain-ssml.wav" emphasis_plain_hash)
+file(SHA256 "${AFFECT_DIR}/emphasis.wav" emphasis_hash)
+if(emphasis_plain_hash STREQUAL emphasis_hash)
+    message(FATAL_ERROR "<emphasis> did not change the rendered audio")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Extreme." --sample-rate 22050
+        --arousal 1 --valence -1 --dominance 1
+        --gain 4 --jitter 50 --shimmer 0.25
+        --output "${AFFECT_DIR}/extreme.wav"
+    RESULT_VARIABLE affect_extreme_result
+    ERROR_VARIABLE affect_extreme_error
+)
+if(NOT affect_extreme_result EQUAL 0)
+    message(FATAL_ERROR "extreme affect render failed: ${affect_extreme_error}")
+endif()
+file(SIZE "${AFFECT_DIR}/extreme.wav" affect_extreme_size)
+if(affect_extreme_size LESS 44)
+    message(FATAL_ERROR "extreme affect render produced no audio")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

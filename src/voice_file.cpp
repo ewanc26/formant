@@ -113,6 +113,10 @@ std::vector<VoiceParameter> voiceParameters() {
          "phoneme release ramp in seconds"},
         {"gain", 0.001, 4.0, 0.3, 1.0, false,
          "output level before normalisation"},
+        {"jitter-cents", 0.0, 50.0, 0.0, 12.0, false,
+         "deterministic pitch modulation depth in cents"},
+        {"shimmer", 0.0, 0.25, 0.0, 0.08, false,
+         "deterministic amplitude modulation depth"},
     };
 }
 
@@ -151,6 +155,10 @@ void setVoiceParameter(Voice &voice, std::string_view name, double value) {
             voice.release = value;
         else if (name == "gain")
             voice.gain = value;
+        else if (name == "jitter-cents")
+            voice.jitterCents = value;
+        else if (name == "shimmer")
+            voice.shimmerDepth = value;
         return;
     }
     throw std::invalid_argument("unknown voice parameter: " +
@@ -182,6 +190,10 @@ double voiceParameter(const Voice &voice, std::string_view name) {
         return voice.release;
     if (name == "gain")
         return voice.gain;
+    if (name == "jitter-cents")
+        return voice.jitterCents;
+    if (name == "shimmer")
+        return voice.shimmerDepth;
     throw std::invalid_argument("unknown voice parameter: " +
                                 std::string(name));
 }

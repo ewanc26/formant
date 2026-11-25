@@ -30,6 +30,13 @@ struct Voice {
     // Pervasive nasal twang, 0..1. Kept last so existing positional aggregate
     // initialisers keep their meaning. Added in 0.28.0; defaults to off.
     double nasality = 0.0;
+
+    // Deterministic perturbation levers used by the affect layer (#125). Both
+    // default to zero and the synthesis branches are skipped entirely at zero,
+    // so ordinary renders stay byte-identical. Appended after nasality to keep
+    // positional aggregate initialisers meaningful.
+    double jitterCents = 0.0;  // bounded pitch modulation depth in cents
+    double shimmerDepth = 0.0; // bounded amplitude modulation depth, 0..0.25
 };
 
 // Returns a copy of a built-in voice. Throws std::invalid_argument for an

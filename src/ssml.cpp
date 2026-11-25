@@ -20,7 +20,24 @@ struct Prosody {
     double rate = 1.0;   // speaking rate; >1 is faster
     double pitch = 1.0;  // F0 multiplier
     double volume = 1.0; // amplitude multiplier
+    // Word emphasis composes with <prosody> but applies only to speech spans
+    // explicitly marked by <emphasis>. Neutral values are multiplicative 1.
+    double emphasisPitch = 1.0;
+    double emphasisDuration = 1.0;
+    double emphasisAmplitude = 1.0;
 };
+
+SsmlEmphasisLevels withDefaultEmphasisLevels(const SsmlEmphasisLevels &levels) {
+    SsmlEmphasisLevels result = {
+        {"strong", {1.22, 1.30, 1.28}},
+        {"moderate", {1.12, 1.15, 1.14}},
+        {"reduced", {0.90, 0.85, 0.88}},
+    };
+    for (const auto &entry : levels) {
+        result[entry.first] = entry.second;
+    }
+    return result;
+}
 
 double number(const std::string &text, size_t at) {
     char *end = nullptr;
@@ -317,7 +334,17 @@ std::string expandSayAs(std::string_view text, std::string_view interpretAs,
                                 std::string(interpretAs) + "'");
 }
 
+bool canEmphasize(const Phoneme &phoneme) {
+    // Gaps, pauses and authored events are not words. Provenance also protects
+    // anything a previous layer explicitly tagged from a second emphasis pass.
+    return phoneme.kind != PhonemeKind::Silence && phoneme.name != "_" &&
+           phoneme.name != "|" && phoneme.source.empty();
+}
+
 void applyProsody(std::vector<Phoneme> &phonemes, const Prosody &prosody) {
+    const bool emphasize = prosody.emphasisPitch != 1.0 ||
+                           prosody.emphasisDuration != 1.0 ||
+                           prosody.emphasisAmplitude != 1.0;
     for (Phoneme &phoneme : phonemes) {
         if (prosody.rate > 0.0) {
             phoneme.duration /= prosody.rate;
@@ -325,6 +352,15 @@ void applyProsody(std::vector<Phoneme> &phonemes, const Prosody &prosody) {
         phoneme.pitchStart *= prosody.pitch;
         phoneme.pitchEnd *= prosody.pitch;
         phoneme.amplitude *= prosody.volume;
+        if (emphasize && canEmphasize(phoneme)) {
+            phoneme.duration *= prosody.emphasisDuration;
+            phoneme.pitchStart *= prosody.emphasisPitch;
+            phoneme.pitchEnd *= prosody.emphasisPitch;
+            phoneme.amplitude *= prosody.emphasisAmplitude;
+            // The neural layer skips authored source tags, so emphasis is not
+            // applied twice when --neural-apply is also requested.
+            phoneme.source = "style:emphasis";
+        }
     }
 }
 
@@ -345,8 +381,10 @@ struct Tag {
 class SsmlParser {
   public:
     SsmlParser(std::string_view ssml, const SsmlTextFrontEnd &frontEnd,
-               const SsmlNvvResolver *resolveNvv = nullptr)
-        : src_(ssml), frontEnd_(frontEnd), resolveNvv_(resolveNvv) {}
+               const SsmlNvvResolver *resolveNvv = nullptr,
+               const SsmlEmphasisLevels &emphasisLevels = {})
+        : src_(ssml), frontEnd_(frontEnd), resolveNvv_(resolveNvv),
+          emphasisLevels_(withDefaultEmphasisLevels(emphasisLevels)) {}
 
     std::vector<Phoneme> parse() {
         // A <speak> wrapper is just a container; bare text works too. Both
@@ -359,6 +397,7 @@ class SsmlParser {
     std::string_view src_;
     const SsmlTextFrontEnd &frontEnd_;
     const SsmlNvvResolver *resolveNvv_ = nullptr;
+    SsmlEmphasisLevels emphasisLevels_;
     size_t pos_ = 0;
 
     [[noreturn]] void fail(const std::string &message, size_t at) const {
@@ -563,6 +602,22 @@ class SsmlParser {
             result.insert(result.end(), nested.begin(), nested.end());
             return;
         }
+        if (tag.name == "emphasis") {
+            const std::string level =
+                lower(attribute(tag.attrs, "level").value_or("strong"));
+            const auto found = emphasisLevels_.find(level);
+            if (found == emphasisLevels_.end()) {
+                fail("unsupported emphasis level '" + level + "'", tag.start);
+            }
+            Prosody next = prosody;
+            next.emphasisPitch *= found->second.pitch;
+            next.emphasisDuration *= found->second.duration;
+            next.emphasisAmplitude *= found->second.amplitude;
+            std::vector<Phoneme> nested =
+                parseChildren(next, "emphasis", tag.start);
+            result.insert(result.end(), nested.begin(), nested.end());
+            return;
+        }
         if (tag.name == "break") {
             std::optional<double> seconds;
             if (const auto time = attribute(tag.attrs, "time")) {
@@ -651,6 +706,21 @@ std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
                                    const SsmlTextFrontEnd &phonemizeText,
                                    const SsmlNvvResolver &resolveNvv) {
     SsmlParser parser(ssml, phonemizeText, &resolveNvv);
+    return parser.parse();
+}
+
+std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
+                                   const SsmlTextFrontEnd &phonemizeText,
+                                   const SsmlEmphasisLevels &emphasisLevels) {
+    SsmlParser parser(ssml, phonemizeText, nullptr, emphasisLevels);
+    return parser.parse();
+}
+
+std::vector<Phoneme> phonemizeSsml(std::string_view ssml,
+                                   const SsmlTextFrontEnd &phonemizeText,
+                                   const SsmlNvvResolver &resolveNvv,
+                                   const SsmlEmphasisLevels &emphasisLevels) {
+    SsmlParser parser(ssml, phonemizeText, &resolveNvv, emphasisLevels);
     return parser.parse();
 }
 
