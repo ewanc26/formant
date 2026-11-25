@@ -1,0 +1,21 @@
+# Built-in 12-tone equal-tempered scale for #123 (#123 scale table).
+# Cents are measured from C of the reference octave; reference 900 is A4.
+# User scales may redefine this name or introduce a new one with --scale-file.
+
+schema 1
+name chromatic
+period 1200
+reference 900
+degree C 0
+degree C# 100
+degree D 200
+degree D# 300
+degree E 400
+degree F 500
+degree F# 600
+degree G 700
+degree G# 800
+degree A 900
+degree A# 1000
+degree B 1100
+checksum 0ca141780140b23e53fe3404d14e79f86cce60524ef38ad6eca22cffeb19faa1

@@ -1975,4 +1975,172 @@ if(affect_extreme_size LESS 44)
     message(FATAL_ERROR "extreme affect render produced no audio")
 endif()
 
+# Issue #123: opt-in singing mode is data-driven, deterministic and additive.
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-songs
+    RESULT_VARIABLE list_songs_result
+    OUTPUT_VARIABLE list_songs_output
+    ERROR_VARIABLE list_songs_error
+)
+if(NOT list_songs_result EQUAL 0 OR NOT list_songs_output MATCHES "twinkle")
+    message(FATAL_ERROR "formant --list-songs failed: ${list_songs_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-scales
+    RESULT_VARIABLE list_scales_result
+    OUTPUT_VARIABLE list_scales_output
+    ERROR_VARIABLE list_scales_error
+)
+if(NOT list_scales_result EQUAL 0
+   OR NOT list_scales_output MATCHES "chromatic"
+   OR NOT list_scales_output MATCHES "quarter")
+    message(FATAL_ERROR "formant --list-scales failed: ${list_scales_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --dump-song twinkle
+    RESULT_VARIABLE dump_song_result
+    OUTPUT_VARIABLE dump_song_output
+    ERROR_VARIABLE dump_song_error
+)
+if(NOT dump_song_result EQUAL 0 OR NOT dump_song_output MATCHES "schema 1")
+    message(FATAL_ERROR "formant --dump-song failed: ${dump_song_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-song "${FORMANT_SOURCE_DIR}/data/songs/twinkle.song"
+    RESULT_VARIABLE inspect_song_result
+    OUTPUT_VARIABLE inspect_song_output
+    ERROR_VARIABLE inspect_song_error
+)
+if(NOT inspect_song_result EQUAL 0 OR NOT inspect_song_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "formant --inspect-song failed: ${inspect_song_error}")
+endif()
+
+set(SONG_DIR "${FORMANT_OUTPUT_DIR}/song")
+file(MAKE_DIRECTORY "${SONG_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song twinkle --sample-rate 22050
+        --output "${SONG_DIR}/twinkle.wav"
+    RESULT_VARIABLE song_result
+    ERROR_VARIABLE song_error
+)
+if(NOT song_result EQUAL 0)
+    message(FATAL_ERROR "built-in song render failed: ${song_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song twinkle --sample-rate 22050
+        --output "${SONG_DIR}/twinkle-again.wav"
+    RESULT_VARIABLE song_again_result
+    ERROR_VARIABLE song_again_error
+)
+if(NOT song_again_result EQUAL 0)
+    message(FATAL_ERROR "second built-in song render failed: ${song_again_error}")
+endif()
+file(SHA256 "${SONG_DIR}/twinkle.wav" song_hash)
+file(SHA256 "${SONG_DIR}/twinkle-again.wav" song_again_hash)
+if(NOT song_hash STREQUAL song_again_hash)
+    message(FATAL_ERROR "song rendering is not deterministic")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song-file "${FORMANT_SOURCE_DIR}/data/songs/twinkle.song"
+        --sample-rate 22050 --output "${SONG_DIR}/file.wav"
+    RESULT_VARIABLE song_file_result
+    ERROR_VARIABLE song_file_error
+)
+if(NOT song_file_result EQUAL 0)
+    message(FATAL_ERROR "song file render failed: ${song_file_error}")
+endif()
+file(SHA256 "${SONG_DIR}/file.wav" song_file_hash)
+if(NOT song_file_hash STREQUAL song_hash)
+    message(FATAL_ERROR "built-in and file songs differ")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song twinkle --a4 432 --sample-rate 22050
+        --output "${SONG_DIR}/retuned.wav"
+    RESULT_VARIABLE a4_result
+    ERROR_VARIABLE a4_error
+)
+if(NOT a4_result EQUAL 0)
+    message(FATAL_ERROR "A4 override render failed: ${a4_error}")
+endif()
+file(SHA256 "${SONG_DIR}/retuned.wav" retuned_hash)
+if(retuned_hash STREQUAL song_hash)
+    message(FATAL_ERROR "--a4 did not change the song pitch")
+endif()
+file(WRITE "${SONG_DIR}/scale-demo.song"
+    "schema 1\nname scale-demo\na4 440\nscale chromatic\nnote degree:1@4 0.30 ah\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song-file "${SONG_DIR}/scale-demo.song"
+        --scale quarter --sample-rate 22050
+        --output "${SONG_DIR}/quarter.wav"
+    RESULT_VARIABLE quarter_result
+    ERROR_VARIABLE quarter_error
+)
+if(NOT quarter_result EQUAL 0)
+    message(FATAL_ERROR "quarter-tone scale render failed: ${quarter_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song-file "${SONG_DIR}/scale-demo.song"
+        --scale chromatic --sample-rate 22050
+        --output "${SONG_DIR}/chromatic-scale.wav"
+    RESULT_VARIABLE chromatic_scale_result
+    ERROR_VARIABLE chromatic_scale_error
+)
+if(NOT chromatic_scale_result EQUAL 0)
+    message(FATAL_ERROR "chromatic scale render failed: ${chromatic_scale_error}")
+endif()
+file(SHA256 "${SONG_DIR}/quarter.wav" quarter_hash)
+file(SHA256 "${SONG_DIR}/chromatic-scale.wav" chromatic_scale_hash)
+if(quarter_hash STREQUAL chromatic_scale_hash)
+    message(FATAL_ERROR "--scale quarter resolved to the chromatic pitches")
+endif()
+
+file(WRITE "${SONG_DIR}/detuned.scl"
+    "schema 1\nname detuned\nperiod 1200\nreference 900\ndegree C 0\ndegree C# 80\ndegree D 200\n")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --dump-scale quarter
+    RESULT_VARIABLE dump_scale_result
+    OUTPUT_VARIABLE dump_scale_output
+    ERROR_VARIABLE dump_scale_error
+)
+if(NOT dump_scale_result EQUAL 0 OR NOT dump_scale_output MATCHES "schema 1")
+    message(FATAL_ERROR "formant --dump-scale failed: ${dump_scale_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-scale "${FORMANT_SOURCE_DIR}/data/scales/quarter.scl"
+    RESULT_VARIABLE inspect_scale_result
+    OUTPUT_VARIABLE inspect_scale_output
+    ERROR_VARIABLE inspect_scale_error
+)
+if(NOT inspect_scale_result EQUAL 0 OR NOT inspect_scale_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "formant --inspect-scale failed: ${inspect_scale_error}")
+endif()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song-file "${SONG_DIR}/scale-demo.song"
+        --scale-file "${SONG_DIR}/detuned.scl" --sample-rate 22050
+        --output "${SONG_DIR}/detuned.wav"
+    RESULT_VARIABLE detuned_result
+    ERROR_VARIABLE detuned_error
+)
+if(NOT detuned_result EQUAL 0)
+    message(FATAL_ERROR "--scale-file render failed: ${detuned_error}")
+endif()
+file(SHA256 "${SONG_DIR}/detuned.wav" detuned_hash)
+if(detuned_hash STREQUAL chromatic_scale_hash)
+    message(FATAL_ERROR "--scale-file did not change the resolved pitch")
+endif()
+
+foreach(bad_args "--song;twinkle;--text;nope" "--song;twinkle;--song-file;x" "--a4;432" "--scale;quarter")
+    separate_arguments(bad_command UNIX_COMMAND "${bad_args}")
+    execute_process(
+        COMMAND "${FORMANT_CLI}" ${bad_command} --output "${FORMANT_OUTPUT}"
+        RESULT_VARIABLE song_conflict_result
+        ERROR_VARIABLE song_conflict_error
+    )
+    if(song_conflict_result EQUAL 0)
+        message(FATAL_ERROR "formant accepted invalid song options: ${bad_args}")
+    endif()
+endforeach()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

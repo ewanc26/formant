@@ -37,6 +37,7 @@ set(CASES
     "format_raw16"
     "sample_rate"
     "dither"
+    "song"
 )
 
 set(ARGS_default "")
@@ -64,6 +65,7 @@ set(ARGS_format_wav24 --format wav24 --text "Hello, world.")
 set(ARGS_format_raw16 --format raw16 --text "Hello, world.")
 set(ARGS_sample_rate --sample-rate 22050 --text "Hello, world.")
 set(ARGS_dither --dither 42 --format raw16 --text "Hello, world.")
+set(ARGS_song --song twinkle --sample-rate 22050)
 
 function(formant_read_corpus out_var)
     if(NOT EXISTS "${CORPUS_FILE}")

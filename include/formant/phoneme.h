@@ -39,6 +39,22 @@ struct SpectralZero {
     bool operator==(const SpectralZero &) const = default;
 };
 
+// #123: optional per-segment note control for singing. `noteOffsetSeconds`
+// locates this segment inside its musical note, so a note split into
+// transition/sustain pieces still shares one vibrato envelope. When this field
+// is set on a phoneme, the shared F0 oracle replaces the global voice vibrato
+// and jitter with this note-local, delayed vibrato. Absent by default, so
+// ordinary speech takes the exact same code path as before.
+struct NoteF0Control {
+    double noteOffsetSeconds = 0.0;
+    double vibratoRateHz = 0.0;
+    double vibratoExtentCents = 0.0;
+    double vibratoDelaySeconds = 0.0;
+    double vibratoFadeSeconds = 0.0;
+
+    bool operator==(const NoteF0Control &) const = default;
+};
+
 struct Phoneme {
     std::string name;
     PhonemeKind kind = PhonemeKind::Silence;
@@ -76,6 +92,10 @@ struct Phoneme {
     // are unchanged. Front ends use it to express intent to later layers; the
     // synthesiser never reads it.
     std::string source;
+
+    // Optional note-F0 control (#123). Added after provenance so every
+    // positional aggregate initialiser keeps its original meaning.
+    std::optional<NoteF0Control> noteF0;
 
     bool operator==(const Phoneme &) const = default;
 };

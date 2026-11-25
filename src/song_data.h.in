@@ -1,0 +1,11 @@
+#pragma once
+
+#include <string_view>
+
+// Generated from data/songs and data/scales by CMake. These are inspectable
+// data tables, not synthesis code; embedding them keeps the CLI dependency-free.
+namespace formant::detail {
+inline constexpr std::string_view kBuiltinTwinkleSong = R"SONG(@TWINKLE_SONG_DATA@)SONG";
+inline constexpr std::string_view kBuiltinChromaticScale = R"SCALE(@CHROMATIC_SCALE_DATA@)SCALE";
+inline constexpr std::string_view kBuiltinQuarterScale = R"SCALE(@QUARTER_SCALE_DATA@)SCALE";
+} // namespace formant::detail

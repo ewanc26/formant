@@ -211,8 +211,10 @@ void parseNeuralState(std::string_view text) {
 void parseAffect(std::string_view text) {
     (void)formant::parseAffectData(formant::builtinAffectData(), text);
 }
+void parseSong(std::string_view text) { (void)formant::parseSongFile(text); }
+void parseScale(std::string_view text) { (void)formant::parseSongScale(text); }
 
-const std::array<ParserCase, 13> kParsers = {{
+const std::array<ParserCase, 15> kParsers = {{
     {"language", parseLanguage},
     {"voice", parseVoice},
     {"prosody", parseProsody},
@@ -226,6 +228,8 @@ const std::array<ParserCase, 13> kParsers = {{
     {"neural-samples", parseNeuralSamples},
     {"neural-state", parseNeuralState},
     {"affect", parseAffect},
+    {"song", parseSong},
+    {"scale", parseScale},
 }};
 
 void checkRejection(uint32_t seed) {
@@ -255,7 +259,7 @@ void checkRejection(uint32_t seed) {
 // Structured malformed inputs with expected rejection and a required useful
 // message fragment. These are the "instructive errors" regression guards.
 void checkStructuredMalformed() {
-    const std::array<std::pair<const char *, std::string>, 8> cases = {{
+    const std::array<std::pair<const char *, std::string>, 15> cases = {{
         {"language", "grapheme ab"},
         {"voice", "pitch not_a_number"},
         {"prosody", "segment 0 f0=abcHz"},
@@ -264,6 +268,13 @@ void checkStructuredMalformed() {
         {"ssml", "<speak><unknown/></speak>"},
         {"pattern", "Q=(("},
         {"ipa", "\xff\xfe"},
+        {"xsampa", "x#y"},
+        {"bracket", "not bracketed"},
+        {"neural-samples", "not a sample"},
+        {"neural-state", "schema 99"},
+        {"affect", "schema 99"},
+        {"song", "schema 99"},
+        {"scale", "schema 99"},
     }};
     for (uint32_t i = 0; i < cases.size(); ++i) {
         CaseScope scope(i + 90000, "structured-malformed");

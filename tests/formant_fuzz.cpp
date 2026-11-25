@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
@@ -104,6 +105,27 @@ int fail(uint32_t seed, const std::string &reason) {
     return 1;
 }
 
+const std::array<const char *, 6> kSongPitches = {
+    "C4", "midi:69", "69", "cents:1200", "degree:9@4", "C4+7c"};
+
+std::string makeSongScript(formant::SeededRng &rng) {
+    std::ostringstream out;
+    out << "schema 1\nname fuzz-song\na4 " << (430.0 + rng.below(100))
+        << "\nscale chromatic\n";
+    const uint32_t count = 3 + rng.below(4);
+    for (uint32_t i = 0; i < count; ++i) {
+        const bool portamento = rng.below(2) != 0;
+        const double duration = 0.08 + rng.below(20) * 0.005;
+        const double glide = portamento ? 0.02 + rng.below(8) * 0.01 : 0.005;
+        out << "note " << kSongPitches[rng.below(kSongPitches.size())] << ' '
+            << std::fixed << std::setprecision(3) << duration << " ah"
+            << " transition=" << (portamento ? "portamento" : "legato")
+            << " glide=" << std::fixed << std::setprecision(3) << glide
+            << "s vibrato=5.5:8c:0.01s:0.02s\n";
+    }
+    return out.str();
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -161,6 +183,37 @@ int main(int argc, char **argv) {
                                 return std::memcmp(&a, &b, sizeof(float)) == 0;
                             })) {
                 return fail(seed, "seeded render was not deterministic");
+            }
+
+            // Every fourth case exercises the full #123 song path: generated
+            // data text -> parser -> absolute F0 segments -> deterministic PCM.
+            if (i % 4 == 0) {
+                const std::string songText = makeSongScript(rng);
+                const auto song = formant::parseSongFile(songText);
+                const auto scale = formant::parseSongScale(
+                    formant::builtinScaleData("chromatic"));
+                const auto notes = formant::phonemizeSong(song, scale);
+                const int songRate =
+                    kSampleRates[rng.below(kSampleRates.size())];
+                const auto songSamples =
+                    formant::Synthesizer(voice).render(notes, songRate);
+                if (!allFiniteAndBounded(songSamples)) {
+                    return fail(seed,
+                                "song render produced non-finite samples");
+                }
+                const auto songAgain = formant::phonemizeSong(
+                    formant::parseSongFile(songText), scale);
+                const auto songSamplesAgain =
+                    formant::Synthesizer(voice).render(songAgain, songRate);
+                if (songSamples.size() != songSamplesAgain.size() ||
+                    !std::equal(songSamples.begin(), songSamples.end(),
+                                songSamplesAgain.begin(), [](float a, float b) {
+                                    return std::memcmp(&a, &b, sizeof(float)) ==
+                                           0;
+                                })) {
+                    return fail(seed,
+                                "seeded song render was not deterministic");
+                }
             }
         } catch (const std::exception &error) {
             return fail(seed,

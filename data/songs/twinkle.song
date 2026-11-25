@@ -1,0 +1,26 @@
+# Built-in demo song for #123: "Twinkle, Twinkle, Little Star".
+#
+# A wordless 'ah' melody is deliberate: the note contour is easy to hear without
+# consonants masking the attacks. Two portamento entries make the glide audible;
+# the remaining entries use a deliberately short legato knee. Vibrato is gated
+# until after each onset, so the note attacks remain clean.
+
+schema 1
+name Twinkle, Twinkle, Little Star
+a4 440
+scale chromatic
+note C4 0.42 ah transition=legato glide=0.006s vibrato=5.5:10c:0.18s:0.22s
+note C4 0.42 ah transition=legato glide=0.006s
+note G4 0.42 ah transition=portamento glide=0.180s vibrato=5.5:12c:0.20s:0.25s
+note G4 0.42 ah transition=legato glide=0.006s
+note A4 0.42 ah transition=portamento glide=0.160s vibrato=5.5:12c:0.20s:0.25s
+note A4 0.42 ah transition=legato glide=0.006s
+note G4 0.68 ah transition=portamento glide=0.200s overshoot=18c vibrato=5.5:14c:0.24s:0.30s
+note F4 0.42 ah transition=portamento glide=0.170s
+note F4 0.42 ah transition=legato glide=0.006s
+note E4 0.42 ah transition=portamento glide=0.170s vibrato=5.5:10c:0.18s:0.22s
+note E4 0.42 ah transition=legato glide=0.006s
+note D4 0.42 ah transition=portamento glide=0.170s
+note D4 0.42 ah transition=legato glide=0.006s
+note C4 0.78 ah transition=portamento glide=0.190s preparation=-30c vibrato=5.5:16c:0.26s:0.32s
+checksum 6f89dccaa422285784a61bf4e95bd73db0dc0514b9c1de45217e0c8571ffa4ed

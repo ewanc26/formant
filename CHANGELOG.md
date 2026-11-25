@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.35.0] - 2026-11-25
+
+### Added
+
+- Opt-in singing mode (#123). `--song`/`--song-file` read versioned `.song` data that resolves notes (scale degree with octave, named or bare MIDI, absolute cents, or degree index, all with cents offsets) to absolute F0 targets; `--scale`/`--scale-file` load data-defined `.scl` scale tables, including the built-in `chromatic` and 24-tone `quarter` scales. Notes support legato or portamento transitions, optional overshoot and preparation from the singing-F0 transition/sustain literature, and per-note vibrato that is exactly zero until its authored delay and then fades in smoothly. Note segments skip global voice vibrato and jitter, so attacks stay clean and there is no second oscillator; the single renderer phase accumulator carries every join without a phase discontinuity. Song mode owns its F0 and refuses combination with text or intonation/prosody/neural/breathing layers. The `twinkle` demo and both scales are embedded at configure time, listed with `--list-songs`/`--list-scales`, exported with `--dump-song`/`--dump-scale` and verified with `--inspect-song`/`--inspect-scale` using the shared checksum convention. `--a4` retunes the reference pitch. Default speech remains byte-identical and sine-only, with one new checksum-corpus case. Documented in `docs/singing.md`.
+
 ## [0.34.0] - 2026-11-25
 
 ### Added

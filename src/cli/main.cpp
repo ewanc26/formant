@@ -22,6 +22,7 @@
 #include "formant/formant.h"
 #include "formant/affect.h"
 #include "formant/breath.h"
+#include "formant/song.h"
 #include "formant/nvv.h"
 #include "formant/version.h"
 
@@ -51,6 +52,17 @@ Options:
   --prosody-file FILE     Layer exact F0, duration and amplitude overrides
   --intonation-file FILE  Expand symbolic ToBI tones into F0 contours
   --intonation-tune NAME  Built-in tune: statement, yesno, wh, list, exclamation
+  --song NAME             Sing a built-in song (twinkle) instead of text
+  --song-file FILE        Sing a versioned .song file
+  --scale NAME            Song scale: chromatic (default) or quarter
+  --scale-file FILE       Load a non-12-tone .scl scale table
+  --a4 HZ                 Reference pitch for song mode (song default: 440)
+  --list-songs            List built-in songs and exit
+  --list-scales           List built-in scales and exit
+  --dump-song NAME        Print a built-in song as versioned data
+  --inspect-song FILE     Inspect a .song file's schema and checksum
+  --dump-scale NAME       Print a built-in scale as versioned data
+  --inspect-scale FILE    Inspect a .scl file's schema and checksum
   --phonemes "[h ee l o]" Speak a bracketed phoneme sequence instead of text
   --ipa "ˈhəˈloʊ"         Speak a UTF-8 IPA transcription instead of text
   --xsampa "h@"           Speak an X-SAMPA transcription instead of text
@@ -223,6 +235,102 @@ void inspectVoice(const std::string &path) {
               << "\n";
 }
 
+void listSongs() {
+    std::cout << "Built-in songs:\n";
+    for (const std::string &name : formant::builtinSongNames()) {
+        const formant::SongFile song =
+            formant::parseSongFile(formant::builtinSongData(name));
+        std::cout << "  " << name << '\t' << song.notes.size() << " notes\t"
+                  << song.name << "\n";
+    }
+}
+
+void listScales() {
+    std::cout << "Built-in scales:\n";
+    for (const std::string &name : formant::builtinScaleNames()) {
+        const formant::SongScale scale =
+            formant::parseSongScale(formant::builtinScaleData(name));
+        std::cout << "  " << name << '\t' << scale.degrees.size()
+                  << " degrees\t" << scale.periodCents << " cents\n";
+    }
+}
+
+std::string_view builtinSongOrThrow(const std::string &name) {
+    const std::string_view data = formant::builtinSongData(name);
+    if (data.empty()) {
+        throw std::invalid_argument("unknown built-in song '" + name +
+                                    "' (use --list-songs)");
+    }
+    return data;
+}
+
+std::string_view builtinScaleOrThrow(const std::string &name) {
+    const std::string_view data = formant::builtinScaleData(name);
+    if (data.empty()) {
+        throw std::invalid_argument("unknown built-in scale '" + name +
+                                    "' (use --list-scales)");
+    }
+    return data;
+}
+
+void inspectSong(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open song file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read song file: " + path);
+    }
+    const std::string text = source.str();
+    const formant::SongFile song = formant::parseSongFile(text, false);
+    const std::string expected = formant::songFileChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << song.schema << "\n"
+              << "name\t" << song.name << "\n"
+              << "a4\t" << song.a4Hz << "\n"
+              << "scale\t" << song.scale << "\n"
+              << "notes\t" << song.notes.size() << "\n"
+              << "checksum\t" << (song.checksum ? *song.checksum : "none")
+              << "\n"
+              << "computed\t" << expected << "\n"
+              << "status\t"
+              << (!song.checksum
+                      ? "unsigned"
+                      : (*song.checksum == expected ? "valid" : "invalid"))
+              << "\n";
+}
+
+void inspectScale(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open scale file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read scale file: " + path);
+    }
+    const std::string text = source.str();
+    const formant::SongScale scale = formant::parseSongScale(text, false);
+    const std::string expected = formant::songScaleChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << scale.schema << "\n"
+              << "name\t" << scale.name << "\n"
+              << "period\t" << scale.periodCents << "\n"
+              << "reference\t" << scale.referenceCents << "\n"
+              << "degrees\t" << scale.degrees.size() << "\n"
+              << "checksum\t" << (scale.checksum ? *scale.checksum : "none")
+              << "\n"
+              << "computed\t" << expected << "\n"
+              << "status\t"
+              << (!scale.checksum
+                      ? "unsigned"
+                      : (*scale.checksum == expected ? "valid" : "invalid"))
+              << "\n";
+}
+
 void listLanguages() {
     for (const std::string &tag : formant::languageTags()) {
         const Language language = languageFromTag(tag);
@@ -377,6 +485,20 @@ struct Options {
     std::string prosodyFile;
     std::string intonationFile;
     std::string intonationTune;
+    std::string songName;
+    std::string songFile;
+    std::string scaleName = "chromatic";
+    std::string scaleFile;
+    std::optional<double> a4Override;
+    bool useSong = false;
+    bool useScaleName = false;
+    bool useScaleFile = false;
+    bool listSongs = false;
+    bool listScales = false;
+    std::string dumpSong;
+    std::string inspectSongFile;
+    std::string dumpScale;
+    std::string inspectScaleFile;
     std::string voiceFile;
     formant::VoiceDefinition voiceDefinition;
     bool useVoiceFile = false;
@@ -401,6 +523,7 @@ struct Options {
     std::string timingFile;
     std::string visemesFile;
     int sampleRate = 44100;
+    bool useText = false;
     bool usePhonemes = false;
     bool useIpa = false;
     bool useXsampa = false;
@@ -510,6 +633,14 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-styles") {
             options.listStyles = true;
+            continue;
+        }
+        if (arg == "--list-songs") {
+            options.listSongs = true;
+            continue;
+        }
+        if (arg == "--list-scales") {
+            options.listScales = true;
             continue;
         }
         if (arg == "--dump-style" || arg.rfind("--dump-style=", 0) == 0) {
@@ -647,6 +778,7 @@ Options parseOptions(int argc, char **argv) {
 
         if (arg == "--text" || arg.rfind("--text=", 0) == 0) {
             options.text = takeValue(i, argc, argv, "--text");
+            options.useText = true;
         } else if (arg == "--phonemes" || arg.rfind("--phonemes=", 0) == 0) {
             options.phonemes = takeValue(i, argc, argv, "--phonemes");
             options.usePhonemes = true;
@@ -749,6 +881,35 @@ Options parseOptions(int argc, char **argv) {
                    arg.rfind("--intonation-tune=", 0) == 0) {
             options.intonationTune =
                 takeValue(i, argc, argv, "--intonation-tune");
+        } else if (arg == "--song" || arg.rfind("--song=", 0) == 0) {
+            options.songName = takeValue(i, argc, argv, "--song");
+            options.useSong = true;
+        } else if (arg == "--song-file" || arg.rfind("--song-file=", 0) == 0) {
+            options.songFile = takeValue(i, argc, argv, "--song-file");
+            options.useSong = true;
+        } else if (arg == "--scale" || arg.rfind("--scale=", 0) == 0) {
+            options.scaleName = takeValue(i, argc, argv, "--scale");
+            options.useScaleName = true;
+        } else if (arg == "--scale-file" ||
+                   arg.rfind("--scale-file=", 0) == 0) {
+            options.scaleFile = takeValue(i, argc, argv, "--scale-file");
+            options.useScaleFile = true;
+        } else if (arg == "--a4" || arg.rfind("--a4=", 0) == 0) {
+            options.a4Override =
+                number("--a4", takeValue(i, argc, argv, "--a4"));
+        } else if (arg == "--dump-song" || arg.rfind("--dump-song=", 0) == 0) {
+            options.dumpSong = takeValue(i, argc, argv, "--dump-song");
+        } else if (arg == "--inspect-song" ||
+                   arg.rfind("--inspect-song=", 0) == 0) {
+            options.inspectSongFile =
+                takeValue(i, argc, argv, "--inspect-song");
+        } else if (arg == "--dump-scale" ||
+                   arg.rfind("--dump-scale=", 0) == 0) {
+            options.dumpScale = takeValue(i, argc, argv, "--dump-scale");
+        } else if (arg == "--inspect-scale" ||
+                   arg.rfind("--inspect-scale=", 0) == 0) {
+            options.inspectScaleFile =
+                takeValue(i, argc, argv, "--inspect-scale");
         } else if (arg == "--package-voice" ||
                    arg.rfind("--package-voice=", 0) == 0) {
             options.packageVoice = takeValue(i, argc, argv, "--package-voice");
@@ -1242,6 +1403,44 @@ int main(int argc, char **argv) {
                                         "--xsampa (each overrides --text and "
                                         "--stdin)");
         }
+        if (options.useSong && !options.songName.empty() &&
+            !options.songFile.empty()) {
+            throw std::invalid_argument(
+                "use only one of --song and --song-file");
+        }
+        if (options.useScaleName && options.useScaleFile) {
+            throw std::invalid_argument(
+                "use only one of --scale and --scale-file");
+        }
+        if (!options.useSong &&
+            (options.useScaleName || options.useScaleFile)) {
+            throw std::invalid_argument(
+                "--scale and --scale-file only apply to song mode");
+        }
+        if (options.a4Override &&
+            (!std::isfinite(*options.a4Override) ||
+             *options.a4Override < 200.0 || *options.a4Override > 1000.0)) {
+            throw std::invalid_argument("--a4 must be in [200, 1000] Hz");
+        }
+        if (options.a4Override && !options.useSong) {
+            throw std::invalid_argument("--a4 only applies to song mode");
+        }
+        if (options.useSong &&
+            (options.useText || options.useStdin || inputModes > 0 ||
+             options.useGibberish || options.useSsml || options.useLanguage ||
+             options.useLanguageFile || options.useLexicon)) {
+            throw std::invalid_argument(
+                "--song and --song-file cannot be combined with text, "
+                "phoneme, IPA, X-SAMPA, SSML, gibberish or language inputs");
+        }
+        if (options.useSong &&
+            (!options.intonationFile.empty() ||
+             !options.intonationTune.empty() || options.useProsody ||
+             options.neuralApply || options.breathing != "off")) {
+            throw std::invalid_argument(
+                "song mode owns its F0 contour and cannot be combined with "
+                "intonation, prosody, neural or breathing layers");
+        }
         if (options.useGibberish && inputModes > 0) {
             throw std::invalid_argument(
                 "use only one of --gibberish, --phonemes, --ipa or --xsampa");
@@ -1561,6 +1760,31 @@ int main(int argc, char **argv) {
             return 0;
         }
 
+        if (options.listSongs) {
+            listSongs();
+            return 0;
+        }
+        if (options.listScales) {
+            listScales();
+            return 0;
+        }
+        if (!options.dumpSong.empty()) {
+            std::cout << builtinSongOrThrow(options.dumpSong);
+            return 0;
+        }
+        if (!options.inspectSongFile.empty()) {
+            inspectSong(options.inspectSongFile);
+            return 0;
+        }
+        if (!options.dumpScale.empty()) {
+            std::cout << builtinScaleOrThrow(options.dumpScale);
+            return 0;
+        }
+        if (!options.inspectScaleFile.empty()) {
+            inspectScale(options.inspectScaleFile);
+            return 0;
+        }
+
         if (options.listNvv) {
             status << "Nonverbal vocalizations:\n";
             for (const std::string &name : nvv.names()) {
@@ -1639,9 +1863,44 @@ int main(int argc, char **argv) {
                 status << "warning: " << line << "\n";
             }
         };
+        formant::SongFile song;
+        formant::SongScale scale;
+        if (options.useSong) {
+            if (!options.songFile.empty()) {
+                song = formant::loadSongFile(options.songFile);
+            } else {
+                song = formant::parseSongFile(
+                    builtinSongOrThrow(options.songName));
+            }
+            if (!options.scaleFile.empty()) {
+                scale = formant::loadSongScale(options.scaleFile);
+            } else if (options.useScaleName) {
+                scale = formant::parseSongScale(
+                    builtinScaleOrThrow(options.scaleName));
+            } else {
+                const std::string requested =
+                    song.scale.empty() ? "chromatic" : song.scale;
+                const std::string_view data =
+                    formant::builtinScaleData(requested);
+                if (data.empty()) {
+                    throw std::invalid_argument(
+                        "song requests scale '" + requested +
+                        "' which is not built in (use --scale-file)");
+                }
+                scale = formant::parseSongScale(data);
+            }
+            status << "Loaded song '" << song.name << "' (" << song.notes.size()
+                   << " notes) on scale '" << scale.name << "'\n";
+        }
+
         std::vector<formant::Phoneme> phonemes;
         std::string generatedTranscript;
-        if (options.useGibberish) {
+        if (options.useSong) {
+            phonemes = formant::phonemizeSong(song, scale,
+                                              options.a4Override.value_or(0.0));
+            status << "Resolved " << phonemes.size()
+                   << " note segment(s) to absolute F0\n";
+        } else if (options.useGibberish) {
             formant::PatternInventory inventory =
                 options.useLanguageFile
                     ? formant::patternInventory(languageDefinition)
@@ -1993,7 +2252,7 @@ int main(int argc, char **argv) {
             // deterministic phoneme-derived labels. The same scheduler drives
             // the plan and render(), so these boundaries describe this WAV.
             const std::vector<std::string> wordLabels =
-                inputModes == 0 && !options.useSsml
+                inputModes == 0 && !options.useSsml && !options.useSong
                     ? formant::splitWordsForTiming(text)
                     : std::vector<std::string>{};
             const formant::TimingPlan plan = formant::planTiming(

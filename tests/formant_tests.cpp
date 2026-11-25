@@ -96,6 +96,12 @@ std::vector<uint8_t> bytesOf(std::ostringstream &stream) {
     return {text.begin(), text.end()};
 }
 
+std::vector<formant::Phoneme> twinklePhonemes() {
+    return formant::phonemizeSong(
+        formant::parseSongFile(formant::builtinSongData("twinkle")),
+        formant::parseSongScale(formant::builtinScaleData("chromatic")));
+}
+
 } // namespace
 
 int main() {
@@ -4389,6 +4395,213 @@ int main() {
         }
         CHECK(levelRejected);
     }
+
+    // #123: built-in song and scale data are versioned, checksummed and
+    // loadable without any runtime file dependency.
+    const std::string twinkleText(builtinSongData("twinkle"));
+    const SongFile twinkle = parseSongFile(twinkleText);
+    CHECK(twinkle.schema == kCurrentSongSchema);
+    CHECK(twinkle.notes.size() == 14);
+    CHECK(twinkle.checksum.has_value());
+    CHECK(songFileChecksum(twinkleText) == *twinkle.checksum);
+    CHECK(builtinSongData("missing").empty());
+
+    const std::string chromaticText(builtinScaleData("chromatic"));
+    const SongScale chromatic = parseSongScale(chromaticText);
+    CHECK(chromatic.schema == kCurrentSongScaleSchema);
+    CHECK(chromatic.degrees.size() == 12);
+    CHECK(chromatic.referenceCents == 900.0);
+    CHECK(songScaleChecksum(chromaticText) == *chromatic.checksum);
+
+    const std::string quarterText(builtinScaleData("quarter"));
+    const SongScale quarter = parseSongScale(quarterText);
+    CHECK(quarter.degrees.size() == 24);
+    CHECK(songScaleChecksum(quarterText) == *quarter.checksum);
+
+    // Notes may be named, MIDI, bare MIDI, absolute cents, scale degrees or
+    // any of those with an optional +/- cents suffix.
+    const SongFile forms = parseSongFile(R"SONG(
+schema 1
+name pitch-forms
+a4 440
+scale chromatic
+note C4 0.20 ah
+note midi:69 0.20 ah
+note 69 0.20 ah
+note cents:0 0.20 ah
+note degree:9@4 0.20 ah
+note C4+50c 0.20 ah
+)SONG");
+    const std::vector<Phoneme> formPhonemes = phonemizeSong(forms, chromatic);
+    CHECK(formPhonemes.size() >= 6);
+    auto firstOfNote = [](const std::vector<Phoneme> &sequence,
+                          std::size_t number) -> const Phoneme * {
+        const std::string tag = "song:note:" + std::to_string(number);
+        for (const Phoneme &phoneme : sequence) {
+            if (phoneme.source == tag) {
+                return &phoneme;
+            }
+        }
+        return nullptr;
+    };
+    // Notes after the first open with a short glide, so the settled target is
+    // the last segment carrying that note's tag.
+    auto targetOfNote = [](const std::vector<Phoneme> &sequence,
+                           std::size_t number) -> const Phoneme * {
+        const std::string tag = "song:note:" + std::to_string(number);
+        const Phoneme *found = nullptr;
+        for (const Phoneme &phoneme : sequence) {
+            if (phoneme.source == tag) {
+                found = &phoneme;
+            }
+        }
+        return found;
+    };
+    for (std::size_t i = 2; i <= 5; ++i) {
+        const Phoneme *phoneme = targetOfNote(formPhonemes, i);
+        CHECK(phoneme != nullptr);
+        CHECK(phoneme && phoneme->f0StartHz.has_value());
+        CHECK(phoneme && std::abs(*phoneme->f0StartHz - 440.0) < 0.01);
+    }
+    const Phoneme *c4 = targetOfNote(formPhonemes, 1);
+    const Phoneme *semitoneUp = targetOfNote(formPhonemes, 6);
+    CHECK(c4 && std::abs(*c4->f0StartHz - 261.6255653) < 0.01);
+    CHECK(semitoneUp && std::abs(*semitoneUp->f0StartHz - 269.2961810) < 0.01);
+
+    // A4 override and a data-loaded non-12-tone scale both resolve in the
+    // same absolute-Hz parameter domain.
+    const std::vector<Phoneme> retunedPhonemes =
+        phonemizeSong(twinkle, chromatic, 432.0);
+    const Phoneme *retuned = firstOfNote(retunedPhonemes, 1);
+    CHECK(retuned && std::abs(*retuned->f0StartHz - 256.8695363) < 0.01);
+    const SongFile quarterSong = parseSongFile(R"SONG(
+schema 1
+name quarter-demo
+a4 440
+scale quarter
+note Aq4 0.20 ah
+note degree:18@4 0.20 ah
+)SONG");
+    const std::vector<Phoneme> quarterPhonemes =
+        phonemizeSong(quarterSong, quarter);
+    const Phoneme *quarterFlat = firstOfNote(quarterPhonemes, 1);
+    const Phoneme *quarterA = targetOfNote(quarterPhonemes, 2);
+    CHECK(quarterFlat && std::abs(*quarterFlat->f0StartHz - 427.474) < 0.01);
+    CHECK(quarterA && std::abs(*quarterA->f0StartHz - 440.0) < 0.01);
+
+    // Per-note vibrato is exactly zero through the delay, then fades in. A
+    // note-controlled segment suppresses the voice's global vibrato/jitter so
+    // no modulation can leak into the onset.
+    NoteF0Control control;
+    control.noteOffsetSeconds = 0.0;
+    control.vibratoRateHz = 5.5;
+    control.vibratoExtentCents = 12.0;
+    control.vibratoDelaySeconds = 0.20;
+    control.vibratoFadeSeconds = 0.25;
+    CHECK(songVibratoCents(control, 0.0) == 0.0);
+    CHECK(songVibratoCents(control, 0.10) == 0.0);
+    CHECK(songVibratoCents(control, 0.20) == 0.0);
+    CHECK(songVibratoCents(control, 0.21) != 0.0);
+
+    Voice ornate = voicePreset("neutral");
+    ornate.vibratoRate = 7.0;
+    ornate.vibratoDepth = 100.0;
+    ornate.jitterCents = 40.0;
+    Phoneme note = *findPhoneme("ah");
+    note.duration = 1.0;
+    note.f0StartHz = 440.0;
+    note.f0EndHz = 440.0;
+    note.noteF0 = control;
+    const double beforeDelay =
+        detail::fundamentalAt(ornate, note, 100, 0, 1000, 1000, 1000, false);
+    const double afterDelay =
+        detail::fundamentalAt(ornate, note, 300, 0, 1000, 1000, 1000, false);
+    CHECK(std::abs(beforeDelay - 440.0) < 1e-9);
+    CHECK(std::abs(afterDelay - 440.0) > 1e-6);
+
+    // A legato knee is short and a portamento is an audible log-domain glide.
+    const SongFile transitions = parseSongFile(R"SONG(
+schema 1
+name transitions
+a4 440
+scale chromatic
+note C4 0.35 ah transition=legato glide=0.004s
+note G4 0.35 ah transition=portamento glide=0.120s
+)SONG");
+    const std::vector<Phoneme> transitionPhonemes =
+        phonemizeSong(transitions, chromatic);
+    const Phoneme *legato = firstOfNote(transitionPhonemes, 1);
+    const Phoneme *glide = firstOfNote(transitionPhonemes, 2);
+    CHECK(legato && legato->f0StartHz.has_value());
+    CHECK(glide && glide->f0StartHz.has_value() && glide->f0EndHz.has_value());
+    CHECK(glide && std::abs(*glide->f0StartHz - 261.6255653) < 0.01);
+    CHECK(glide && std::abs(*glide->f0EndHz - 391.9954360) < 0.01);
+    CHECK(glide->duration >= 0.10);
+
+    // One phase accumulator carries the waveform through note boundaries: a
+    // continued render split at a transition is byte-identical to a whole one.
+    std::size_t boundary = 0;
+    while (boundary < transitionPhonemes.size() &&
+           transitionPhonemes[boundary].source != "song:note:2") {
+        ++boundary;
+    }
+    CHECK(boundary > 0 && boundary < transitionPhonemes.size());
+    if (boundary > 0 && boundary < transitionPhonemes.size()) {
+        const std::vector<Phoneme> head(transitionPhonemes.begin(),
+                                        transitionPhonemes.begin() + boundary);
+        const std::vector<Phoneme> tail(transitionPhonemes.begin() + boundary,
+                                        transitionPhonemes.end());
+        const Voice voice = voicePreset("neutral");
+        const Synthesizer synthesizer(voice);
+        const RenderResult first = synthesizer.renderContinued(head, 8000, {});
+        const RenderResult joined =
+            synthesizer.renderContinued(tail, 8000, first.state);
+        const std::vector<float> whole =
+            synthesizer.render(transitionPhonemes, 8000);
+        CHECK(joined.samples.size() == whole.size());
+        CHECK(std::equal(joined.samples.begin(), joined.samples.end(),
+                         whole.begin(), [](float a, float b) {
+                             return std::memcmp(&a, &b, sizeof(float)) == 0;
+                         }));
+        const RenderResult reference =
+            synthesizer.renderContinued(transitionPhonemes, 8000, {});
+        CHECK(joined.state.phase == reference.state.phase);
+        CHECK(joined.state.totalSamples == reference.state.totalSamples);
+        CHECK(joined.state.phonemes.size() == reference.state.phonemes.size());
+    }
+
+    // Same data, same bytes: no clock, PRNG or global state enters a song.
+    const std::vector<float> songRender =
+        Synthesizer(voicePreset("neutral")).render(twinklePhonemes(), 22050);
+    const std::vector<float> songRenderAgain =
+        Synthesizer(voicePreset("neutral")).render(twinklePhonemes(), 22050);
+    CHECK(songRender.size() == songRenderAgain.size());
+    CHECK(std::equal(songRender.begin(), songRender.end(),
+                     songRenderAgain.begin(), [](float a, float b) {
+                         return std::memcmp(&a, &b, sizeof(float)) == 0;
+                     }));
+
+    // Parser failures are instructive and never accept malformed versions.
+    bool badSchema = false;
+    try {
+        (void)parseSongFile("schema 9\nname bad\nnote C4 0.1 ah\n");
+    } catch (const std::invalid_argument &error) {
+        badSchema = std::string(error.what()).find("unsupported song schema") !=
+                    std::string::npos;
+    }
+    CHECK(badSchema);
+    bool badDegree = false;
+    try {
+        (void)parseSongScale("schema 1\nname bad\ndegree C not_a_number\n");
+    } catch (const std::invalid_argument &error) {
+        badDegree = std::string(error.what()).find("invalid number") !=
+                    std::string::npos;
+    }
+    CHECK(badDegree);
+
+    // Ordinary phonemes still carry no note control, so the speech path is
+    // untouched. The checksum corpus guards the exact default PCM bytes.
+    CHECK(!findPhoneme("ah")->noteF0.has_value());
 
     // The English paths remain byte-for-byte unchanged.
     CHECK(names(phonemize("Hello, world.")) == hello);
