@@ -58,4 +58,27 @@ publish 9.9.9
 install 1.1.9
 if update >/dev/null 2>&1; then echo "accepted the wrong binary" >&2; exit 1; fi
 expect 1.1.9
+# The notice: cached, quiet when opted out, and checked at most once a day.
+publish 1.2.0
+install 1.1.9
+notice() {
+    env -u CI -u NO_UPDATE_NOTIFIER -u FORMANT_NO_UPDATE_CHECK "$@" \
+        FORMANT_STATE_DIR="$t/state" FORMANT_UPDATE_API="file://$t/latest.json" \
+        "$t/prefix/bin/formant-update" --notify 1.1.9 2>&1
+}
+[ -z "$(notice FORMANT_NO_UPDATE_CHECK=1)" ] || { echo "opt-out ignored" >&2; exit 1; }
+[ ! -e "$t/state" ] || { echo "checked although opted out" >&2; exit 1; }
+[ -z "$(notice)" ] || { echo "notice before any check" >&2; exit 1; }
+tries=0
+until [ -s "$t/state/latest" ]; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 20 ] || { echo "background check did not finish" >&2; exit 1; }
+    sleep 1
+done
+notice | grep -q '1.2.0 is available'
+rm "$t/state/latest"
+[ -z "$(notice)" ] || { echo "unexpected notice" >&2; exit 1; }
+sleep 1
+[ ! -e "$t/state/latest" ] || { echo "checked twice in a day" >&2; exit 1; }
+expect 1.1.9
 echo "formant-update: all checks passed"

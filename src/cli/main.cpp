@@ -18,6 +18,7 @@
 #include <vector>
 
 #if !defined(_WIN32)
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 #if defined(__APPLE__)
@@ -1571,8 +1572,68 @@ std::string cellLabel(const std::vector<SweepAxis> &axes,
 
 namespace {
 
-// `formant self-update` hands over to the formant-update script installed
-// beside this executable. Only releases and `cmake --install` provide it.
+#if !defined(_WIN32)
+// The formant-update script installed beside this executable, or an empty path.
+// Only releases and `cmake --install` provide it.
+std::filesystem::path updateScript() {
+    std::error_code error;
+    std::filesystem::path self;
+#if defined(__APPLE__)
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+        self = std::filesystem::canonical(buffer.c_str(), error);
+    }
+#else
+    self = std::filesystem::canonical("/proc/self/exe", error);
+#endif
+    if (error || self.empty()) {
+        return {};
+    }
+    const std::filesystem::path script = self.parent_path() / "formant-update";
+    return std::filesystem::exists(script, error) ? script
+                                                  : std::filesystem::path{};
+}
+
+// Replaces this process with the script; returns only if that fails.
+void execScript(const std::string &script, std::vector<std::string> arguments) {
+    arguments.insert(arguments.begin(), {"/bin/sh", script});
+    std::vector<char *> raw;
+    for (std::string &argument : arguments) {
+        raw.push_back(argument.data());
+    }
+    raw.push_back(nullptr);
+    execv(raw.front(), raw.data());
+}
+#endif
+
+// Lets the script print an update notice. It only runs for someone at a
+// terminal, and nothing it does can change the command's result.
+void updateNotice() {
+#if !defined(_WIN32)
+    if (!isatty(STDERR_FILENO) || std::getenv("CI") ||
+        std::getenv("NO_UPDATE_NOTIFIER") ||
+        std::getenv("FORMANT_NO_UPDATE_CHECK")) {
+        return;
+    }
+    const std::filesystem::path script = updateScript();
+    if (script.empty()) {
+        return;
+    }
+    std::cout.flush();
+    const pid_t child = fork();
+    if (child == 0) {
+        execScript(script.string(), {"--notify", kVersion});
+        _exit(0);
+    }
+    if (child > 0) {
+        waitpid(child, nullptr, 0);
+    }
+#endif
+}
+
+// `formant self-update` hands over to the script.
 int selfUpdate(int argc, char **argv) {
 #if defined(_WIN32)
     (void)argc;
@@ -1580,33 +1641,14 @@ int selfUpdate(int argc, char **argv) {
     std::cerr << "error: self-update is not available on Windows\n";
     return 1;
 #else
-    std::filesystem::path self;
-#if defined(__APPLE__)
-    std::uint32_t size = 0;
-    _NSGetExecutablePath(nullptr, &size);
-    std::string buffer(size, '\0');
-    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
-        self = std::filesystem::canonical(buffer.c_str());
-    }
-#else
-    self = std::filesystem::canonical("/proc/self/exe");
-#endif
-    const std::filesystem::path script =
-        self.parent_path() / "formant-update";
-    if (self.empty() || !std::filesystem::exists(script)) {
+    const std::filesystem::path script = updateScript();
+    if (script.empty()) {
         std::cerr << "error: this formant was not installed with its updater; "
                      "rebuild or reinstall it\n";
         return 1;
     }
-    std::string shell = "/bin/sh";
-    std::string path = script.string();
-    std::vector<char *> args{shell.data(), path.data()};
-    for (int i = 2; i < argc; ++i) {
-        args.push_back(argv[i]);
-    }
-    args.push_back(nullptr);
-    execv(shell.c_str(), args.data());
-    std::cerr << "error: cannot run " << path << "\n";
+    execScript(script.string(), std::vector<std::string>(argv + 2, argv + argc));
+    std::cerr << "error: cannot run " << script.string() << "\n";
     return 1;
 #endif
 }
@@ -1620,6 +1662,9 @@ int main(int argc, char **argv) {
         }
 
         Options options = parseOptions(argc, argv);
+        if (!options.benchmark && options.benchmarkExpected.empty()) {
+            updateNotice();
+        }
 
         // Writing audio to stdout must leave stdout byte-clean; every human
         // message (including traces) goes to stderr in that mode.

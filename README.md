@@ -60,6 +60,11 @@ formant self-update --check   # report a newer release
 formant self-update           # install it into the same prefix
 ```
 
+At a terminal, other runs print a notice when a newer release is known, and
+look for one in the background at most once a day. Set
+`FORMANT_NO_UPDATE_CHECK` to turn that off; it is also off under `CI`, when
+`NO_UPDATE_NOTIFIER` is set, and when stderr is not a terminal.
+
 It checks the download against the release's SHA-256, which catches corruption
 but is not a signature. It refuses build directories and Homebrew or Nix
 installs, and is not available on Windows.
