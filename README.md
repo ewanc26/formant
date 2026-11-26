@@ -53,6 +53,17 @@ The CLI is `build/formant`. To install the library, headers and CLI:
 cmake --install build --prefix ~/.local
 ```
 
+An installed `formant` can update itself from GitHub releases:
+
+```sh
+formant self-update --check   # report a newer release
+formant self-update           # install it into the same prefix
+```
+
+It checks the download against the release's SHA-256, which catches corruption
+but is not a signature. It refuses build directories and Homebrew or Nix
+installs, and is not available on Windows.
+
 ---
 
 ## Usage

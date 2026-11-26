@@ -80,6 +80,7 @@ jobs:
           prefix="formant-$version-$system-$arch"
           mkdir -p "$prefix/bin" "$prefix/lib" "$prefix/include"
           cp build/formant "$prefix/bin/"
+          install -m 755 scripts/formant-update.sh "$prefix/bin/formant-update"
           cp build/libformant_core.a "$prefix/lib/"
           cp -R include/formant "$prefix/include/"
           cp LICENSE README.md CHANGELOG.md "$prefix/"

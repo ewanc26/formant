@@ -17,6 +17,13 @@
 #include <string_view>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 #include "benchmark/benchmark.h"
 
 #include "formant/formant.h"
@@ -47,6 +54,7 @@ void printHelp() {
 
 Usage:
   formant [options]
+  formant self-update [--check]   Install, or only report, a newer release
 
 Options:
   --text "words"          Text to speak (default: "Hello, world.")
@@ -1561,8 +1569,56 @@ std::string cellLabel(const std::vector<SweepAxis> &axes,
 
 } // namespace
 
+namespace {
+
+// `formant self-update` hands over to the formant-update script installed
+// beside this executable. Only releases and `cmake --install` provide it.
+int selfUpdate(int argc, char **argv) {
+#if defined(_WIN32)
+    (void)argc;
+    (void)argv;
+    std::cerr << "error: self-update is not available on Windows\n";
+    return 1;
+#else
+    std::filesystem::path self;
+#if defined(__APPLE__)
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+        self = std::filesystem::canonical(buffer.c_str());
+    }
+#else
+    self = std::filesystem::canonical("/proc/self/exe");
+#endif
+    const std::filesystem::path script =
+        self.parent_path() / "formant-update";
+    if (self.empty() || !std::filesystem::exists(script)) {
+        std::cerr << "error: this formant was not installed with its updater; "
+                     "rebuild or reinstall it\n";
+        return 1;
+    }
+    std::string shell = "/bin/sh";
+    std::string path = script.string();
+    std::vector<char *> args{shell.data(), path.data()};
+    for (int i = 2; i < argc; ++i) {
+        args.push_back(argv[i]);
+    }
+    args.push_back(nullptr);
+    execv(shell.c_str(), args.data());
+    std::cerr << "error: cannot run " << path << "\n";
+    return 1;
+#endif
+}
+
+} // namespace
+
 int main(int argc, char **argv) {
     try {
+        if (argc > 1 && std::string_view(argv[1]) == "self-update") {
+            return selfUpdate(argc, argv);
+        }
+
         Options options = parseOptions(argc, argv);
 
         // Writing audio to stdout must leave stdout byte-clean; every human
