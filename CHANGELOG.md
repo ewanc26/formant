@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `formant self-update` installs the newest GitHub release over a release or `cmake --install` prefix, and `--check` only reports it. At a terminal, other runs print a notice when a newer release is cached, refreshed in the background at most once a day; `FORMANT_NO_UPDATE_CHECK`, `NO_UPDATE_NOTIFIER` or `CI` turns it off. The download is checked against its published SHA-256, which detects corruption but is not a signature. Not available on Windows.
+
 ## [0.38.0] - 2026-11-25
 
 ### Added

@@ -182,6 +182,10 @@ if(FORMANT_BUILD_TESTS)
         add_test(NAME formant_sine_kernel COMMAND formant_sine_kernel)
 
         add_test(NAME formant_cli_help COMMAND formant --help)
+        if(UNIX)
+            add_test(NAME formant_self_update
+                COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/update_test.sh)
+        endif()
         add_test(NAME formant_cli_voices COMMAND formant --list-voices)
         add_test(NAME formant_cli_render COMMAND
             ${CMAKE_COMMAND}
@@ -253,6 +257,10 @@ if(FORMANT_INSTALL)
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )
+    if(UNIX)
+        install(PROGRAMS scripts/formant-update.sh
+            DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME formant-update)
+    endif()
     install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
     install(DIRECTORY data/phoible/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/phoible)
     install(DIRECTORY data/nvv/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/nvv)
