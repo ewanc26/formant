@@ -41,6 +41,7 @@ set(CASES
     "frication"
     "register"
     "rhythm"
+    "accent"
 )
 
 set(ARGS_default "")
@@ -73,6 +74,7 @@ set(ARGS_frication --phonemes "[s ee]" --frication-file
     "${FORMANT_SOURCE_DIR}/data/frication/frication_profiles.txt")
 set(ARGS_register --phonemes "[ee]" --register sygyt)
 set(ARGS_rhythm --phonemes "[ee s ee s ee]" --rhythm stress)
+set(ARGS_accent --text "Think of the best stop." --accent es-on-en)
 
 function(formant_read_corpus out_var)
     if(NOT EXISTS "${CORPUS_FILE}")
