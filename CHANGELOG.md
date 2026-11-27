@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Opt-in foreign accent profiles (#135). `--accent NAME` and `--accent-file FILE` select a versioned profile from the shipped `data/accent/accent_profiles.txt` table (embedded at configure time and installed under `share/formant/accent`) or a shared single-profile file; `--list-accents`, `--dump-accent NAME` and `--inspect-accent FILE` follow the shared checksum convention. The two built-ins are `es-on-en` (Spanish L1 on English) and `en-on-es` (English L1 on Spanish). A profile is a deterministic phoneme-stream transform — segment mappings, epenthesis, per-phoneme overrides and bounded F0/rhythm transfer — that runs after every G2P/text front end and before frication, breathing, rhythm, neural, intonation and exact prosody; inserted segments carry `source=accent:NAME` so the neural layer skips them. Contexts are `any`, `initial`, `final`, `boundary`, `cluster` and `boundary-cluster` (word-initial clusters only), and a replacement written in slashes (`/a/`) forces the IPA segment where a glyph is also an English short name. Affect/style changes the `Voice` before G2P and is orthogonal, explicit voice flags replay afterwards, explicit `--rhythm`/`--rhythm-file` selection wins over the profile's rhythm convention, and exact intonation/prosody targets win last. `--accent` and `--accent-file` are mutually exclusive with the error `use only one of --accent and --accent-file`, and song mode rejects accent. Unit and property tests cover schema/checksums, layering, determinism, per-phoneme isolation, both built-ins, contexts and insertion, plus composition with style, rhythm, neural and exact prosody; CLI smoke checks cover the new commands and errors, with one additive checksum-corpus case. Default renders remain byte-identical and sine-only. Documented in `docs/accent-profiles.md`, with updates to the README and the affected layer docs.
+
 ## [0.39.0] - 2026-11-26
 
 ### Added

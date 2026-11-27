@@ -35,11 +35,14 @@ failure is immediately reproducible with:
    early with an instructive error and never crash or throw an unexpected
    exception. Seed-derived byte strings are fed to every public parser; the
    language, voice, affect, neural, breath, prosody, intonation, lexicon, SSML,
-   IPA, X-SAMPA, bracketed-phoneme, gibberish-pattern, song, scale, frication
-   and register front ends are all covered. Structured malformed cases sit beside them in the
-   `kParsers` table; accent and dialogue files do not exist yet, and when they
-   are introduced their parsers must be appended there so they gain the same
-   hardening guarantee.
+   IPA, X-SAMPA, bracketed-phoneme, gibberish-pattern, song, scale, frication,
+   register and accent front ends are all covered. Structured malformed cases
+   sit beside them in the `kParsers` table; accent cases cover a wrong `schema`,
+   a bad checksum, malformed `accent`/`prosody`/`rhythm`/`map`/`insert`/
+   `override` rows, strengths or prosody dials out of range, an unknown context
+   and a duplicate `override` for one phoneme. Dialogue files do not exist yet,
+   and when they are introduced their parsers must be appended there so they
+   gain the same hardening guarantee.
 4. **Idempotence** — text normalization is stable under repeated application,
    so feeding a normalized string back through the front end cannot change the
    phoneme sequence a second time.
@@ -61,11 +64,11 @@ validation tests.
 `tests/checksum_corpus.txt` stores a SHA-256 for one canonical render of every
 input kind: text, bracketed phonemes, IPA, X-SAMPA, gibberish, language tags,
 conlang files, voice files, intonation, SSML, prosody files, user lexicons,
-alternate formats, sample rates, dither, song, frication and register data.
-The CTest hook renders each case and
-diffs the digest. A mismatch fails
-the build the same way a benchmark checksum does, so an unintended acoustic
-change is caught even when all the unit tests still pass.
+alternate formats, sample rates, dither, song, frication, register and accent
+data; the accent case is additive and leaves the default kinds unchanged.
+The CTest hook renders each case and diffs the digest. A mismatch fails the
+build the same way a benchmark checksum does, so an unintended acoustic change
+is caught even when all the unit tests still pass.
 
 An intended change must regenerate the data file **deliberately**, review the
 diff and commit it with the code change:

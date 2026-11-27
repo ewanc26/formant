@@ -80,6 +80,10 @@ prosody-direct layers, so exact author contours still win. Song mode owns its
 F0 and note-F0 segments are exempt, so combining rhythm with `--song` or
 `--song-file` is rejected.
 
+An accent profile can declare a `rhythm` convention, but it is auto-selected
+only when no explicit `--rhythm` or `--rhythm-file` was given; an explicit
+selection always wins (see [accent-profiles.md](accent-profiles.md)).
+
 ## Shipped data
 
 `data/rhythm/rhythm_profiles.txt` is embedded at CMake configure time and
