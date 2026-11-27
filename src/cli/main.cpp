@@ -28,6 +28,7 @@
 #include "benchmark/benchmark.h"
 
 #include "formant/formant.h"
+#include "formant/accent.h"
 #include "formant/affect.h"
 #include "formant/breath.h"
 #include "formant/frication.h"
@@ -138,6 +139,11 @@ Options:
   --list-rhythms          List built-in rhythm profiles and exit
   --dump-rhythm NAME      Print a versioned rhythm table for a profile
   --inspect-rhythm FILE   Inspect a rhythm file's schema and checksum
+  --accent NAME           Use a built-in accent: es-on-en, en-on-es
+  --accent-file FILE      Apply one versioned .txt accent profile
+  --list-accents          List built-in accent profiles and exit
+  --dump-accent NAME      Print a versioned accent table for a profile
+  --inspect-accent FILE   Inspect an accent file's schema and checksum
   --neural-model FILE     Load a saved neural prosody state
   --neural-train FILE     Train from line-oriented sample records
   --neural-save FILE      Save the trained neural state
@@ -458,6 +464,47 @@ void inspectRhythm(const std::string &path) {
               << "\n";
 }
 
+void listAccents(const formant::AccentData &data) {
+    std::cout << "Accent profiles (" << data.profiles.size() << "):\n";
+    for (const std::string &name : formant::accentProfileNames(data)) {
+        const formant::AccentProfile *profile =
+            formant::findAccentProfile(data, name);
+        std::cout << "  " << name << '\t' << profile->sourceLanguage << " -> "
+                  << profile->targetLanguage << "\t"
+                  << profile->mappings.size() << " maps\t"
+                  << profile->insertions.size() << " inserts\n";
+    }
+}
+
+void inspectAccent(const std::string &path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("cannot open accent file: " + path);
+    }
+    std::ostringstream source;
+    source << file.rdbuf();
+    if (file.bad()) {
+        throw std::runtime_error("cannot read accent file: " + path);
+    }
+    const std::string text = source.str();
+    // Inspect the file itself, not the merged table: a shared one-profile file
+    // must report one profile and its own checksum status.
+    const formant::AccentData data = formant::parseAccentData(text, {}, false);
+    const std::string expected = formant::accentFileChecksum(text);
+    std::cout << "path\t" << path << "\n"
+              << "schema\t" << data.schema << "\n"
+              << "name\t" << data.name << "\n"
+              << "profiles\t" << data.profiles.size() << "\n"
+              << "checksum\t" << (data.checksum ? *data.checksum : "none")
+              << "\n"
+              << "computed\t" << expected << "\n"
+              << "status\t"
+              << (!data.checksum
+                      ? "unsigned"
+                      : (*data.checksum == expected ? "valid" : "invalid"))
+              << "\n";
+}
+
 void inspectFrication(const std::string &path) {
     std::ifstream file(path);
     if (!file) {
@@ -645,6 +692,13 @@ struct Options {
     bool listRhythms = false;
     std::string dumpRhythm;
     std::string inspectRhythmFile;
+    std::string accentName;
+    std::string accentFile;
+    bool useAccent = false;
+    bool useAccentFile = false;
+    bool listAccents = false;
+    std::string dumpAccent;
+    std::string inspectAccentFile;
     // Kept so an affect profile can be applied beneath explicit voice flags.
     Voice baseVoice = voicePreset("neutral");
     std::vector<std::function<void(Voice &)>> voiceOverrides;
@@ -822,6 +876,20 @@ Options parseOptions(int argc, char **argv) {
         }
         if (arg == "--list-rhythms") {
             options.listRhythms = true;
+            continue;
+        }
+        if (arg == "--list-accents") {
+            options.listAccents = true;
+            continue;
+        }
+        if (arg == "--dump-accent" || arg.rfind("--dump-accent=", 0) == 0) {
+            options.dumpAccent = takeValue(i, argc, argv, "--dump-accent");
+            continue;
+        }
+        if (arg == "--inspect-accent" ||
+            arg.rfind("--inspect-accent=", 0) == 0) {
+            options.inspectAccentFile =
+                takeValue(i, argc, argv, "--inspect-accent");
             continue;
         }
         if (arg == "--dump-rhythm" || arg.rfind("--dump-rhythm=", 0) == 0) {
@@ -1078,6 +1146,13 @@ Options parseOptions(int argc, char **argv) {
                    arg.rfind("--rhythm-file=", 0) == 0) {
             options.rhythmFile = takeValue(i, argc, argv, "--rhythm-file");
             options.useRhythmFile = true;
+        } else if (arg == "--accent" || arg.rfind("--accent=", 0) == 0) {
+            options.accentName = takeValue(i, argc, argv, "--accent");
+            options.useAccent = true;
+        } else if (arg == "--accent-file" ||
+                   arg.rfind("--accent-file=", 0) == 0) {
+            options.accentFile = takeValue(i, argc, argv, "--accent-file");
+            options.useAccentFile = true;
         } else if (arg == "--neural-model" ||
                    arg.rfind("--neural-model=", 0) == 0) {
             options.neuralModelFile =
@@ -1671,6 +1746,48 @@ int main(int argc, char **argv) {
         const bool audioToStdout = options.output == "-";
         std::ostream &status = audioToStdout ? std::cerr : std::cout;
 
+        if (options.useAccent && options.useAccentFile) {
+            throw std::invalid_argument(
+                "use only one of --accent and --accent-file");
+        }
+
+        // #135: accent profiles are data too. A user file layers one profile
+        // over the embedded table. Load before the MRT branch so the standard
+        // listening battery can render accented stimuli as well.
+        std::string accentUser;
+        if (options.useAccentFile) {
+            std::ifstream file(options.accentFile);
+            if (!file) {
+                throw std::runtime_error("cannot open accent file: " +
+                                         options.accentFile);
+            }
+            std::ostringstream source;
+            source << file.rdbuf();
+            if (file.bad()) {
+                throw std::runtime_error("cannot read accent file: " +
+                                         options.accentFile);
+            }
+            accentUser = source.str();
+        }
+        const formant::AccentData accentData = formant::parseAccentData(
+            formant::builtinAccentData(), accentUser);
+        std::optional<formant::AccentProfile> accentProfile;
+        if (options.useAccent || options.useAccentFile) {
+            std::string name = options.accentName;
+            if (options.useAccentFile) {
+                const formant::AccentData fileData =
+                    formant::parseAccentData(accentUser, {}, false);
+                if (fileData.profiles.size() != 1) {
+                    throw std::invalid_argument(
+                        "accent file must define exactly one profile "
+                        "(use --dump-accent NAME)");
+                }
+                name = fileData.profiles.begin()->first;
+            }
+            accentProfile = formant::resolveAccentProfile(accentData, name);
+            status << "Selected accent '" << accentProfile->name << "'\n";
+        }
+
         if (!options.benchmarkExpected.empty()) {
             writeTextFile(options.benchmarkExpected,
                           formant::benchmarkExpectedReport());
@@ -1717,6 +1834,7 @@ int main(int argc, char **argv) {
             mrt.voice = options.voice;
             mrt.language = options.language;
             mrt.sampleRate = options.sampleRate;
+            mrt.accent = accentProfile;
             const formant::MrtBatteryResult result =
                 formant::writeMrtBattery(mrt);
             status << "Wrote MRT battery (" << result.filesWritten
@@ -1784,10 +1902,12 @@ int main(int argc, char **argv) {
             (!options.intonationFile.empty() ||
              !options.intonationTune.empty() || options.useProsody ||
              options.neuralApply || options.breathing != "off" ||
-             options.useRhythm || options.useRhythmFile)) {
+             options.useRhythm || options.useRhythmFile ||
+             options.useAccent || options.useAccentFile)) {
             throw std::invalid_argument(
                 "song mode owns its F0 contour and cannot be combined with "
-                "intonation, prosody, neural, breathing or rhythm layers");
+                "intonation, prosody, neural, breathing, rhythm or accent "
+                "layers");
         }
         if (options.useGibberish && inputModes > 0) {
             throw std::invalid_argument(
@@ -2242,6 +2362,20 @@ int main(int argc, char **argv) {
             return 0;
         }
 
+        if (options.listAccents) {
+            listAccents(accentData);
+            return 0;
+        }
+        if (!options.dumpAccent.empty()) {
+            std::cout << formant::writeAccentData(accentData,
+                                                  options.dumpAccent);
+            return 0;
+        }
+        if (!options.inspectAccentFile.empty()) {
+            inspectAccent(options.inspectAccentFile);
+            return 0;
+        }
+
         if (options.listSongs) {
             listSongs();
             return 0;
@@ -2510,6 +2644,19 @@ int main(int argc, char **argv) {
             });
         }
 
+        if (accentProfile) {
+            // #135: the accent layer runs after every G2P/text front end and
+            // before frication, breathing, rhythm, neural and intonation. The
+            // renderer therefore coarticulates the transformed stream, and
+            // nothing changes on the default path where no profile is selected.
+            const std::size_t before = phonemes.size();
+            phonemes =
+                formant::applyAccent(std::move(phonemes), *accentProfile);
+            status << "Applied accent '" << accentProfile->name << "' ("
+                   << before << " -> " << phonemes.size()
+                   << " segments)\n";
+        }
+
         if (options.useFrication || options.useFricationFile) {
             // #101: run after every front end so text, IPA and phoneme inputs
             // all resolve their fricatives through the same versioned table.
@@ -2557,7 +2704,13 @@ int main(int argc, char **argv) {
                    << "\n";
         }
 
-        if (options.useRhythm || options.useRhythmFile) {
+        // #135: an accent profile's rhythm convention applies only when no
+        // explicit --rhythm or --rhythm-file was selected.
+        const bool accentRhythm =
+            accentProfile && !options.useRhythm && !options.useRhythmFile &&
+            !accentProfile->rhythm.empty() &&
+            accentProfile->rhythm != "unspecified";
+        if (options.useRhythm || options.useRhythmFile || accentRhythm) {
             // #144: rhythm targets run after all front ends and breath
             // planning, but before neural, intonation and prosody-direct
             // layers so explicit author contours still win. Singing is exempt
@@ -2570,7 +2723,8 @@ int main(int argc, char **argv) {
             const formant::LanguageTypology typology =
                 options.useLanguageFile ? languageDefinition.typology
                                         : formant::LanguageTypology{};
-            std::string name = options.rhythmName;
+            std::string name =
+                accentRhythm ? accentProfile->rhythm : options.rhythmName;
             if (options.useRhythmFile) {
                 const formant::RhythmData fileData =
                     formant::parseRhythmData(rhythmUser, {}, false);
@@ -2588,7 +2742,11 @@ int main(int argc, char **argv) {
             phonemes = formant::applyRhythm(phonemes, profile);
             const formant::RhythmMetrics after =
                 formant::measureRhythm(phonemes);
-            status << "Applied rhythm '" << profile.name << "' (V nPVI "
+            status << "Applied rhythm '" << profile.name << "'"
+                   << (accentRhythm ? " from accent '" + accentProfile->name +
+                                          "'"
+                                    : std::string())
+                   << " (V nPVI "
                    << before.vocalicNPvi << " -> " << after.vocalicNPvi
                    << ", I rPVI " << before.intervocalicRPvi << " -> "
                    << after.intervocalicRPvi << " ms)\n";

@@ -1,0 +1,35 @@
+# Fictional accent authoring template for issue #135 (schema 1).
+# Starfall (sc) is an invented conlang; this profile models a Starfall speaker
+# rendering English (en). It is an authoring template, not a transcription.
+# Replace checksum PLACEHOLDER with the value printed by --inspect-accent
+# before sharing or rendering this file.
+schema 1
+name Starfall accent template
+author Formant contributors
+description Fictional Starfall-on-English accent: dental stops, recentred vowels, final devoicing and s-cluster epenthesis
+license AGPL-3.0-or-later
+version 1.0.0
+
+accent starfall-on-en sc en
+about starfall-on-en Invented conlang demonstration: nearest native segments, five-vowel quality, utterance-final devoicing and a vowel before s clusters
+prosody starfall-on-en 1.02 0.92 1.04 0.96
+rhythm starfall-on-en syllable
+
+# Ordered maps: first match wins. Full substitutes are 1.0; intermediate
+# strengths blend formants rather than replacing segment identity outright.
+map starfall-on-en th t 0.9 any
+map starfall-on-en dh d 0.9 any
+map starfall-on-en æ /a/ 0.8 any
+# Final devoicing: only the last spoken segment is eligible.
+map starfall-on-en z s 1.0 final
+
+# Cluster epenthesis: insert a short schwa before s when a consonant follows
+# it in the same word. Inserted segments are tagged source=accent:starfall-on-en
+# so the neural layer (#177) skips them.
+insert starfall-on-en before s ə 0.7 cluster
+
+# One per-phoneme override: shift all four formant centres and bandwidths,
+# lengthen slightly, and leave pitch and amplitude untouched.
+override starfall-on-en r 90 1.08 1.0 1.0
+
+checksum PLACEHOLDER

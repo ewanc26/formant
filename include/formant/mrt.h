@@ -2,10 +2,12 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "formant/accent.h"
 #include "formant/language.h"
 #include "formant/voice.h"
 
@@ -22,6 +24,9 @@ struct MrtBatteryOptions {
     Voice voice = voicePreset("neutral");
     Language language = Language::English;
     int sampleRate = 44100;
+    // Optional accent transfer applied after phonemization, so a listening
+    // battery can measure intelligibility for an accented speaker.
+    std::optional<AccentProfile> accent;
 };
 
 struct MrtBatteryResult {
