@@ -23,6 +23,7 @@ option(FORMANT_INSTALL "Install the library and CLI" ON)
 add_library(formant_core STATIC
     src/voice.cpp
     src/voice_file.cpp
+    src/accent.cpp
     src/hash.cpp
     src/transpose.cpp
     src/phoneme.cpp
@@ -125,6 +126,16 @@ file(READ data/rhythm/rhythm_profiles.txt RHYTHM_BUILTIN_DATA)
 configure_file(
     src/rhythm_data.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/rhythm_data.h
+    @ONLY
+)
+
+# #135: foreign-accent profiles are inspectable data too. The built-in table
+# is embedded; user accent files layer individual profiles over it at parse
+# time.
+file(READ data/accent/accent_profiles.txt ACCENT_BUILTIN_DATA)
+configure_file(
+    src/accent_data.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/formant/accent_data.h
     @ONLY
 )
 
@@ -269,6 +280,7 @@ if(FORMANT_INSTALL)
     install(DIRECTORY data/frication/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/frication)
     install(DIRECTORY data/registers/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/registers)
     install(DIRECTORY data/rhythm/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/rhythm)
+    install(DIRECTORY data/accent/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/accent)
     install(DIRECTORY data/songs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/songs)
     install(DIRECTORY data/scales/ DESTINATION ${CMAKE_INSTALL_DATADIR}/formant/scales)
 endif()

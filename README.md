@@ -155,6 +155,10 @@ build/formant --text "Hello, world." --pair "neutral,alto" --lab-dir ab
 build/formant --text "Are you there?" --intonation-tune yesno --output question.wav
 build/formant --text "Hello, world." --intonation-file script.intonation --output intoned.wav
 
+# Apply an opt-in foreign accent after the text front end
+build/formant --text "Think this through." --accent es-on-en --output accented.wav
+build/formant --list-accents
+
 # Read text from stdin
 echo "Are you there?" | build/formant --stdin --output question.wav
 
@@ -438,6 +442,22 @@ Use one of `--rhythm NAME` and `--rhythm-file FILE`, not both; song mode rejects
 
 See [docs/rhythm-classes.md](docs/rhythm-classes.md) for the data format, target bands, provenance and verification.
 
+### Foreign accents
+
+`--accent NAME` and `--accent-file FILE` are opt-in profiles that transform the phoneme stream after every G2P/text front end: segment mapping, epenthesis, per-phoneme overrides and bounded F0/rhythm transfer. The built-ins are `es-on-en` (Spanish L1 on English) and `en-on-es` (English L1 on Spanish). The renderer still sees ordinary phonemes, so coarticulation and the sine-only engine are shared; no flag means byte-identical, sine-only defaults.
+
+```sh
+build/formant --text "Think this through." --accent es-on-en --output accented.wav
+build/formant --lang es --text "Hola, mundo." --accent en-on-es --output en.wav
+build/formant --list-accents
+build/formant --dump-accent es-on-en > es-on-en.accent
+build/formant --inspect-accent es-on-en.accent
+```
+
+Use one of `--accent NAME` and `--accent-file FILE`, not both: asking for both fails with `use only one of --accent and --accent-file`. Song mode rejects accent. Affect/style changes the Voice before G2P and is orthogonal; explicit voice flags replay after it. Accent runs before frication, breathing, rhythm, neural, intonation and exact prosody: the neural layer skips inserted segments tagged `source=accent:NAME`, an explicit `--rhythm` or `--rhythm-file` wins over the profile's rhythm convention, and exact intonation/prosody targets win last.
+
+See [docs/accent-profiles.md](docs/accent-profiles.md) for the data format, built-in rules and conlang authoring.
+
 ### Customisation
 
 A voice is a plain `formant::Voice` struct. Change any field, or start from a preset:
@@ -519,7 +539,7 @@ The suite covers voice presets, English and Spanish text-to-phoneme conversion, 
 
 See [docs/phoible.md](docs/phoible.md) for the PHOIBLE 2.0 segment conformance table, per-category coverage and the documented approximation policy, and [data/phoible/PROVENANCE.md](data/phoible/PROVENANCE.md) for provenance and licence.
 
-See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/frication.md](docs/frication.md) for data-defined frication envelopes, [docs/registers.md](docs/registers.md) for overtone and subharmonic registers, [docs/rhythm-classes.md](docs/rhythm-classes.md) for opt-in rhythm-class profiles, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [docs/design.md](docs/design.md) for the reasoning, [docs/gibberish.md](docs/gibberish.md) for seeded word generation, [docs/singing.md](docs/singing.md) for note-quantized singing, [docs/nvv.md](docs/nvv.md) for nonverbal vocalizations, [docs/breath-groups.md](docs/breath-groups.md) for long-form respiratory phrasing, [docs/affect-styles.md](docs/affect-styles.md) for continuous affect and word emphasis, [docs/frication.md](docs/frication.md) for data-defined frication envelopes, [docs/registers.md](docs/registers.md) for overtone and subharmonic registers, [docs/rhythm-classes.md](docs/rhythm-classes.md) for opt-in rhythm-class profiles, [docs/accent-profiles.md](docs/accent-profiles.md) for opt-in foreign-accent profiles, [docs/growing-neural.md](docs/growing-neural.md) for deterministic learned style corrections, [docs/property-testing.md](docs/property-testing.md) for property/fuzz testing and the checksum corpus, [docs/metrics.md](docs/metrics.md) for objective metrics, [docs/trajectory-verification.md](docs/trajectory-verification.md) for the offline formant-trajectory harness, [docs/performance.md](docs/performance.md) for the benchmark harness and real-time-factor budget, [docs/voice-files.md](docs/voice-files.md) for voice tuning and the lab, [docs/voice-ecosystem.md](docs/voice-ecosystem.md) for sharing voices, [docs/release.md](docs/release.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Support
 

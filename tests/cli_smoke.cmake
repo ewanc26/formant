@@ -2622,4 +2622,183 @@ if(rhythm_song_result EQUAL 0 OR NOT rhythm_song_error MATCHES "song mode owns i
     message(FATAL_ERROR "song mode accepted a rhythm layer: ${rhythm_song_error}")
 endif()
 
+# ---- #135: foreign-accent profiles as versioned phoneme-stream data -------
+set(ACCENT_DIR "${CMAKE_CURRENT_BINARY_DIR}/accent-smoke")
+file(MAKE_DIRECTORY "${ACCENT_DIR}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --list-accents
+    RESULT_VARIABLE list_accents_result
+    OUTPUT_VARIABLE list_accents_output
+    ERROR_VARIABLE list_accents_error
+)
+if(NOT list_accents_result EQUAL 0 OR NOT list_accents_output MATCHES "Accent profiles \\(2\\)")
+    message(FATAL_ERROR "formant --list-accents failed: ${list_accents_error}")
+endif()
+if(NOT list_accents_output MATCHES "  en-on-es\ten -> es\t"
+        OR NOT list_accents_output MATCHES "  es-on-en\tes -> en\t")
+    message(FATAL_ERROR "--list-accents omitted a built-in: ${list_accents_output}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-accent "${FORMANT_SOURCE_DIR}/data/accent/accent_profiles.txt"
+    RESULT_VARIABLE inspect_accent_result
+    OUTPUT_VARIABLE inspect_accent_output
+    ERROR_VARIABLE inspect_accent_error
+)
+if(NOT inspect_accent_result EQUAL 0 OR NOT inspect_accent_output MATCHES "profiles\t2\n"
+        OR NOT inspect_accent_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "formant --inspect-accent failed: ${inspect_accent_output}${inspect_accent_error}")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --dump-accent es-on-en
+    RESULT_VARIABLE dump_accent_result
+    OUTPUT_VARIABLE dump_accent_output
+    ERROR_VARIABLE dump_accent_error
+)
+if(NOT dump_accent_result EQUAL 0 OR NOT dump_accent_output MATCHES "accent es-on-en es en\n"
+        OR dump_accent_output MATCHES "accent en-on-es")
+    message(FATAL_ERROR "formant --dump-accent failed: ${dump_accent_error}")
+endif()
+file(WRITE "${ACCENT_DIR}/es-on-en.accent" "${dump_accent_output}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-accent "${ACCENT_DIR}/es-on-en.accent"
+    RESULT_VARIABLE dumped_accent_result
+    OUTPUT_VARIABLE dumped_accent_output
+    ERROR_VARIABLE dumped_accent_error
+)
+if(NOT dumped_accent_result EQUAL 0 OR NOT dumped_accent_output MATCHES "profiles\t1\n"
+        OR NOT dumped_accent_output MATCHES "status\tvalid")
+    message(FATAL_ERROR "dumped accent failed checksum: ${dumped_accent_output}${dumped_accent_error}")
+endif()
+
+# The authoring template ships unsigned; inspect reports it, and a signed
+# copy renders through --accent-file.
+set(ACCENT_EXAMPLE "${FORMANT_SOURCE_DIR}/examples/accent/fictional.accent")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --inspect-accent "${ACCENT_EXAMPLE}"
+    RESULT_VARIABLE example_accent_result
+    OUTPUT_VARIABLE example_accent_output
+    ERROR_VARIABLE example_accent_error
+)
+if(NOT example_accent_result EQUAL 0 OR NOT example_accent_output MATCHES "status\tinvalid")
+    message(FATAL_ERROR "template accent inspect failed: ${example_accent_output}${example_accent_error}")
+endif()
+string(REGEX MATCH "computed\t([0-9a-f]+)" _ "${example_accent_output}")
+set(example_accent_checksum "${CMAKE_MATCH_1}")
+file(READ "${ACCENT_EXAMPLE}" example_accent_text)
+# Only the directive line: the template's comments mention the placeholder too.
+string(REPLACE "\nchecksum PLACEHOLDER" "\nchecksum ${example_accent_checksum}"
+    example_accent_signed "${example_accent_text}")
+file(WRITE "${ACCENT_DIR}/starfall.accent" "${example_accent_signed}")
+execute_process(
+    COMMAND "${FORMANT_CLI}" --text "Is this the best stop?"
+        --accent-file "${ACCENT_DIR}/starfall.accent"
+        --format raw16 --output "${ACCENT_DIR}/starfall.raw"
+    RESULT_VARIABLE starfall_result
+    OUTPUT_VARIABLE starfall_status
+    ERROR_VARIABLE starfall_error
+)
+if(NOT starfall_result EQUAL 0 OR NOT starfall_status MATCHES "Applied accent 'starfall-on-en'")
+    message(FATAL_ERROR "signed template accent did not render: ${starfall_error}")
+endif()
+
+# Built-in and shared-file selection give identical bytes; the accent changes
+# the render; repeats are deterministic; the profile's rhythm convention
+# applies unless an explicit --rhythm wins.
+set(ACCENT_TEXT "Think of the best stop, very cup.")
+foreach(case_name plain builtin again file rhythm)
+    if(case_name STREQUAL "plain")
+        set(accent_args "")
+    elseif(case_name STREQUAL "file")
+        set(accent_args --accent-file "${ACCENT_DIR}/es-on-en.accent")
+    elseif(case_name STREQUAL "rhythm")
+        set(accent_args --accent es-on-en --rhythm stress)
+    else()
+        set(accent_args --accent es-on-en)
+    endif()
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --text "${ACCENT_TEXT}" ${accent_args}
+            --format raw16 --output "${ACCENT_DIR}/${case_name}.raw"
+        RESULT_VARIABLE accent_render_result
+        OUTPUT_VARIABLE accent_render_status
+        ERROR_VARIABLE accent_render_error
+    )
+    if(NOT accent_render_result EQUAL 0)
+        message(FATAL_ERROR "accent render failed for ${case_name}: ${accent_render_error}")
+    endif()
+    if(case_name STREQUAL "builtin"
+            AND NOT accent_render_status MATCHES "Applied rhythm 'syllable' from accent 'es-on-en'")
+        message(FATAL_ERROR "accent rhythm convention was not applied: ${accent_render_status}")
+    endif()
+    if(case_name STREQUAL "rhythm"
+            AND (NOT accent_render_status MATCHES "Applied rhythm 'stress' \\("
+                 OR accent_render_status MATCHES "from accent"))
+        message(FATAL_ERROR "explicit --rhythm did not win over the accent: ${accent_render_status}")
+    endif()
+    file(SHA256 "${ACCENT_DIR}/${case_name}.raw" accent_${case_name}_hash)
+endforeach()
+if(accent_plain_hash STREQUAL accent_builtin_hash)
+    message(FATAL_ERROR "--accent es-on-en did not change the render")
+endif()
+if(NOT accent_builtin_hash STREQUAL accent_again_hash)
+    message(FATAL_ERROR "--accent render is not deterministic")
+endif()
+if(NOT accent_builtin_hash STREQUAL accent_file_hash)
+    message(FATAL_ERROR "--accent-file did not reproduce the built-in profile")
+endif()
+if(accent_builtin_hash STREQUAL accent_rhythm_hash)
+    message(FATAL_ERROR "explicit --rhythm did not change the accented render")
+endif()
+
+execute_process(
+    COMMAND "${FORMANT_CLI}" --lang es --text "pero tiene un tren" --accent en-on-es
+        --format raw16 --output "${ACCENT_DIR}/en-on-es.raw"
+    RESULT_VARIABLE en_on_es_result
+    OUTPUT_VARIABLE en_on_es_status
+    ERROR_VARIABLE en_on_es_error
+)
+if(NOT en_on_es_result EQUAL 0 OR NOT en_on_es_status MATCHES "Applied accent 'en-on-es' \\([0-9]+ -> [0-9]+ segments\\)")
+    message(FATAL_ERROR "--accent en-on-es failed: ${en_on_es_error}")
+endif()
+
+# Errors: exclusive flags, unknown names, tampered and unsigned-template
+# checksums, multi-profile files and song ownership. No output is created.
+file(WRITE "${ACCENT_DIR}/tampered.accent" "${dump_accent_output}# tamper\n")
+foreach(error_case
+        "use only one of --accent and --accent-file|--accent;es-on-en;--accent-file;${ACCENT_DIR}/es-on-en.accent"
+        "unknown accent profile 'bogus'|--accent;bogus"
+        "checksum mismatch|--accent-file;${ACCENT_DIR}/tampered.accent"
+        "64 hexadecimal digits|--accent-file;${ACCENT_EXAMPLE}"
+        "exactly one profile|--accent-file;${FORMANT_SOURCE_DIR}/data/accent/accent_profiles.txt"
+        "cannot open accent file|--accent-file;${ACCENT_DIR}/missing.accent"
+        "unknown accent profile: bogus|--dump-accent;bogus")
+    string(FIND "${error_case}" "|" split_at)
+    string(SUBSTRING "${error_case}" 0 ${split_at} expected_error)
+    math(EXPR args_at "${split_at} + 1")
+    string(SUBSTRING "${error_case}" ${args_at} -1 bad_args)
+    file(REMOVE "${ACCENT_DIR}/bad.wav")
+    execute_process(
+        COMMAND "${FORMANT_CLI}" --text "stop" ${bad_args}
+            --output "${ACCENT_DIR}/bad.wav"
+        RESULT_VARIABLE accent_error_result
+        ERROR_VARIABLE accent_error_text
+    )
+    if(accent_error_result EQUAL 0 OR NOT accent_error_text MATCHES "${expected_error}")
+        message(FATAL_ERROR "accent error '${expected_error}' was not reported for ${bad_args}: ${accent_error_text}")
+    endif()
+    if(EXISTS "${ACCENT_DIR}/bad.wav")
+        message(FATAL_ERROR "invalid accent options still wrote output: ${bad_args}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND "${FORMANT_CLI}" --song twinkle --accent es-on-en
+        --output "${ACCENT_DIR}/song-accent.wav"
+    RESULT_VARIABLE accent_song_result
+    ERROR_VARIABLE accent_song_error
+)
+if(accent_song_result EQUAL 0 OR NOT accent_song_error MATCHES "rhythm or accent")
+    message(FATAL_ERROR "song mode accepted an accent layer: ${accent_song_error}")
+endif()
+
 message(STATUS "formant CLI smoke test wrote ${output_size} bytes")

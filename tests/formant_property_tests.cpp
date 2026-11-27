@@ -223,8 +223,11 @@ void parseRegister(std::string_view text) {
 void parseRhythm(std::string_view text) {
     (void)formant::parseRhythmData(formant::builtinRhythmData(), text);
 }
+void parseAccent(std::string_view text) {
+    (void)formant::parseAccentData(formant::builtinAccentData(), text);
+}
 
-const std::array<ParserCase, 18> kParsers = {{
+const std::array<ParserCase, 19> kParsers = {{
     {"language", parseLanguage},
     {"voice", parseVoice},
     {"prosody", parseProsody},
@@ -243,6 +246,7 @@ const std::array<ParserCase, 18> kParsers = {{
     {"frication", parseFrication},
     {"register", parseRegister},
     {"rhythm", parseRhythm},
+    {"accent", parseAccent},
 }};
 
 void checkRejection(uint32_t seed) {
@@ -272,7 +276,7 @@ void checkRejection(uint32_t seed) {
 // Structured malformed inputs with expected rejection and a required useful
 // message fragment. These are the "instructive errors" regression guards.
 void checkStructuredMalformed() {
-    const std::array<std::pair<const char *, std::string>, 18> cases = {{
+    const std::array<std::pair<const char *, std::string>, 19> cases = {{
         {"language", "grapheme ab"},
         {"voice", "pitch not_a_number"},
         {"prosody", "segment 0 f0=abcHz"},
@@ -291,6 +295,7 @@ void checkStructuredMalformed() {
         {"frication", "schema 99"},
         {"register", "schema 99"},
         {"rhythm", "schema 99"},
+        {"accent", "schema 99"},
     }};
     for (uint32_t i = 0; i < cases.size(); ++i) {
         CaseScope scope(i + 90000, "structured-malformed");
@@ -395,7 +400,97 @@ void checkRhythm(uint32_t seed) {
 }
 
 // ---------------------------------------------------------------------------
-// Property 6: arbitrary Unicode, invalid UTF-8 and embedded NULs are handled
+// Property 6: accent profiles are deterministic, keep exempt segments in
+// order, tag every segment they add and stay finite for both built-ins and a
+// seeded single-rule profile. A rule for one phoneme leaves the rest alone.
+// ---------------------------------------------------------------------------
+void checkAccent(uint32_t seed) {
+    CaseScope scope(seed, "accent");
+    static const std::array<const char *, 16> kNames = {
+        "s", "t", "th", "dh", "v", "a", "e", "i", "o", "uh",
+        "r", "n", "ay", "ee", "p", "_"};
+    const std::string bytes = bytesFromSeed(seed, 64);
+    std::vector<formant::Phoneme> script;
+    for (std::size_t i = 0; i + 1 < bytes.size(); i += 2) {
+        const auto pick = static_cast<unsigned char>(bytes[i]);
+        const auto flag = static_cast<unsigned char>(bytes[i + 1]);
+        formant::Phoneme phoneme =
+            *formant::findPhoneme(kNames[pick % kNames.size()]);
+        phoneme.pitchStart = 0.8 + static_cast<double>(flag % 9) / 20.0;
+        phoneme.pitchEnd = 0.8 + static_cast<double>((flag / 9) % 9) / 20.0;
+        if (flag % 17 == 0) {
+            phoneme.source = "breath:auto";
+        } else if (flag % 19 == 0) {
+            phoneme.f0StartHz = 120.0 + static_cast<double>(flag % 50);
+        }
+        script.push_back(phoneme);
+    }
+    const auto exempt = [](const formant::Phoneme &phoneme) {
+        return phoneme.kind == formant::PhonemeKind::Silence ||
+               !phoneme.source.empty() || phoneme.f0StartHz.has_value();
+    };
+
+    const formant::AccentData data =
+        formant::parseAccentData(formant::builtinAccentData());
+    std::vector<formant::AccentProfile> profiles;
+    for (const auto &entry : data.profiles) {
+        profiles.push_back(entry.second);
+    }
+    // A seeded single rule: one override on one phoneme.
+    const std::string target = kNames[seed % (kNames.size() - 1)];
+    std::ostringstream body;
+    body << "schema 1\naccent seeded es en\n"
+         << "override seeded " << target << " "
+         << static_cast<int>(seed % 400) - 200 << " "
+         << 0.5 + static_cast<double>(seed % 10) / 10.0 << " 1 1\n";
+    const formant::AccentProfile seeded =
+        formant::parseAccentData(body.str()).profiles.at("seeded");
+    profiles.push_back(seeded);
+
+    for (const formant::AccentProfile &profile : profiles) {
+        const auto first = formant::applyAccent(script, profile);
+        const auto second = formant::applyAccent(script, profile);
+        CHECK(first == second);
+        CHECK(first.size() >= script.size());
+        std::vector<formant::Phoneme> kept;
+        for (const formant::Phoneme &phoneme : first) {
+            if (phoneme.source == "accent:" + profile.name) {
+                CHECK(phoneme.kind != formant::PhonemeKind::Silence);
+                continue;
+            }
+            kept.push_back(phoneme);
+            CHECK(std::isfinite(phoneme.duration) && phoneme.duration > 0.0);
+            CHECK(std::isfinite(phoneme.pitchStart));
+            CHECK(std::isfinite(phoneme.pitchEnd));
+        }
+        CHECK(kept.size() == script.size());
+        for (std::size_t i = 0; i < kept.size() && i < script.size(); ++i) {
+            if (exempt(script[i])) {
+                CHECK(kept[i] == script[i]);
+            }
+        }
+        // Rendering dominates the cost; a sample of seeds is enough to show
+        // transformed streams stay finite and bounded.
+        if (seed % 8 == 0) {
+            const auto samples =
+                formant::Synthesizer(formant::voicePreset("neutral"))
+                    .render(first, 16000);
+            CHECK(allFiniteAndBounded(samples));
+        }
+    }
+
+    // Per-phoneme isolation for the seeded override.
+    const auto isolated = formant::applyAccent(script, seeded);
+    CHECK(isolated.size() == script.size());
+    for (std::size_t i = 0; i < script.size() && i < isolated.size(); ++i) {
+        if (script[i].name != target) {
+            CHECK(isolated[i] == script[i]);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property 7: arbitrary Unicode, invalid UTF-8 and embedded NULs are handled
 // safely; invalid encodings produce a clear error rather than a crash.
 // ---------------------------------------------------------------------------
 void checkUnicode(uint32_t seed) {
@@ -442,7 +537,7 @@ void checkUnicode(uint32_t seed) {
 } // namespace
 
 int main(int argc, char **argv) {
-    // Fast CI property run: 240 seeds x 6 properties is seconds, not minutes.
+    // Fast CI property run: 240 seeds x 7 properties is seconds, not minutes.
     // Sanitizer builds pass a smaller count because instrumented renders are
     // roughly 25x slower and ctest enforces a 300s per-test limit.
     uint32_t seedCount = 240;
@@ -462,6 +557,7 @@ int main(int argc, char **argv) {
         checkRejection(seed);
         checkIdempotence(seed);
         checkRhythm(seed);
+        checkAccent(seed);
         checkUnicode(seed);
     }
     checkStructuredMalformed();

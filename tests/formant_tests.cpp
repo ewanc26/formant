@@ -5024,6 +5024,369 @@ note G4 0.35 ah transition=portamento glide=0.120s
               synth.render(ordinary, 22050));
     }
 
+    // ---- #135: foreign-accent profiles as data ---------------------------
+    {
+        const auto rejects = [](const std::string &user,
+                                const std::string &fragment) {
+            try {
+                (void)parseAccentData(builtinAccentData(), user);
+            } catch (const std::invalid_argument &error) {
+                return std::string(error.what()).find(fragment) !=
+                       std::string::npos;
+            }
+            return false;
+        };
+        const auto segments = [](std::initializer_list<const char *> list) {
+            std::vector<Phoneme> result;
+            for (const char *name : list) {
+                result.push_back(*findPhoneme(name));
+            }
+            return result;
+        };
+        const auto countName = [](const std::vector<Phoneme> &stream,
+                                  const std::string &name) {
+            return std::count_if(
+                stream.begin(), stream.end(),
+                [&](const Phoneme &item) { return item.name == name; });
+        };
+
+        // Schema, checksum and the two shipped directions.
+        const AccentData accents = parseAccentData(builtinAccentData());
+        CHECK(accents.schema == kCurrentAccentSchema);
+        CHECK(accents.checksum.has_value());
+        CHECK(*accents.checksum == accentFileChecksum(builtinAccentData()));
+        CHECK(accents.profiles.size() == 2);
+        CHECK(accentProfileNames(accents) ==
+              (std::vector<std::string>{"en-on-es", "es-on-en"}));
+        const AccentProfile esOnEn = resolveAccentProfile(accents, "es-on-en");
+        const AccentProfile enOnEs = resolveAccentProfile(accents, "en-on-es");
+        CHECK(esOnEn.sourceLanguage == "es");
+        CHECK(esOnEn.targetLanguage == "en");
+        CHECK(esOnEn.rhythm == "syllable");
+        CHECK(enOnEs.sourceLanguage == "en");
+        CHECK(enOnEs.targetLanguage == "es");
+        CHECK(enOnEs.rhythm == "stress");
+        CHECK(findAccentProfile(accents, "ES-ON-EN") == nullptr);
+        bool unknownProfile = false;
+        try {
+            (void)resolveAccentProfile(accents, "fr-on-en");
+        } catch (const std::invalid_argument &error) {
+            unknownProfile = std::string(error.what()).find(
+                                 "--list-accents") != std::string::npos;
+        }
+        CHECK(unknownProfile);
+
+        // Dumps round-trip with their own checksum, whole and per profile.
+        const std::string dumpedAll = writeAccentData(accents);
+        const AccentData reparsed = parseAccentData(dumpedAll);
+        CHECK(reparsed.profiles == accents.profiles);
+        CHECK(reparsed.checksum == accentFileChecksum(dumpedAll));
+        const std::string dumpedOne = writeAccentData(accents, "es-on-en");
+        const AccentData single = parseAccentData(dumpedOne);
+        CHECK(single.profiles.size() == 1);
+        CHECK(single.profiles.at("es-on-en") == esOnEn);
+        bool unknownDump = false;
+        try {
+            (void)writeAccentData(accents, "nope");
+        } catch (const std::invalid_argument &) {
+            unknownDump = true;
+        }
+        CHECK(unknownDump);
+
+        // Checksums cover comments too and normalise CRLF.
+        std::string crlf;
+        for (const char c : std::string(builtinAccentData())) {
+            if (c == '\n') {
+                crlf += '\r';
+            }
+            crlf += c;
+        }
+        CHECK(accentFileChecksum(crlf) ==
+              accentFileChecksum(builtinAccentData()));
+        CHECK(accentFileChecksum(std::string(builtinAccentData()) + "# x\n") !=
+              accentFileChecksum(builtinAccentData()));
+
+        // A user file layers one profile over the shipped table.
+        const std::string overlayBody =
+            "schema 1\nname unit-overlay\n"
+            "accent es-on-en es en\n"
+            "map es-on-en th s 1 any\n";
+        const std::string overlay =
+            overlayBody + "checksum " + accentFileChecksum(overlayBody) + "\n";
+        const AccentData layered =
+            parseAccentData(builtinAccentData(), overlay);
+        CHECK(layered.profiles.size() == 2);
+        CHECK(layered.name == "unit-overlay");
+        CHECK(layered.profiles.at("es-on-en").mappings.size() == 1);
+        CHECK(layered.profiles.at("es-on-en").rhythm.empty());
+        CHECK(layered.profiles.at("en-on-es") == enOnEs);
+        CHECK(layered.checksum == accentFileChecksum(overlay));
+        // Unsigned user files are accepted; inspect-only parses skip checks.
+        CHECK(parseAccentData(builtinAccentData(), overlayBody)
+                  .profiles.size() == 2);
+        CHECK(parseAccentData(overlayBody + "checksum PLACEHOLDER\n", {},
+                              false)
+                  .checksum == std::optional<std::string>("placeholder"));
+
+        // Instructive errors, each naming its line where one applies.
+        CHECK(rejects("schema 9\n", "unsupported accent schema"));
+        CHECK(rejects("name x\n", "requires 'schema 1'"));
+        CHECK(rejects(overlayBody + "checksum PLACEHOLDER\n",
+                      "64 hexadecimal digits"));
+        CHECK(rejects(overlayBody + "checksum " + std::string(64, '0') + "\n",
+                      "checksum mismatch"));
+        CHECK(rejects("schema 1\nbogus x\n", "accent line 2: unknown "
+                                            "directive 'bogus'"));
+        CHECK(rejects("schema 1\naccent x en\n", "accent line 2"));
+        CHECK(rejects("schema 1\naccent x es en\naccent x es en\n",
+                      "duplicate accent 'x'"));
+        CHECK(rejects("schema 1\nmap y th t\n", "unknown accent 'y'"));
+        CHECK(rejects("schema 1\naccent x es en\nmap x th t 1.5\n",
+                      "strength must be in [0, 1]"));
+        CHECK(rejects("schema 1\naccent x es en\nmap x th t 1 middle\n",
+                      "unknown context 'middle'"));
+        CHECK(rejects("schema 1\naccent x es en\nmap x th t+d\n",
+                      "expected one phoneme"));
+        CHECK(rejects("schema 1\naccent x es en\nmap x th \xe2\x98\x83\n",
+                      "accent line 3"));
+        CHECK(rejects("schema 1\naccent x es en\ninsert x around s e\n",
+                      "before or after"));
+        CHECK(rejects("schema 1\naccent x es en\noverride x r 0 1 1 1\n"
+                      "override x ɹ 0 1 1 1\n",
+                      "duplicate override for 'r'"));
+        CHECK(rejects("schema 1\naccent x es en\nprosody x 3 1 1 1\n",
+                      "out-of-range prosody"));
+        CHECK(rejects("schema 1\naccent x es en\nprosody x 1 1 1\n",
+                      "accent line 3"));
+        CHECK(rejects("schema 1\naccent x es en\nrhythm x free\n",
+                      "rhythm convention"));
+        CHECK(rejects("schema 1\naccent x es en\nmap x th t nan\n",
+                      "invalid number"));
+
+        const auto profileFrom = [](const std::string &body) {
+            return parseAccentData("schema 1\naccent t es en\n" + body)
+                .profiles.at("t");
+        };
+
+        // Empty and neutral profiles are byte-identical no-ops.
+        const std::vector<Phoneme> hello = phonemize("Hello, world.");
+        CHECK(applyAccent(hello, profileFrom("")) == hello);
+        CHECK(applyAccent(hello, profileFrom("map t oo ee 0\n")) == hello);
+        CHECK(applyAccent({}, esOnEn).empty());
+
+        // es-on-en: dental stops, b for v, vowel recentring and prothesis
+        // only before a word-initial s cluster.
+        const std::vector<Phoneme> english =
+            phonemize("Think of the best stop, very cup.");
+        const std::vector<Phoneme> esEnglish = applyAccent(english, esOnEn);
+        CHECK(countName(esEnglish, "th") == 0);
+        CHECK(countName(esEnglish, "dh") == 0);
+        CHECK(countName(esEnglish, "v") == 0);
+        CHECK(esEnglish.size() == english.size() + 1);
+        std::size_t prothetic = 0;
+        for (std::size_t i = 0; i < esEnglish.size(); ++i) {
+            if (esEnglish[i].source == "accent:es-on-en") {
+                ++prothetic;
+                CHECK(esEnglish[i].name == "e");
+                CHECK(i + 2 < esEnglish.size());
+                CHECK(esEnglish[i + 1].name == "s");
+                CHECK(esEnglish[i + 2].name == "t");
+                CHECK(i > 0 && esEnglish[i - 1].kind == PhonemeKind::Silence);
+            }
+        }
+        CHECK(prothetic == 1);
+        // `/a/` forces IPA: English /ae/ and the strut vowel move toward the
+        // Spanish open vowel rather than mapping onto themselves.
+        const Phoneme spanishA = parseIpa("a").front();
+        const std::vector<Phoneme> cat = applyAccent(phonemize("cat"), esOnEn);
+        CHECK(cat.size() == 3);
+        CHECK(cat[1].bands[0].frequency > findPhoneme("a")->bands[0].frequency);
+        CHECK(cat[1].bands[0].frequency < spanishA.bands[0].frequency);
+        const std::vector<Phoneme> cup = applyAccent(phonemize("cup"), esOnEn);
+        CHECK(cup[1].bands[0].frequency >
+              findPhoneme("uh")->bands[0].frequency);
+        // Every shipped map and insert changes the sound it targets.
+        for (const AccentProfile *profile : {&esOnEn, &enOnEs}) {
+            for (const AccentMapping &mapping : profile->mappings) {
+                const Phoneme *sourceSegment = findPhoneme(mapping.source);
+                const std::vector<Phoneme> source =
+                    sourceSegment ? std::vector<Phoneme>{*sourceSegment}
+                                  : parseIpa(mapping.source);
+                CHECK(source.size() == 1);
+                AccentProfile only = *profile;
+                only.mappings = {mapping};
+                only.insertions.clear();
+                only.overrides.clear();
+                only.prosody = {};
+                const std::vector<Phoneme> after = applyAccent(source, only);
+                CHECK(after.size() == 1);
+                // Diphthong maps share their onset with the monophthong, so
+                // the glide endpoint is part of the sound as well.
+                CHECK(after.front().bands != source.front().bands ||
+                      after.front().hasEndBands !=
+                          source.front().hasEndBands ||
+                      after.front().endBands != source.front().endBands);
+            }
+        }
+
+        // en-on-es on Spanish text: the tap and stops move, /o/ gains a
+        // tagged offglide, and only the utterance-final n gains a schwa.
+        const std::vector<Phoneme> spanish =
+            phonemize("pero tiene un tren", Language::Spanish);
+        const std::vector<Phoneme> enSpanish = applyAccent(spanish, enOnEs);
+        CHECK(enSpanish.size() == spanish.size() + 2);
+        std::vector<std::string> inserted;
+        for (const Phoneme &segment : enSpanish) {
+            if (segment.source == "accent:en-on-es") {
+                inserted.push_back(segment.name);
+            }
+        }
+        CHECK(inserted == (std::vector<std::string>{"w", "ə"}));
+        CHECK(enSpanish.back().name == "ə");
+        CHECK(enSpanish[enSpanish.size() - 2].name == "n");
+        for (std::size_t i = 0; i < spanish.size(); ++i) {
+            if (spanish[i].name == "ɾ") {
+                CHECK(spanish[i].bands != findPhoneme("r")->bands);
+            }
+        }
+        // Prosody transfer reaches inserted segments too, so the offglide
+        // keeps the pitch of the vowel it leaves.
+        for (std::size_t i = 1; i < enSpanish.size(); ++i) {
+            if (enSpanish[i].source == "accent:en-on-es" &&
+                enSpanish[i].name == "w") {
+                CHECK(enSpanish[i].pitchStart == enSpanish[i - 1].pitchStart);
+            }
+        }
+
+        // Contexts: initial, final, boundary, cluster, boundary-cluster.
+        const std::vector<Phoneme> words = {
+            *findPhoneme("s"), *findPhoneme("t"), *findPhoneme("a"),
+            *findPhoneme("s"), *findPhoneme("_"), *findPhoneme("s"),
+            *findPhoneme("a"), *findPhoneme("s"), *findPhoneme("p")};
+        const auto mappedAt = [&](const std::string &context) {
+            const AccentProfile profile =
+                profileFrom("map t s z 1 " + context + "\n");
+            const std::vector<Phoneme> after = applyAccent(words, profile);
+            std::vector<std::size_t> indices;
+            for (std::size_t i = 0; i < after.size(); ++i) {
+                if (after[i].name == "z") {
+                    indices.push_back(i);
+                }
+            }
+            return indices;
+        };
+        CHECK(mappedAt("any") == (std::vector<std::size_t>{0, 3, 5, 7}));
+        CHECK(mappedAt("initial") == (std::vector<std::size_t>{0}));
+        CHECK(mappedAt("boundary") == (std::vector<std::size_t>{0, 5}));
+        CHECK(mappedAt("cluster") == (std::vector<std::size_t>{0, 7}));
+        CHECK(mappedAt("boundary-cluster") == (std::vector<std::size_t>{0}));
+        const AccentProfile finalProfile = profileFrom("map t p b 1 final\n");
+        CHECK(applyAccent(words, finalProfile).back().name == "b");
+        std::vector<Phoneme> trailing = words;
+        trailing.push_back(*findPhoneme("."));
+        CHECK(applyAccent(trailing, finalProfile)[8].name == "b");
+
+        // First matching map wins; insert before/after both work.
+        const AccentProfile ordered =
+            profileFrom("map t s z\nmap t s sh\n"
+                        "insert t before a e 1 any\n"
+                        "insert t after a ee 0.5 any\n");
+        const std::vector<Phoneme> orderedOut =
+            applyAccent(segments({"s", "a"}), ordered);
+        CHECK(names(orderedOut) ==
+              (std::vector<std::string>{"z", "e", "a", "ee"}));
+        CHECK(orderedOut[3].duration == findPhoneme("ee")->duration * 0.5);
+        CHECK(orderedOut[3].source == "accent:t");
+
+        // Per-phoneme overrides touch only their phoneme and match IPA
+        // aliases; partial maps blend bands but keep authored timing.
+        const AccentProfile isolated =
+            profileFrom("override t r 120 1.5 1.2 0.5\n");
+        std::vector<Phoneme> rStream = segments({"r", "a", "r", "s"});
+        rStream.push_back(parseIpa("ɹ").front());
+        const std::vector<Phoneme> rOut = applyAccent(rStream, isolated);
+        CHECK(rOut.size() == rStream.size());
+        for (std::size_t i = 0; i < rOut.size(); ++i) {
+            if (i == 1 || i == 3) {
+                CHECK(rOut[i] == rStream[i]);
+            } else {
+                CHECK(rOut[i].duration == rStream[i].duration * 1.5);
+                CHECK(rOut[i].amplitude == rStream[i].amplitude * 0.5);
+                CHECK(rOut[i].bands[0].frequency >
+                      rStream[i].bands[0].frequency);
+            }
+        }
+        Phoneme slowTh = *findPhoneme("th");
+        slowTh.duration = 0.3;
+        slowTh.pitchStart = 1.2;
+        const std::vector<Phoneme> half =
+            applyAccent({slowTh}, profileFrom("map t th t 0.5\n"));
+        CHECK(half.front().name == "th");
+        CHECK(half.front().duration == 0.3);
+        CHECK(half.front().pitchStart == 1.2);
+        CHECK(half.front().bands[1].frequency ==
+              (slowTh.bands[1].frequency +
+               findPhoneme("t")->bands[1].frequency) /
+                  2.0);
+        const std::vector<Phoneme> full =
+            applyAccent({slowTh}, profileFrom("map t th t 1\n"));
+        CHECK(full.front().name == "t");
+        CHECK(full.front().duration == 0.3);
+        CHECK(full.front().pitchStart == 1.2);
+
+        // Silence, breath/NVV events, absolute-F0 spans and notes are exempt.
+        std::vector<Phoneme> exempt = segments({"th", "th", "th", "th", "_"});
+        exempt[0].source = "breath:auto";
+        exempt[1].source = "nvv:laugh";
+        exempt[2].f0StartHz = 140.0;
+        exempt[3].noteF0 = NoteF0Control{};
+        CHECK(applyAccent(exempt, esOnEn) == exempt);
+
+        // Deterministic and byte-stable across repeated renders.
+        const Synthesizer accentSynth(voicePreset("neutral"));
+        CHECK(applyAccent(english, esOnEn) == applyAccent(english, esOnEn));
+        CHECK(accentSynth.render(esEnglish, 22050) ==
+              accentSynth.render(applyAccent(english, esOnEn), 22050));
+        CHECK(accentSynth.render(esEnglish, 22050) !=
+              accentSynth.render(english, 22050));
+
+        // Composition. Rhythm runs on the transformed stream and keeps its
+        // segments; neural prosody leaves accent-inserted segments alone; an
+        // exact prosody target wins over the accent's F0 transfer; affect
+        // only changes the Voice, so the accented stream is unchanged by it.
+        const RhythmData rhythms = parseRhythmData(builtinRhythmData());
+        const std::vector<Phoneme> rhythmic =
+            applyRhythm(esEnglish, *findRhythmProfile(rhythms, esOnEn.rhythm));
+        CHECK(names(rhythmic) == names(esEnglish));
+        CHECK(rhythmic != esEnglish);
+
+        NeuralSample neuralSample;
+        neuralSample.input = {0.0, 0.0, 0.0, 0.0};
+        neuralSample.target = {1.2, 1.4};
+        GrowingNeuralNetwork learned;
+        learned.observe(neuralSample);
+        std::vector<Phoneme> neuralOut = esEnglish;
+        applyNeuralProsody(neuralOut, learned, 1.0);
+        for (std::size_t i = 0; i < esEnglish.size(); ++i) {
+            if (esEnglish[i].source == "accent:es-on-en") {
+                CHECK(neuralOut[i] == esEnglish[i]);
+            }
+        }
+
+        std::vector<Phoneme> exact = esEnglish;
+        applyProsodyFile(exact, parseProsodyFile("f0 1 150\n"));
+        CHECK(exact[1].f0StartHz.has_value());
+        CHECK(*exact[1].f0StartHz == 150.0);
+
+        const AffectData affect = parseAffectData(builtinAffectData());
+        Voice styled = voicePreset("neutral");
+        applyAffectStyle(styled, resolveAffectProfile(affect, "excited"));
+        CHECK(applyAccent(phonemize("Think of the best stop, very cup."),
+                          esOnEn) == esEnglish);
+        CHECK(Synthesizer(styled).render(esEnglish, 22050) !=
+              accentSynth.render(esEnglish, 22050));
+    }
+
     if (failures == 0) {
         std::cout << "All formant tests passed\n";
     }

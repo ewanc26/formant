@@ -143,8 +143,10 @@ MrtBatteryResult writeMrtBattery(const MrtBatteryOptions &options) {
     for (const Ensemble &ensemble : kMrtEnsembles) {
         for (int i = 0; i < 6; ++i) {
             const std::string word = ensemble.words[i];
-            const std::vector<Phoneme> phonemes =
-                phonemize(word, options.language);
+            std::vector<Phoneme> phonemes = phonemize(word, options.language);
+            if (options.accent) {
+                phonemes = applyAccent(std::move(phonemes), *options.accent);
+            }
             const std::vector<float> samples =
                 synth.render(phonemes, options.sampleRate);
 

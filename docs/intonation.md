@@ -73,9 +73,14 @@ Layers apply in this order, last winning:
 
 1. Voice preset and numeric flags set the base synthesis parameters.
 2. The front end (text, IPA, SSML, …) sets each phoneme's default contour.
-3. Named tunes expand their symbolic events.
-4. The annotation file's own lines override the tune for the same target.
-5. A `--prosody-file` applied afterwards wins inside a phrase: absolute Hz targets take precedence in `fundamentalAt()` because they are stored on separate `Phoneme` fields. The symbol remains on the phoneme, but the numeric contour is what renders.
+3. A foreign-accent profile, if selected, transforms that phoneme stream after every front end (see [accent-profiles.md](accent-profiles.md)).
+4. Named tunes expand their symbolic events.
+5. The annotation file's own lines override the tune for the same target.
+6. A `--prosody-file` applied afterwards wins inside a phrase: absolute Hz targets take precedence in `fundamentalAt()` because they are stored on separate `Phoneme` fields. The symbol remains on the phoneme, but the numeric contour is what renders.
+
+The neural prosody layer follows accent and skips segments inserted by it
+(`source=accent:NAME`), so an epenthetic vowel is not treated as a learned
+front-end event; exact intonation and prosody targets still win last.
 
 There is no randomness, clock or global state. The same file, language and inventory render byte-identically, and expanded contours honour the phase-continuation contract: a chain of `renderContinued()` calls matches one render of the concatenated, expanded sequence.
 

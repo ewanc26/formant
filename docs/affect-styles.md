@@ -94,9 +94,12 @@ rendering.
 
 A style is applied to the selected `--voice` or `--voice-file` first. Numeric
 voice flags (`--pitch`, `--rate`, `--gain`, `--jitter`, `--shimmer`, …) are
-replayed afterwards, so they always remain the final authority. SSML prosody,
-the neural layer, symbolic intonation and exact `--prosody-file` targets then
-operate on the phoneme sequence as before.
+replayed afterwards, so they always remain the final authority. Affect/style
+changes the Voice before G2P and is orthogonal to accents, which transform the
+phoneme stream after every front end (see
+[accent-profiles.md](accent-profiles.md)). SSML prosody, the neural layer,
+symbolic intonation and exact `--prosody-file` targets then operate on the
+phoneme sequence as before.
 
 ## Data-file format
 

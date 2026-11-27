@@ -19,8 +19,25 @@ The output directory contains:
 - `answer_key.csv` - scoring key with the target and six alternatives per trial
 - `README.txt` - administration and scoring notes
 
-The rendering is deterministic for a given voice, language, sample rate and
-Formant version. Use the same voice and rate when comparing releases.
+The rendering is deterministic for a given voice, language, accent profile,
+sample rate and Formant version. Use the same voice and rate when comparing
+releases.
+
+## Accented batteries
+
+An accent profile is an opt-in phoneme-stream transform (see
+[accent-profiles.md](accent-profiles.md)). For a listening protocol, generate one
+battery per condition with the same voice, rate, pitch, sample rate and Formant
+version, then score each with the procedure below:
+
+```sh
+formant --mrt /tmp/mrt-neutral --voice neutral --rate 1.0 --pitch 120
+formant --mrt /tmp/mrt-es-on-en --voice neutral --rate 1.0 --pitch 120 --accent es-on-en
+```
+
+The score difference is a segmental-intelligibility floor under identical
+settings. MRT covers English CVC initial/final consonant contrasts only; it does
+not judge vowels, clusters, rhythm or whether a profile sounds authentic.
 
 ## Administration
 

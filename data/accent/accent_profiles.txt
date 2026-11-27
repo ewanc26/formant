@@ -1,0 +1,64 @@
+# Formant foreign-accent profiles (#135), version 1
+#
+# An accent profile transforms an already-generated phoneme stream. Each block
+# starts with:
+#   accent NAME SOURCE_LANGUAGE TARGET_LANGUAGE
+# and then carries any of:
+#   about NAME TEXT
+#   prosody NAME F0-MEAN F0-RANGE DURATION-SCALE AMPLITUDE-SCALE
+#   rhythm NAME stress|syllable|mora|unspecified
+#   map NAME SOURCE REPLACEMENT [STRENGTH [CONTEXT]]
+#   insert NAME before|after ANCHOR REPLACEMENT [STRENGTH [CONTEXT]]
+#   override NAME PHONEME SHIFT-CENTS DURATION-SCALE PITCH-SCALE AMP-SCALE
+# CONTEXT is any, initial, final, boundary, cluster or boundary-cluster.
+# Sources and replacements accept English short names or IPA symbols; wrap a
+# replacement in slashes (/a/) to force IPA where a glyph is also an English
+# short name (bare a is English /ae/). Rules
+# apply in file order; the first matching map wins. See docs/accent-profiles.md
+# and PROVENANCE.md for the research basis and authoring guidance.
+schema 1
+name formant-accents
+author Formant contributors
+description Language-direction accent profiles derived from published L2 phonological-rule methodology
+license AGPL-3.0-or-later
+version 1.0.0
+
+# Spanish L1 applied to English L2. Dental fricatives become alveolar stops,
+# the English short front vowel is raised toward Spanish /i/, the central and
+# near-open vowels move toward Spanish /a/, /eI/ is monophthongised, and a
+# word-initial s+consonant cluster gains a supporting vowel.
+accent es-on-en es en
+about es-on-en Spanish phonology applied to English: dental stops, five-vowel quality and syllable rhythm
+prosody es-on-en 0.97 0.86 1.05 1.0
+rhythm es-on-en syllable
+map es-on-en th t 1.0 any
+map es-on-en dh d 1.0 any
+map es-on-en v b 1.0 any
+map es-on-en i ee 0.85 any
+map es-on-en ah /a/ 0.85 any
+map es-on-en a /a/ 0.85 any
+map es-on-en uh /a/ 0.75 any
+map es-on-en ay e 0.5 any
+insert es-on-en before s e 0.7 boundary-cluster
+override es-on-en r 120 1.1 1.0 1.0
+
+# English L1 applied to Spanish L2. Spanish voiceless stops gain frication,
+# the pure vowels diphthongise toward English targets (/e/ toward /eI/, /o/
+# gains a short /w/ offglide), /a/ reduces toward the English central vowel,
+# the tap becomes an English rhotic, and a final nasal gains a short
+# supporting schwa.
+accent en-on-es en es
+about en-on-es English phonology applied to Spanish: dental frication, diphthongised vowels and stress rhythm
+prosody en-on-es 1.03 1.12 0.96 1.0
+rhythm en-on-es stress
+map en-on-es t th 0.8 any
+map en-on-es d dh 0.8 any
+map en-on-es b v 0.7 any
+map en-on-es e ay 0.55 any
+map en-on-es a ah 0.6 any
+map en-on-es ɾ r 0.75 any
+insert en-on-es after o w 0.4 any
+insert en-on-es after n ə 0.45 final
+override en-on-es s -60 0.95 1.0 1.0
+
+checksum 5e3729d0503a2b6d77e7f3d8dcc6a2c8b239add80f6f54e247d7e755a3f1a221
